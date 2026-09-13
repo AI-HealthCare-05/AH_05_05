@@ -64,7 +64,11 @@ class MedicationKnowledgeEligibilityPolicy:
         *,
         plan: MedicationKnowledgeQueryPlan,
     ) -> MedicationKnowledgeEligibilityReason:
-        if plan.interaction_pair is not None and not self._declared_pair_matches(plan, result):
+        if (
+            plan.interaction_pair is not None
+            and not self._has_declared_pair_key_match(result, plan)
+            and not self._declared_pair_matches(plan, result)
+        ):
             return MedicationKnowledgeEligibilityReason.PAIR_MISMATCH
         if (
             plan.interaction_pair is None

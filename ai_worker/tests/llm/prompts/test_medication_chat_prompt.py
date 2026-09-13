@@ -6,6 +6,10 @@ from ai_worker.llm.prompts.medication_chat_prompt import (
     SYSTEM_PROMPT,
     build_medication_chat_messages,
 )
+from ai_worker.llm.prompts.prompt_assets import (
+    MedicationPromptStage,
+    load_prompt_chain_stage,
+)
 from ai_worker.schemas.chat import ChatHistoryMessage
 from ai_worker.schemas.enums import ChatRole, SafetyStatus
 from ai_worker.schemas.evidence_reasoning import EvidenceClaim, EvidenceReasoningOutput
@@ -50,6 +54,13 @@ def test_prompt_document_parser_extracts_runtime_sections() -> None:
     assert document.system == "시스템 지침"
     assert document.user == "질문: {payload_json}"
     assert document.assistant_example == ("근거가 확인된 내용만 답변합니다.")
+
+
+def test_evidence_reasoning_prompt_limits_claims_to_the_requested_pair() -> None:
+    prompt = load_prompt_chain_stage(MedicationPromptStage.EVIDENCE_REASONING)
+
+    assert "질문 pair 밖의 제3 성분·식품·약물" in prompt.compiled_system
+    assert "질문 pair의 직접 관계" in prompt.compiled_system
 
 
 def test_build_messages_applies_markdown_user_template() -> None:
@@ -248,8 +259,8 @@ def test_system_prompt_uses_v7_six_element_contract_and_private_checklist() -> N
     assert "의료진·약사에게 확인할 내용" not in SYSTEM_PROMPT
 
 
-def test_system_prompt_forbids_repeating_unverified_interaction_notice() -> None:
-    assert "확인하지 못한 조합은 한 번만 표시" in SYSTEM_PROMPT
+def test_system_prompt_forbids_claiming_an_unverified_interaction_is_safe_or_risky() -> None:
+    assert "직접 근거가 없는 조합을 안전하거나 위험하다고 단정하지 마세요" in SYSTEM_PROMPT
 
 
 def test_system_prompt_limits_each_requested_section_to_short_bullets() -> None:

@@ -1256,7 +1256,7 @@ async def test_no_evidence_interaction_keeps_active_medication_section_and_quest
     assert result.route is MedicationChatRoute.INTERACTION
     assert "💊 **복약정보**\n- 세레콕시브캡슐200mg\n\n---" in result.answer
     assert "🔁 **질문 상호작용**\n\n**[아세트아미노펜-마그네슘]**" in result.answer
-    assert "확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다." in result.answer
+    assert "질문한 조합에 대한 직접 근거를 찾지 못했습니다." in result.answer
     assert "✉️ **안내사항**" not in result.answer
 
 
@@ -1311,6 +1311,67 @@ async def test_single_entity_guide_question_ignores_prior_interaction_gate_conte
     assert query_plan.entity_names == ["마그네슘"]
     assert query_plan.section_types == [KnowledgeSectionType.FUNCTION]
     assert query_plan.interaction_pairs == []
+
+
+async def test_explicit_two_entity_interaction_keeps_question_pair_despite_history_gate() -> None:
+    retriever = RecordingQueryPlanRetriever()
+    gate = StaticConversationGate(
+        ConversationClassification(
+            intent="SYMPTOM_INTERACTION_FOLLOW_UP",
+            safety_signal="NONE",
+            confidence="HIGH",
+        )
+    )
+
+    await build_use_case(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=1,
+                    name="세레콕시브캡슐200mg",
+                )
+            ],
+        ),
+        retriever=retriever,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticTypedExpressionCatalog(
+                [
+                    MedicationCatalogEntry(
+                        canonical_name="타이레놀",
+                        entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                        kind=InteractionEntityKind.DRUG,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    ),
+                    MedicationCatalogEntry(
+                        canonical_name="술",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.FOOD,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    ),
+                ]
+            )
+        ),
+        conversation_gate_chain=gate,
+    ).execute(
+        build_request("타이레놀과 술을 같이 먹어도 돼?").model_copy(
+            update={
+                "history": [
+                    ChatHistoryMessage(role=ChatRole.USER, content="배가 아파요."),
+                    ChatHistoryMessage(role=ChatRole.ASSISTANT, content="증상을 더 알려주세요."),
+                ]
+            }
+        )
+    )
+
+    assert retriever.received_kwargs is not None
+    query_plan = retriever.received_kwargs["execution_plan"].query_plan
+    assert query_plan.entity_names == ["타이레놀", "술"]
+    assert [(pair.left_name, pair.right_name) for pair in query_plan.interaction_pairs] == [
+        ("타이레놀", "술"),
+    ]
+    assert gate.inputs == []
 
 
 async def test_explicit_active_medication_interaction_uses_approved_rule() -> None:
@@ -1445,7 +1506,7 @@ def test_interaction_evidence_chunks_exclude_unrelated_sections() -> None:
         interaction_pair_keys=[pair_key],
     )
 
-    assert [chunk.chunk_id for chunk in selected] == ["d" * 64, "e" * 64]
+    assert [chunk.chunk_id for chunk in selected] == ["e" * 64]
 
 
 async def test_non_interaction_question_skips_evidence_reasoning_chain() -> None:
@@ -1570,7 +1631,7 @@ async def test_oversized_evidence_input_keeps_deterministic_answer() -> None:
     assert chain.inputs == []
 
 
-async def test_active_medication_interaction_without_approved_rule_states_uncertainty() -> None:
+async def test_active_medication_interaction_without_approved_rule_omits_unverified_notice() -> None:
     result = await build_use_case(
         context=ActiveIntakeContext(
             user_id=1,
@@ -1592,8 +1653,8 @@ async def test_active_medication_interaction_without_approved_rule_states_uncert
         ),
     ).execute(build_request("현재 먹는 두 약 사이에 상호작용이 있어?"))
 
-    assert "확인하지 못한 조합" in result.answer
-    assert "안전하다는 뜻은 아닙니다" in result.answer
+    assert "확인하지 못한 조합" not in result.answer
+    assert "안전하다는 뜻은 아닙니다" not in result.answer
 
 
 async def test_harmful_request_is_blocked_before_rag() -> None:
@@ -1980,7 +2041,7 @@ async def test_active_intake_question_without_external_evidence_uses_registered_
     assert result.safety_status == SafetyStatus.RESTRICTED
     assert "💊 **복약정보**\n- 와파린" in result.answer
     assert "💪🏻 **영양제 정보**\n- 비타민 K" in result.answer
-    assert "☑️ **확인하지 못한 조합**" in result.answer
+    assert "질문한 조합에 대한 직접 근거를 찾지 못했습니다." in result.answer
     assert "오메가3" not in result.answer
 
 
@@ -2676,7 +2737,7 @@ async def test_active_intake_interaction_without_direct_evidence_keeps_active_me
 
     assert "💊 **복약정보**\n- 세레콕시브캡슐200mg" in result.answer
     assert "---\n\n🔁 **복약정보와 상호작용**" in result.answer
-    assert result.answer.count("☑️ **확인하지 못한 조합**") == 1
+    assert "질문한 조합에 대한 직접 근거를 찾지 못했습니다." in result.answer
 
 
 async def test_execute_resolves_single_drug_reference_from_explicit_session_memory() -> None:
@@ -3936,7 +3997,7 @@ async def test_no_interaction_evidence_never_claims_safe() -> None:
 
     assert result.route == MedicationChatRoute.INTERACTION
     assert "안전합니다" not in result.answer
-    assert "확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다" in result.answer
+    assert "질문한 조합에 대한 직접 근거를 찾지 못했습니다." in result.answer
 
 
 async def test_qdrant_failure_falls_back_to_rdbms_facts() -> None:
@@ -4265,7 +4326,7 @@ async def test_supplement_pair_question_skips_medication_product_lookup() -> Non
     )
 
     assert result.route == MedicationChatRoute.INTERACTION
-    assert "☑️ **확인하지 못한 조합**" in result.answer
+    assert "질문한 조합에 대한 직접 근거를 찾지 못했습니다." in result.answer
     assert "제품명을 확인" not in result.answer
 
 
@@ -4332,7 +4393,7 @@ async def test_product_name_drug_food_question_uses_official_guide_with_suppleme
     }
 
 
-async def test_multi_entity_answer_uses_generic_notice_for_unverified_pairs() -> None:
+async def test_multi_entity_answer_uses_one_direct_evidence_gap_line_for_unverified_pairs() -> None:
     calcium_iron_chunk = build_chunk().model_copy(
         update={
             "content": "칼슘은 한 끼 식사에서 철 흡수에 영향을 줄 수 있습니다.",
@@ -4356,8 +4417,7 @@ async def test_multi_entity_answer_uses_generic_notice_for_unverified_pairs() ->
     )
 
     assert result.route == MedicationChatRoute.INTERACTION
-    assert "☑️ **확인하지 못한 조합**" in result.answer
-    assert result.answer.count("☑️ **확인하지 못한 조합**") == 1
+    assert result.answer == "🔁 **질문 상호작용**\n- 질문한 조합에 대한 직접 근거를 찾지 못했습니다."
     assert "**[와파린-비타민 K]**" not in result.answer
     assert "**[칼슘-철분]**" not in result.answer
 

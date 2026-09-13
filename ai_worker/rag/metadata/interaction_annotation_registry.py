@@ -83,6 +83,7 @@ class KnowledgeInteractionDocumentAnnotation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     document_id: str = Field(min_length=1)
+    section_boundaries: list[str] = Field(default_factory=list)
     pairs: list[KnowledgeInteractionAnnotationPair] = Field(min_length=1)
 
     @field_validator("document_id")
@@ -92,6 +93,18 @@ class KnowledgeInteractionDocumentAnnotation(BaseModel):
         if not normalized:
             raise ValueError("document_id는 비어 있을 수 없습니다.")
         return normalized
+
+    @field_validator("section_boundaries")
+    @classmethod
+    def normalize_section_boundaries(cls, values: list[str]) -> list[str]:
+        boundaries: list[str] = []
+        for value in values:
+            normalized = normalize_interaction_name(value)
+            if not normalized:
+                raise ValueError("상호작용 문서 경계는 비어 있을 수 없습니다.")
+            if normalized not in boundaries:
+                boundaries.append(normalized)
+        return boundaries
 
 
 class KnowledgeInteractionAnnotationManifest(BaseModel):
@@ -127,6 +140,11 @@ class KnowledgeInteractionAnnotationRegistry:
         manifest: KnowledgeInteractionAnnotationManifest,
     ) -> None:
         self._pairs_by_document = {document.document_id: document.pairs for document in manifest.documents}
+        self._section_boundaries_by_document = {
+            document.document_id: document.section_boundaries
+            for document in manifest.documents
+            if document.section_boundaries
+        }
 
     @classmethod
     def from_yaml(cls, path: Path) -> Self:
@@ -147,6 +165,10 @@ class KnowledgeInteractionAnnotationRegistry:
     def has_document_annotation(self, document_id: str) -> bool:
         """문서가 검수된 직접 상호작용 주석 범위에 속하는지 확인합니다."""
         return document_id in self._pairs_by_document
+
+    def section_boundaries(self, document_id: str) -> list[str]:
+        """검수된 문서에 한해 pair 범위를 보존할 분할 경계를 반환합니다."""
+        return list(self._section_boundaries_by_document.get(document_id, []))
 
     @staticmethod
     def _pair_key(

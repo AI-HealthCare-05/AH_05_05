@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from ai_worker.chains.interaction_evidence_reasoning_chain import (
@@ -69,6 +71,37 @@ async def test_chain_accepts_claims_backed_by_input_evidence_ids() -> None:
     assert len(observed_messages) == 2
     assert "역할(Role)" in observed_messages[0].content
     assert '"chunk:abc"' in observed_messages[1].content
+
+
+async def test_chain_times_out_when_evidence_reasoning_client_does_not_finish() -> None:
+    class SlowClient:
+        async def ainvoke(self, messages):
+            await asyncio.sleep(0.02)
+            return {
+                "reasoning_status": "SUPPORTED",
+                "interaction_decision": "INTERACTION_CONFIRMED",
+                "claims": [
+                    {
+                        "section_type": "INTERACTION",
+                        "pair_key": PAIR_KEY,
+                        "statement": "제시된 근거에서 두 성분의 관계가 확인됐습니다.",
+                        "evidence_ids": ["chunk:abc"],
+                        "scope_note": None,
+                    }
+                ],
+                "supported_action": None,
+                "missing_section_types": [],
+                "conflict_evidence_ids": [],
+            }
+
+    chain = build_interaction_evidence_reasoning_chain(
+        model="test-model",
+        client=SlowClient(),
+        timeout_seconds=0.001,
+    )
+
+    with pytest.raises(TimeoutError):
+        await chain.ainvoke(build_input())
 
 
 async def test_chain_rejects_claim_with_unknown_evidence_id() -> None:
@@ -162,6 +195,35 @@ async def test_chain_rejects_cross_pair_claim_when_both_pairs_are_requested() ->
 
     with pytest.raises(ValueError, match="claim pair_key"):
         await chain.ainvoke(EvidenceReasoningInput.model_validate(payload))
+
+
+async def test_chain_rejects_non_interaction_claim_for_interaction_reasoning() -> None:
+    class Client:
+        async def ainvoke(self, messages):
+            return {
+                "reasoning_status": "PARTIAL",
+                "interaction_decision": "NO_DIRECT_EVIDENCE",
+                "claims": [
+                    {
+                        "section_type": "CAUTION",
+                        "pair_key": None,
+                        "statement": "질문 조합과 관계없는 주의사항입니다.",
+                        "evidence_ids": ["chunk:abc"],
+                        "scope_note": None,
+                    }
+                ],
+                "supported_action": None,
+                "missing_section_types": ["INTERACTION"],
+                "conflict_evidence_ids": [],
+            }
+
+    chain = build_interaction_evidence_reasoning_chain(
+        model="test-model",
+        client=Client(),
+    )
+
+    with pytest.raises(ValueError, match="INTERACTION claim만"):
+        await chain.ainvoke(build_input())
 
 
 async def test_chain_rejects_supported_action_backed_by_wrong_pair() -> None:

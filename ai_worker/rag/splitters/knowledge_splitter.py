@@ -512,6 +512,7 @@ class KnowledgeSplitter:
             raise ValueError("tokenizer_encoding은 비어 있을 수 없습니다.")
         self._token_counter = token_counter or TiktokenTokenCounter(self._tokenizer_encoding)
         self._supplement_code_parser = SupplementCodeParser()
+        self._interaction_annotations = interaction_annotations
         self._entity_extractor = KnowledgeEntityExtractor(
             interaction_annotations=interaction_annotations,
         )
@@ -530,6 +531,11 @@ class KnowledgeSplitter:
             return []
 
         self._validate_single_document(pages)
+        metadata = pages[0].metadata
+        annotation_section_boundaries, section_headings = self._section_headings_for_document(
+            document_id=metadata.document_id,
+            verified_section_headings=verified_section_headings,
+        )
         if pages[0].metadata.document_id == _PRIMARY_CARE_HERB_DRUG_REVIEW_DOCUMENT_ID and any(
             page.blocks for page in pages
         ):
@@ -538,23 +544,23 @@ class KnowledgeSplitter:
             return self._repair_verified_document_chunks(
                 self._split_block_pages(
                     pages,
-                    verified_section_headings=verified_section_headings,
+                    verified_section_headings=section_headings,
                 )
             )
 
-        metadata = pages[0].metadata
         policy = _POLICIES[metadata.document_type]
         sections, page_ranges = self._split_sections(
             pages,
-            verified_section_headings=verified_section_headings,
+            verified_section_headings=section_headings,
         )
         sections = self._drop_publication_front_matter(
             sections,
             metadata.document_type,
         )
-        sections = self._merge_leading_context(
-            sections,
-            policy,
+        sections = self._merge_leading_context_unless_annotation_scoped(
+            sections=sections,
+            policy=policy,
+            annotation_section_boundaries=annotation_section_boundaries,
         )
         sections = self._merge_heading_only_sections(sections)
         chunks: list[KnowledgeChunk] = []
@@ -1972,6 +1978,27 @@ class KnowledgeSplitter:
                         table_sequences[table_group_id] = table_sequences.get(table_group_id, 0) + 1
         return chunks
 
+    def _section_headings_for_document(
+        self,
+        *,
+        document_id: str,
+        verified_section_headings: list[str] | None,
+    ) -> tuple[list[str], list[str]]:
+        annotation_section_boundaries = (
+            self._interaction_annotations.section_boundaries(document_id)
+            if self._interaction_annotations is not None
+            else []
+        )
+        section_headings = list(
+            dict.fromkeys(
+                [
+                    *(verified_section_headings or []),
+                    *annotation_section_boundaries,
+                ]
+            )
+        )
+        return annotation_section_boundaries, section_headings
+
     @staticmethod
     def _table_group_id(
         *,
@@ -2097,6 +2124,18 @@ class KnowledgeSplitter:
             }
         )
         return [merged, *sections[2:]]
+
+    def _merge_leading_context_unless_annotation_scoped(
+        self,
+        *,
+        sections: list[KnowledgeSection],
+        policy: ChunkingPolicy,
+        annotation_section_boundaries: list[str],
+    ) -> list[KnowledgeSection]:
+        """검수된 상호작용 소제목 사이의 pair 근거 혼합을 막습니다."""
+        if annotation_section_boundaries:
+            return sections
+        return self._merge_leading_context(sections, policy)
 
     @staticmethod
     def _merge_heading_only_sections(
