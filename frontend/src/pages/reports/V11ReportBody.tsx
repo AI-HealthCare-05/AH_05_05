@@ -1,7 +1,11 @@
 import { useId, useLayoutEffect, useRef, useState, type ReactElement } from 'react';
 import type { IntakeReport, NutrientTotal } from '@/entities/intake-report/types';
+import { NutrientTotals, type NutrientTotalDisplay } from '@/entities/supplement/ui/NutrientTotals';
+import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { safeLink } from './reportViewPrimitives';
 import './V11ReportBody.css';
+
+const reportValueFormat = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 });
 
 function decodeEntitiesOnce(text: string): string {
   if (typeof document === 'undefined' || !text.includes('&')) return text;
@@ -81,44 +85,36 @@ function ActionGroupedCards<T extends { action?: string | null }>({ cards, conte
     : renderCard(group.members[0].card, true, group.members[0].index))}</>;
 }
 
-const nutrientValueFormatter = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 10 });
-
 function nutrientNumber(value: string | null | undefined): number | null {
   if (value == null || value.trim() === '') return null;
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : null;
 }
 
-function NutrientBar({ item }: { item: NutrientTotal }) {
+function reportNutrientTotal(item: NutrientTotal, index: number): NutrientTotalDisplay {
   const amount = nutrientNumber(item.amount);
-  const reference = nutrientNumber(item.referenceValue) || null;
-  const suppliedUpper = nutrientNumber(item.upperLimitValue) || null;
+  const unit = item.unit?.trim() ?? '';
+  const reference = unit && (item.referenceKind === 'RNI' || item.referenceKind === 'AI')
+    ? nutrientNumber(item.referenceValue) || null : null;
+  const suppliedUpper = unit ? nutrientNumber(item.upperLimitValue) || null : null;
   const upper = suppliedUpper !== null && (reference === null || suppliedUpper >= reference) ? suppliedUpper : null;
-  const scale = upper ?? reference;
-  const comparable = amount !== null && scale !== null && Boolean(item.unit);
-  const position = (value: number) => Math.min(100, Math.max(0, value / (scale ?? 1) * 80));
-  const referencePosition = reference === null ? null : position(reference);
-  const closeLabels = upper !== null && referencePosition !== null && 80 - referencePosition < 20;
-  const overUpper = upper !== null && amount !== null && amount > upper;
-  const referenceLabel = item.referenceKind === 'AI' ? '충분' : item.referenceKind === 'RNI' ? '권장' : '기준';
-  const threshold = (kind: 'reference' | 'upper', value: number, left: number, label: string) => <div
-    data-threshold={kind}
-    className={`v11-range-label${closeLabels ? ` v11-range-label-close-${kind}` : ''}`}
-    style={{ left: `${Math.min(90, Math.max(8, left))}%` }}
-  ><span>{label}</span><span>{nutrientValueFormatter.format(value)}</span></div>;
-  return <article className="v11-nutrient">
-    <h3>{item.nutrientName}</h3>
-    <p className="v11-nutrient-amount">{amount === null ? '미확인' : item.amount}<span>{amount === null ? '' : item.unit}</span></p>
-    {comparable ? <div className={`v11-range${overUpper ? ' v11-range-over' : ''}`} role="img"
-      aria-label={`${item.nutrientName} 합계 ${item.amount}${item.unit}${reference === null ? '' : `, ${referenceLabel} ${item.referenceValue}${item.unit}`}${upper === null ? '' : `, 상한 ${item.upperLimitValue}${item.unit}`}${overUpper ? ', 상한 초과' : ''}`}>
-      <div className="v11-range-track"><span style={{ width: `${position(amount)}%` }} /></div>
-      {reference !== null && <><i className="v11-range-tick" data-range-tick="reference" style={{ left: `${referencePosition}%` }} />{threshold('reference', reference, referencePosition!, referenceLabel)}</>}
-      {upper !== null && <><i className="v11-range-tick" data-range-tick="upper" style={{ left: '80%' }} />{threshold('upper', upper, 80, '상한')}</>}
-      <i className="v11-range-dot" data-range-dot style={{ left: `${position(amount)}%` }} />
-    </div> : <p className="v11-reference">{amount === null ? '함량 또는 복용량을 확인할 수 없어 합계와 막대를 표시하지 않았어요.' : '비교 기준 없음 · 확인된 합계만 표시했어요.'}</p>}
-    {overUpper ? <p className="v11-range-warning">상한 초과</p> : null}
-    {comparable && upper === null ? <p className="v11-reference">{item.upperLimitNote || '상한 기준을 확인할 수 없어요.'}</p> : null}
-  </article>;
+  const note = amount === null
+    ? '함량 또는 복용량을 확인할 수 없어 합계와 막대를 표시하지 않았어요.'
+    : reference === null && upper === null
+      ? '비교 기준 없음 · 확인된 합계만 표시했어요.'
+      : upper === null ? item.upperLimitNote || '상한 기준을 확인할 수 없어요.' : undefined;
+  return {
+    nutrientId: `report-${index}`,
+    name: decodeEntitiesOnce(item.nutrientName),
+    amount,
+    unit,
+    rni: item.referenceKind === 'RNI' ? reference : null,
+    ai: item.referenceKind === 'AI' ? reference : null,
+    ul: upper,
+    exceeded: amount !== null && upper !== null && amount > upper,
+    sourceNames: [...new Set(item.includedProductNames.map(name => decodeEntitiesOnce(name).trim()).filter(Boolean))],
+    note,
+  };
 }
 
 function interactionLabel(evidenceLevel: string, actionLevel: 'WARNING' | 'CHECK' | 'INFORMATION') {
@@ -128,13 +124,16 @@ function interactionLabel(evidenceLevel: string, actionLevel: 'WARNING' | 'CHECK
   return '확인할 점';
 }
 
+function isRegisteredIntakeDetail(label: string): boolean {
+  return /(?:등록.*(?:복용|계획)|(?:복용|계획).*등록)/.test(label);
+}
+
 export function V11ReportBody({ report }: { report: IntakeReport }) {
   const cards = report.cards;
   if (!cards) return null;
   const medications = report.currentStack.filter(item => item.itemType === 'MEDICATION');
   const supplements = report.currentStack.filter(item => item.itemType === 'SUPPLEMENT');
   const nutrientTotals = report.nutrientTotals.filter(item => item.amount == null || item.amount.trim() === '' || Number(item.amount) !== 0);
-  const registeredByMedicationId = new Map(medications.map(item => [item.itemId, item.registeredIntakeInfo]));
   const sortedInteractions = cards.interactions.slice().sort((a, b) => Number(b.actionLevel === 'WARNING') - Number(a.actionLevel === 'WARNING'));
   const actualCounts = `등록한 복용약 ${report.dataAvailability.activeMedicationCount}종 · 영양제 ${report.dataAvailability.activeSupplementCount}종`;
 
@@ -153,7 +152,6 @@ export function V11ReportBody({ report }: { report: IntakeReport }) {
               {items.map(item => <li key={item.itemId}>
                 {decodeEntitiesOnce(item.productName)}
                 {item.itemType === 'SUPPLEMENT' ? <p className="v11-product-ingredients">{decodeEntitiesOnce(item.ingredientSummary?.trim() || '성분·함량 확인 필요')}</p> : null}
-                {item.itemType === 'SUPPLEMENT' ? <p className="v11-product-intake">사용자가 등록한 복용 정보 · {decodeEntitiesOnce(item.registeredIntakeInfo || '미등록')}</p> : null}
               </li>)}
             </ul> : <p className="v11-hint">등록된 제품 없음</p>}
           </div>)}
@@ -206,32 +204,32 @@ export function V11ReportBody({ report }: { report: IntakeReport }) {
           <li>음식과 의약품을 통한 섭취량은 포함되지 않아요.</li>
         </>}
       </ul>
-      <div className="v11-nutrient-grid">{nutrientTotals.map((item, index) => <NutrientBar key={`${item.nutrientName}-${index}`} item={item} />)}</div>
+      <NutrientTotals totals={nutrientTotals.map(reportNutrientTotal)} valueFormat={reportValueFormat} />
       <p className="v11-hint">영양제 합계 기준이며 식사는 제외됩니다. 상한은 섭취 목표가 아닙니다.</p>
     </section> : null}
 
     {cards.medications.length > 0 ? <section id="v11-medications" className="v11-card" aria-labelledby="v11-medications-title">
       <h2 id="v11-medications-title">약 정보</h2>
       {cards.medications.map(card => {
-        const registeredIntake = registeredByMedicationId.get(card.itemId)?.trim();
-        const includesRegisteredIntake = card.details.some(detail => /등록.*복용|복용.*등록/.test(detail.label));
         return <article className="v11-medicine" key={card.itemId}>
-          <h3>{card.productName}</h3>
-          {card.identityNotice ? <p className="v11-hint">{decodeEntitiesOnce(card.identityNotice)}</p> : null}
-          <dl>
-            <div><dt>효능</dt><dd>{decodeEntitiesOnce(card.efficacy.text)}</dd></div>
-          </dl>
-          <details>
-            <summary>약 정보 더 보기</summary>
+          <details className="v11-medicine-disclosure">
+            <summary className="v11-medicine-summary">
+              <h3>{decodeEntitiesOnce(card.productName)}</h3>
+              <span className="v11-medicine-toggle">
+                <span className="v11-medicine-open-label">상세 보기</span>
+                <span className="v11-medicine-close-label">접기</span>
+                <DrawnChevron className="v11-medicine-chevron" />
+              </span>
+            </summary>
+            {card.identityNotice ? <p className="v11-hint">{decodeEntitiesOnce(card.identityNotice)}</p> : null}
             <dl>
+              <div><dt>효능</dt><dd>{decodeEntitiesOnce(card.efficacy.text)}</dd></div>
               <div><dt>주의</dt><dd>{decodeEntitiesOnce(card.caution.text)}</dd></div>
               <div><dt>금기</dt><dd>{decodeEntitiesOnce(card.contraindication.text)}</dd></div>
             </dl>
-            {registeredIntake && !includesRegisteredIntake ? <div className="v11-extra"><strong>사용자가 등록한 복용 정보</strong><p>{registeredIntake}</p></div> : null}
-            {card.details.map((detail, index) => {
-              const isRegisteredDetail = /등록.*복용|복용.*등록/.test(detail.label);
-              return <div className="v11-extra" key={`${detail.label}-${index}`}><strong>{isRegisteredDetail ? '사용자가 등록한 복용 정보' : detail.label}</strong><p>{decodeEntitiesOnce(detail.text)}</p></div>;
-            })}
+            {card.details.filter(detail => !isRegisteredIntakeDetail(detail.label)).map((detail, index) =>
+              <div className="v11-extra" key={`${detail.label}-${index}`}><strong>{detail.label}</strong><p>{decodeEntitiesOnce(detail.text)}</p></div>
+            )}
           </details>
         </article>;
       })}

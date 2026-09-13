@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -347,6 +348,44 @@ def test_product_ingredient_summaries_use_each_registered_daily_dose_and_ignore_
         10: "식이섬유 3g · 칼슘 100mg · 비타민 A 700μg RAE · 베타카로틴 10μg · 티아민 0.5mg · 비타민 D 5μg",
         20: "식이섬유 12g · 칼슘 400mg · 비타민 A 2800μg RAE · 베타카로틴 40μg · 티아민 2mg · 비타민 D 20μg",
     }
+
+
+def test_product_ingredient_summary_rounds_to_two_places_without_rounding_totals() -> None:
+    product = _product(1, "구미", calcium=None, iron=None, vitamin_c="36", vitamin_d="5", serving_desc="3정")
+    product.thiamine_mg = "0.49"
+    product.riboflavin_mg = "0.63"
+    data = build_report_nutrient_data(
+        products=[product],
+        registrations=[_registration(1, dose="1", unit="정", registration_id=10)],
+        profile=None,
+        standards=[],
+        today=date(2026, 9, 12),
+    )
+    assert (
+        data.product_ingredient_summaries[10] == "티아민 0.16mg · 리보플라빈 0.21mg · 비타민 C 12mg · 비타민 D 1.67μg"
+    )
+    vitamin_d = next(total for total in data.totals if total.nutrient_name == "비타민 D")
+    assert vitamin_d.amount.startswith("1.666666")
+    assert vitamin_d.daily_total == "1.67 μg"
+
+
+@pytest.mark.parametrize(
+    ("amount", "display"), [("34.66666666666666666666666667", "34.67"), ("1.005", "1.01"), ("23.00", "23")]
+)
+def test_overlap_prose_uses_two_decimal_display_without_rounding_calculation(amount: str, display: str) -> None:
+    from ai_worker.reports.v11_cards import _overlap_cards
+
+    data = build_report_nutrient_data(
+        products=[_product(i, f"제품 {i}", calcium=None, iron=None, vitamin_c=None, vitamin_d=amount) for i in (1, 2)],
+        registrations=[_registration(i, dose="0.5") for i in (1, 2)],
+        profile=None,
+        standards=[],
+        today=date(2026, 9, 12),
+    )
+    total = data.totals[0]
+    assert total.daily_total == f"{display} μg"
+    assert Decimal(total.amount) == sum([Decimal(amount) * Decimal("0.5")] * 2)
+    assert f"확인된 합계는 {display} μg입니다." in _overlap_cards(data.totals)[0].summary
 
 
 def test_registered_ingredient_metadata_expands_totals_without_converting_vitamin_a_sources_or_niacin_ne() -> None:

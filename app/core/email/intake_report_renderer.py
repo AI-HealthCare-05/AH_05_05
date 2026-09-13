@@ -3,7 +3,7 @@
 import html
 import math
 import re
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation, localcontext
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -44,15 +44,6 @@ def _format_number(value: Decimal) -> str:
     return text.rstrip("0").rstrip(".") if "." in text else text
 
 
-def _intake(value: str) -> str:
-    # Only the registered dose's first number; never edit clinical instructions.
-    return re.sub(
-        r"^\s*(\d+\.\d+)(?=$|\s|정|캡슐|포|mg|ml|mL|g)",
-        lambda match: match[1].rstrip("0").rstrip("."),
-        value,
-    )
-
-
 def _safe_url(value: str | None) -> str | None:
     try:
         url = urlsplit(value or "")
@@ -78,9 +69,17 @@ def _groups(cards: list[dict[str, Any]], context_fields: tuple[str, ...]) -> lis
     return groups
 
 
-def _nutrient(item: dict[str, Any]) -> dict[str, Any]:
+def _is_registered_intake_detail(label: str) -> bool:
+    return bool(re.search(r"(?:등록.*(?:복용|계획)|(?:복용|계획).*등록)", label))
+
+
+def _nutrient(item: dict[str, Any], *, standalone: bool = False) -> dict[str, Any]:
     amount, reference, upper = (_number(item.get(key)) for key in ("amount", "reference_value", "upper_limit_value"))
     reference = reference or None
+    if standalone and (item.get("reference_kind") not in {"RNI", "AI"} or not item.get("unit")):
+        reference = None
+    if standalone and not item.get("unit"):
+        upper = None
     upper = upper if upper and (reference is None or upper >= reference) else None
     scale = upper or reference
     comparable = amount is not None and scale is not None and bool(item.get("unit"))
@@ -113,6 +112,52 @@ def _nutrient(item: dict[str, Any]) -> dict[str, Any]:
         ]
         result["fill"] = fill
         result["range_label"] = f"{item['nutrient_name']} 합계 {_format_number(amount)}{item['unit']}"
+    if standalone:
+
+        def display(value: Decimal | None) -> str | None:
+            if value is None:
+                return None
+            with localcontext() as context:
+                context.prec = max(28, value.adjusted() + 4)
+                return _format_number(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+        result.update(
+            display_amount=display(amount) if amount is not None else "미확인",
+            display_reference=display(reference),
+            display_upper=display(upper),
+        )
+        result["source_names"] = list(
+            dict.fromkeys(html.unescape(name).strip() for name in item["included_product_names"] if name.strip())
+        )
+        base_ratio = amount / reference if amount is not None and reference else None
+        result["status"] = (
+            "상한 초과"
+            if result["over_upper"]
+            else f"{'충분섭취량' if item.get('reference_kind') == 'AI' else '권장량'}의 {(base_ratio * 100).quantize(Decimal('1'), rounding=ROUND_HALF_UP):,}%예요"
+            if base_ratio is not None and (base_ratio < 1 or upper is None)
+            else "권장 범위예요"
+            if base_ratio is not None
+            else ""
+        )
+        result["color"] = (
+            "#d74444" if result["over_upper"] else "#f08035" if base_ratio is not None and base_ratio < 1 else "#007f79"
+        )
+        result["base_position"] = (
+            float(max(Decimal(4), min(Decimal(84), reference / upper * 88))) if reference and upper else 70
+        )
+        result["fill"] = (
+            100.0
+            if result["over_upper"]
+            else float(min(Decimal(100), amount / upper * 88))
+            if amount is not None and upper
+            else float(min(Decimal(100), base_ratio * 70))
+            if base_ratio is not None
+            else 0
+        )
+        result["sort_key"] = (
+            1 if result["over_upper"] else 2 if upper else 3 if reference else 4,
+            -float(amount / (upper or reference)) if amount is not None and (upper or reference) else 0,
+        )
     return result
 
 
@@ -154,24 +199,16 @@ class _EmailText(HTMLParser):
         return "\n".join(line for part in "".join(self.parts).splitlines() if (line := " ".join(part.split())))
 
 
-def render_intake_report_email(report: "IntakeReportResponse") -> tuple[str, str] | None:
+def render_intake_report_email(report: "IntakeReportResponse", *, standalone: bool = False) -> tuple[str, str] | None:
     if report.presentation_version != "ai-report-v11" or report.cards is None:
         return None
     data = report.model_dump(mode="json")
     cards = data["cards"]
     stack = data["current_stack"]
-    for item in stack:
-        item["registered_intake_info"] = _intake(item["registered_intake_info"])
     medications = [item for item in stack if item["item_type"] == "MEDICATION"]
     supplements = [item for item in stack if item["item_type"] == "SUPPLEMENT"]
-    registered = {item["item_id"]: item["registered_intake_info"] for item in medications}
     for card in cards["medications"]:
-        card["registered_intake"] = registered.get(card["item_id"])
-        for detail in card["details"]:
-            if re.search(r"등록.*복용|복용.*등록", detail["label"]):
-                card["registered_intake"] = None
-                detail["label"] = "사용자가 등록한 복용 정보"
-                detail["text"] = _intake(detail["text"])
+        card["details"] = [detail for detail in card["details"] if not _is_registered_intake_detail(detail["label"])]
     for card in cards["interactions"]:
         card["label"] = (
             "공개 안내 · 개인 조합 확인 필요"
@@ -181,9 +218,20 @@ def render_intake_report_email(report: "IntakeReportResponse") -> tuple[str, str
     for source in cards["sources"]:
         source["safe_url"] = _safe_url(source.get("url"))
         source["evidence_label"] = _EVIDENCE_LABELS.get(source["evidence_level"], "근거 수준 미확인")
-    nutrients = [_nutrient(item) for item in data["nutrient_totals"] if _number(item.get("amount")) != 0]
+    nutrients = [
+        _nutrient(item, standalone=standalone) for item in data["nutrient_totals"] if _number(item.get("amount")) != 0
+    ]
+    if standalone:
+        nutrients.sort(
+            key=lambda item: (
+                item["unknown"],
+                item["sort_key"],
+                item["nutrient_name"] if item["sort_key"][0] == 4 else "",
+            )
+        )
     markup = _TEMPLATES.get_template("emails/intake_report_cards.html").render(
         report=data,
+        standalone=standalone,
         cards=cards,
         medications=medications,
         supplements=supplements,

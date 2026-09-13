@@ -131,7 +131,7 @@ def test_invalid_or_lower_than_reference_upper_limit_is_not_exposed(upper_limit:
 
 
 def test_noncomparable_forms_never_fabricate_upper_limits() -> None:
-    """Would fail if vitamin A RAE, retinol, beta-carotene, or niacin is compared to a guessed UL."""
+    """Vitamin A total uses the catalog UL; separate forms never receive guessed limits."""
     data = _build(
         products=[
             _product(
@@ -153,8 +153,22 @@ def test_noncomparable_forms_never_fabricate_upper_limits() -> None:
     )
     totals = {total.nutrient_name: total for total in data.totals}
 
-    assert totals["비타민 A"].upper_limit_value is None
-    assert totals["비타민 A"].upper_limit_note == "성분 형태별 상한 기준이 달라 비교하지 않았어요."
+    assert totals["비타민 A"].amount == "700"
+    assert totals["비타민 A"].upper_limit_value == "3000"
+    assert totals["비타민 A"].upper_limit_note is None
     for name in ("레티놀", "베타카로틴", "나이아신", "칼륨"):
         assert totals[name].upper_limit_value is None
         assert totals[name].upper_limit_note == "상한 기준을 확인할 수 없어요."
+
+
+@pytest.mark.parametrize("upper_limit", ["2800", "3000", None, "0", "NaN", "600"])
+def test_vitamin_a_total_uses_selected_upper_limit_without_a_form_exception(upper_limit: str | None) -> None:
+    data = _build(
+        products=[_product(1, vitamin_a_ug_rae="2600"), _product(2, vitamin_a_ug_rae="600")],
+        standard=_standard(vitamin_a_ug_rae_rni="800", vitamin_a_ug_rae_ul=upper_limit),
+    )
+    total = next(total for total in data.totals if total.nutrient_name == "비타민 A")
+    response = IntakeReportNutrientTotalResponse.from_schema(total).model_dump(by_alias=True)
+    assert response["amount"] == "3200"
+    assert response["referenceValue"] == "800"
+    assert response["upperLimitValue"] == (upper_limit if upper_limit in ("2800", "3000") else None)

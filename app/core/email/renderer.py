@@ -1,12 +1,15 @@
+import base64
 import html
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app.core.email.markdown_renderer import render_safe_markdown
 from app.core.email.payload import EmailJobPayload, EmailTemplate
-from app.core.email.smtp_sender import EmailMessage, InlineAttachment
+from app.core.email.report_attachment import encrypt_report_html
+from app.core.email.smtp_sender import Attachment, EmailMessage, InlineAttachment
 
 ADMIN_TEMPORARY_PASSWORD_SUBJECT = "RxVita 관리자 임시비밀번호"
 USER_PASSWORD_RESET_SUBJECT = "RxVita 비밀번호 재설정"
@@ -62,20 +65,41 @@ class EmailTemplateRenderer:
                 inline_attachments=(self._logo_attachment(),),
             )
         if payload.template is EmailTemplate.INTAKE_REPORT:
+            if payload.report_birth_date is None:
+                raise ValueError("보고서 첨부파일 비밀번호에 사용할 생년월일이 없습니다.")
             template = self._environment.get_template("emails/intake_report.html")
             report_markdown = payload.report_markdown or ""
+            sent_at = datetime.now(ZoneInfo("Asia/Seoul"))
+            report_html = payload.report_html or (
+                '<!doctype html><html lang="ko"><meta charset="utf-8">'
+                '<meta name="viewport" content="width=device-width,initial-scale=1">'
+                '<body style="font-family:system-ui;max-width:900px;margin:24px auto;padding:16px;line-height:1.8">'
+                f"{render_safe_markdown(report_markdown)}</body></html>"
+            )
+            logo = "data:image/png;base64," + base64.b64encode(LOGO_PATH.read_bytes()).decode("ascii")
+            report_html = report_html.replace("cid:rxvita-logo", logo)
+            recipient = payload.recipient_name or "회원"
+            instructions = (
+                f"{recipient}님의 RxVita AI 보고서입니다.\n\n"
+                "첨부파일을 내려받아 브라우저에서 열어 주세요.\n"
+                "비밀번호는 회원정보에 등록된 생년월일 6자리(YYMMDD)입니다.\n\n"
+                "메일 앱의 미리보기에서는 열리지 않을 수 있습니다.\n"
+                "개인 건강정보가 포함되어 있으니 첨부파일을 안전하게 보관해 주세요."
+            )
             return EmailMessage(
                 to=str(payload.recipient_email),
-                # Keep each report out of older Gmail conversations, where
-                # repeated clinical text can otherwise be hidden as quoted text.
-                subject=f"{INTAKE_REPORT_SUBJECT} · {payload.report_id}",
-                text_body=report_markdown
-                if payload.report_html is not None
-                else self._intake_report_plain_text(report_markdown),
-                html_body=payload.report_html
-                if payload.report_html is not None
-                else template.render(report_html=render_safe_markdown(report_markdown)),
+                # Display the Korean send time to the minute, without an internal report ID.
+                subject=f"{INTAKE_REPORT_SUBJECT} · {sent_at:%Y-%m-%d %H:%M}",
+                text_body=instructions,
+                html_body=template.render(recipient_name=recipient),
                 inline_attachments=(self._logo_attachment(),),
+                attachments=(
+                    Attachment(
+                        filename=f"RxVita_AI_Report_{sent_at:%Y%m%d_%H%M}.html",
+                        content_type="text/html",
+                        data=encrypt_report_html(report_html, payload.report_birth_date),
+                    ),
+                ),
             )
         raise ValueError("지원하지 않는 이메일 템플릿입니다.")
 
