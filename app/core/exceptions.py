@@ -50,6 +50,12 @@ class CommonCodeAlreadyExistsError(AppError):
     message = "이미 등록된 공통코드입니다."
 
 
+class CommonCodeGroupInUseError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "COMMON_CODE_GROUP_IN_USE"
+    message = "사용 중인 공통코드 그룹은 삭제할 수 없습니다."
+
+
 class InvalidCommonCodeError(AppError):
     status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
     code = "INVALID_COMMON_CODE"

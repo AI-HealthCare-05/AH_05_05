@@ -1,7 +1,11 @@
 from starlette import status
 from tortoise.contrib.test import TestCase
 
+from app.models.challenges import Badge
+from app.models.chat import ChatSession
+from app.models.common_codes import CommonCode, CommonCodeGroup
 from app.models.enums import AdminRole
+from app.models.users import User
 from app.tests.admin_apis.conftest import auth_header, create_admin, request
 
 GROUP_URL = "/api/v1/admin/common-code-groups"
@@ -91,3 +95,57 @@ class TestAdminCommonCodeAPI(TestCase):
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["total_count"] == 1
         assert [item["group_code"] for item in response.json()["items"]] == ["P_REASON"]
+
+    async def test_unused_group_is_deletable_and_delete_removes_its_detail_codes(self) -> None:
+        group = await CommonCodeGroup.create(category="TEST", group_code="UNUSED", group_name="미사용")
+        code = await CommonCode.create(group=group, detail_code="A", detail_name="코드 A")
+
+        listed = await request("GET", GROUP_URL, headers=self.admin_headers)
+        item = next(item for item in listed.json()["items"] if item["id"] == group.id)
+        deleted = await request("DELETE", f"{GROUP_URL}/{group.id}", headers=self.admin_headers)
+
+        assert item["can_delete"] is True
+        assert deleted.status_code == status.HTTP_204_NO_CONTENT, deleted.text
+        assert await CommonCodeGroup.filter(id=group.id).exists() is False
+        assert await CommonCode.filter(id=code.id).exists() is False
+
+    async def test_group_referenced_by_badge_is_not_deletable(self) -> None:
+        group = await CommonCodeGroup.create(category="CHL", group_code="BDG_TYPE", group_name="배지 유형")
+        code = await CommonCode.create(group=group, detail_code="OFFICIAL", detail_name="공식")
+        await Badge.create(name="참조 배지", image_path="media/badges/test.png", type=code)
+
+        listed = await request("GET", GROUP_URL, headers=self.admin_headers)
+        item = next(item for item in listed.json()["items"] if item["id"] == group.id)
+        deleted = await request("DELETE", f"{GROUP_URL}/{group.id}", headers=self.admin_headers)
+
+        assert item["can_delete"] is False
+        assert deleted.status_code == status.HTTP_409_CONFLICT
+        assert deleted.json() == {
+            "code": "COMMON_CODE_GROUP_IN_USE",
+            "message": "사용 중인 공통코드 그룹은 삭제할 수 없습니다.",
+        }
+        assert await CommonCodeGroup.filter(id=group.id).exists() is True
+        assert await CommonCode.filter(id=code.id).exists() is True
+
+    async def test_chat_feedback_reason_makes_reason_group_not_deletable(self) -> None:
+        group = await CommonCodeGroup.create(category="CHAT", group_code="P_REASON", group_name="긍정 사유")
+        await CommonCode.create(group=group, detail_code="HELPFUL", detail_name="도움됨")
+        user = await User.create(
+            email="feedback-user@example.com",
+            hashed_password="hashed-password",
+            name="평가 사용자",
+        )
+        await ChatSession.create(user=user, is_like=True, reason_code="HELPFUL")
+
+        listed = await request("GET", GROUP_URL, headers=self.admin_headers)
+        item = next(item for item in listed.json()["items"] if item["id"] == group.id)
+
+        assert item["can_delete"] is False
+
+    async def test_staff_cannot_delete_unused_group(self) -> None:
+        group = await CommonCodeGroup.create(category="TEST", group_code="STAFF_DELETE", group_name="권한 확인")
+
+        response = await request("DELETE", f"{GROUP_URL}/{group.id}", headers=self.staff_headers)
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert await CommonCodeGroup.filter(id=group.id).exists() is True
