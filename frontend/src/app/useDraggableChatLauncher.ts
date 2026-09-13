@@ -140,6 +140,7 @@ function positionForPreference(
 export function useDraggableChatLauncher(pathname: string, onActivate: () => void) {
   const launcherRef = useRef<HTMLButtonElement>(null);
   const preferredRef = useRef<LauncherPreference | null>(null);
+  const preferenceInitializedRef = useRef(false);
   const gestureRef = useRef<PointerGesture | null>(null);
   const suppressPointerClickRef = useRef(false);
   const frameRef = useRef<number | null>(null);
@@ -165,7 +166,7 @@ export function useDraggableChatLauncher(pathname: string, onActivate: () => voi
     const gesture = gestureRef.current;
     if (!gesture) return;
     gestureRef.current = null;
-    suppressPointerClickRef.current = gesture.dragging;
+    suppressPointerClickRef.current = true;
     setDragging(false);
     setPosition(gesture.initialPosition);
     const launcher = launcherRef.current;
@@ -180,10 +181,11 @@ export function useDraggableChatLauncher(pathname: string, onActivate: () => voi
 
   useLayoutEffect(() => {
     const launcher = launcherRef.current;
-    if (!launcher) return;
+    if (!launcher || preferenceInitializedRef.current) return;
+    preferenceInitializedRef.current = true;
     preferredRef.current = readPreferredPosition(launcher);
     applyPreferredPosition();
-  }, [applyPreferredPosition]);
+  }, [applyPreferredPosition, pathname]);
 
   useLayoutEffect(() => {
     abortGesture();

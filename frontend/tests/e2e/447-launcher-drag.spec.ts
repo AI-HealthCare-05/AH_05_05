@@ -215,6 +215,24 @@ test('a legacy valid free position is converted once to its nearest edge and kee
     .toEqual({ edge: 'left', top: 240 });
 });
 
+test('a saved edge initializes when SPA navigation first reveals the launcher', async ({ page }) => {
+  await page.addInitScript(({ key }) => {
+    localStorage.setItem(key, JSON.stringify({ edge: 'left', top: 240 }));
+  }, { key: launcherPositionKey });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/tutorial', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('button', { name: '챗봇', exact: true })).toHaveCount(0);
+
+  await page.getByRole('button', { name: '건너뛰기', exact: true }).click();
+  await expect(page).toHaveURL(/\/home$/);
+  const launcher = page.getByRole('button', { name: '챗봇', exact: true });
+  await expect(launcher).toBeVisible();
+  await page.mouse.move(8, 8);
+  const restored = (await launcher.boundingBox())!;
+  expect(restored.x).toBeCloseTo(16, 0);
+  expect(restored.y).toBeCloseTo(240, 0);
+});
+
 test('under-threshold pointer movement and keyboard Enter/Space keep the guest action while drag suppresses only its generated click', async ({ page }) => {
   await page.goto('/home', { waitUntil: 'domcontentloaded' });
   const launcher = page.getByRole('button', { name: '챗봇', exact: true });
@@ -364,6 +382,70 @@ test('lost pointer capture aborts an active drag and secondary mouse input is ig
   const afterSecondary = (await launcher.boundingBox())!;
   expect(afterSecondary.x).toBeCloseTo(aborted.x, 0);
   expect(afterSecondary.y).toBeCloseTo(aborted.y, 0);
+  expect(await page.evaluate((key) => localStorage.getItem(key), launcherPositionKey)).toBeNull();
+});
+
+test('under-threshold lost capture suppresses its trailing click, then fresh pointer and keyboard actions work', async ({ page }) => {
+  await page.goto('/home', { waitUntil: 'domcontentloaded' });
+  const launcher = page.getByRole('button', { name: '챗봇', exact: true });
+  await launcher.evaluate((element) => {
+    element.addEventListener('pointerdown', event => {
+      (window as Window & { __launcherPointerId?: number }).__launcherPointerId = event.pointerId;
+    });
+  });
+  const start = (await launcher.boundingBox())!;
+  await page.mouse.move(start.x + 30, start.y + 30);
+  await page.mouse.down();
+  await page.mouse.move(start.x + 34, start.y + 30);
+  await launcher.evaluate((element) => {
+    const pointerId = (window as Window & { __launcherPointerId?: number }).__launcherPointerId;
+    if (pointerId !== undefined) element.releasePointerCapture(pointerId);
+  });
+  await page.mouse.up();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page).toHaveURL(/\/home$/);
+  expect(await page.evaluate((key) => localStorage.getItem(key), launcherPositionKey)).toBeNull();
+
+  await launcher.click();
+  await dismissGuestPrompt(page);
+  await launcher.focus();
+  await page.keyboard.press('Enter');
+  await dismissGuestPrompt(page);
+});
+
+test('an in-memory snapped preference survives SPA route changes when storage writes are denied', async ({ page }) => {
+  await page.addInitScript((key) => {
+    const original = Storage.prototype.setItem;
+    Object.defineProperty(Storage.prototype, 'setItem', {
+      configurable: true,
+      value(this: Storage, storageKey: string, value: string) {
+        if (storageKey === key) throw new DOMException('blocked', 'SecurityError');
+        return original.call(this, storageKey, value);
+      },
+    });
+  }, launcherPositionKey);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/home', { waitUntil: 'domcontentloaded' });
+  let launcher = page.getByRole('button', { name: '챗봇', exact: true });
+  await dragLauncher(page, launcher, { x: 300, y: 330 });
+  await page.mouse.move(8, 8);
+  const chosen = (await launcher.boundingBox())!;
+  expect(chosen.x + chosen.width).toBeCloseTo(374, 0);
+  expect(await page.evaluate((key) => localStorage.getItem(key), launcherPositionKey)).toBeNull();
+
+  await page.evaluate(() => {
+    history.pushState(null, '', '/login');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(launcher).toHaveCount(0);
+  await page.evaluate(() => history.back());
+  await expect(page).toHaveURL(/\/home$/);
+  launcher = page.getByRole('button', { name: '챗봇', exact: true });
+  await page.mouse.move(8, 8);
+  const restored = (await launcher.boundingBox())!;
+  expect(restored.x).toBeCloseTo(chosen.x, 0);
+  expect(restored.y).toBeCloseTo(chosen.y, 0);
   expect(await page.evaluate((key) => localStorage.getItem(key), launcherPositionKey)).toBeNull();
 });
 
