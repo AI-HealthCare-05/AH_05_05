@@ -16,6 +16,7 @@ import {
   type OcrResult,
 } from '@/entities/document';
 import type { EditableOcrMedication } from '@/entities/document/types';
+import { isReadyForMedicationRegistration } from '@/entities/document/medicationRegistrationValidation';
 import {
   Button,
   Card,
@@ -373,7 +374,16 @@ export function OcrReviewPage() {
 
   const maxDispensedDate = seoulDateISO(31);
   const dispensedDateTooLate = dispensedDate > maxDispensedDate;
-  const canSave = Boolean(dispensedDate) && !dispensedDateTooLate && !saving && !retaking;
+  const confirmedMedications = medications.filter(isReadyForMedicationRegistration);
+  const medicationsMissingRequiredIntake = medications.filter(
+    (medication) => !isReadyForMedicationRegistration(medication),
+  );
+  const canSave =
+    Boolean(dispensedDate) &&
+    !dispensedDateTooLate &&
+    confirmedMedications.length === medications.length &&
+    !saving &&
+    !retaking;
 
   async function retakePhoto() {
     if (saving || retaking) return;
@@ -450,7 +460,7 @@ export function OcrReviewPage() {
         !(result.ocrStatus === 'failed' && dismissedOcrFailure) &&
         !(registrationEditMode && result.ocrStatus === 'complete')) ||
       !batchId ||
-      !dispensedDate
+      !canSave
     ) {
       return;
     }
@@ -462,15 +472,13 @@ export function OcrReviewPage() {
         {
           ...(hospitalName.trim() ? { hospitalName: hospitalName.trim() } : {}),
           dispensedDate,
-          medications: medications.map((medication) => ({
+          medications: confirmedMedications.map((medication) => ({
             tempId: medication.tempId,
             name: medication.name,
             ...(medication.strength ? { strength: medication.strength } : {}),
             ...(medication.doseQuantity ? { doseQuantity: medication.doseQuantity } : {}),
-            ...(medication.timesPerDay !== undefined
-              ? { timesPerDay: medication.timesPerDay }
-              : {}),
-            ...(medication.days !== undefined ? { days: medication.days } : {}),
+            timesPerDay: medication.timesPerDay,
+            days: medication.days,
           })),
           alias: episodeAlias.trim() || null,
         },
@@ -825,6 +833,15 @@ export function OcrReviewPage() {
             />
           ))}
         </section>
+
+        {!confirmedReviewMode && medicationsMissingRequiredIntake.length > 0 && (
+          <div role="alert">
+            <Card tone="warning" title="복약 정보를 더 입력해주세요">
+              <p>약을 수정해 약품명, 복용 일수와 1일 복용 횟수를 모두 입력해주세요. 필요 시 복용이면 필요 시를 선택할 수 있어요.</p>
+              <p className="mt-1">수정 필요: {medicationsMissingRequiredIntake.map((medication) => medication.name || '약품명 미입력').join(', ')}</p>
+            </Card>
+          </div>
+        )}
 
         <p className="text-sm text-muted-foreground">
           {confirmedReviewMode

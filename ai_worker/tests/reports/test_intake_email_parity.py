@@ -211,6 +211,30 @@ def test_email_html_survives_encrypted_snapshot_and_worker_renderer():
     assert len(message.inline_attachments) == 1
 
 
+def test_separate_reports_have_distinct_subjects_without_altering_html():
+    from app.core.email.intake_report_renderer import render_intake_report_email
+    from app.core.email.payload import EmailJobPayload, EmailTemplate
+    from app.core.email.renderer import EmailTemplateRenderer
+
+    markup, plain = render_intake_report_email(sample_email_report())
+    renderer = EmailTemplateRenderer()
+    messages = [
+        renderer.render(
+            EmailJobPayload(
+                template=EmailTemplate.INTAKE_REPORT,
+                recipient_email="owner@example.org",
+                report_id=report_id,
+                report_markdown=plain,
+                report_html=markup,
+            )
+        )
+        for report_id in ["report-one", "report-two", "report-one"]
+    ]
+    assert messages[0].subject != messages[1].subject
+    assert messages[0].subject == messages[2].subject
+    assert all(message.html_body == markup and message.text_body == plain for message in messages)
+
+
 @pytest.mark.parametrize("upper", [None, "0", "NaN", "500"])
 def test_email_does_not_invent_an_invalid_upper_limit(upper):
     from app.core.email.intake_report_renderer import render_intake_report_email

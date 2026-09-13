@@ -81,7 +81,7 @@ def confirm_request(
                 "days": 5,
             },
             {"tempId": "user-2", "name": "추가한 약품", "timesPerDay": 1, "days": 3},
-            {"tempId": "user-3", "name": "필요 시 약품", "timesPerDay": None},
+            {"tempId": "user-3", "name": "필요 시 약품", "timesPerDay": None, "days": 3},
         ],
     }
     if alias is not None:
@@ -1616,6 +1616,7 @@ class TestMedicationGuideOcrJobService(TestCase):
                         "tempId": "user-1",
                         "name": "사용자 추가 필요 시 약",
                         "timesPerDay": None,
+                        "days": 3,
                     }
                 ],
             }

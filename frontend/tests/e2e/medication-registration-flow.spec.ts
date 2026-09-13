@@ -63,12 +63,15 @@ const readyOcrResult = {
       name: '아세트아미노펜',
       strength: '650mg',
       doseQuantity: '1정',
+      timesPerDay: 1,
       days: 7,
       confidence: 'high',
     },
     {
       tempId: 'm4',
       name: ' 파모티딘 원문 ',
+      timesPerDay: 1,
+      days: 7,
       confidence: 'high',
     },
   ],
@@ -638,6 +641,98 @@ test('OCR 검토의 직접 추가 버튼과 입력 제한을 간결하게 표시
   await days.fill('365');
   await expect(days).toHaveValue('365');
 });
+
+test('직접 추가는 복용 일수와 횟수를 요구하고 필요 시를 허용한다', async ({ page }) => {
+  await authenticate(page);
+  await page.route('**/api/v1/ocr/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path === '/api/v1/ocr/jobs/b_mock_9f21') {
+      await fulfillJson(route, { ...readyOcrResult, batchId: 'b_mock_9f21' });
+      return;
+    }
+    if (
+      request.method() === 'GET' &&
+      (path === '/api/v1/ocr/jobs/b_mock_9f21/processed-image' ||
+        path === '/api/v1/ocr/jobs/b_mock_9f21/image')
+    ) {
+      await route.fulfill({ status: 200, contentType: 'image/png', body: ONE_PIXEL_PNG });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto('/dev/ocr-review');
+  await page.getByRole('button', { name: '직접 추가', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '약 추가' });
+  const save = dialog.getByRole('button', { name: '저장', exact: true });
+
+  await dialog.getByLabel('약품명').fill('직접 추가 약');
+  await expect(save).toBeDisabled();
+  await dialog.getByLabel('복용 일수').fill('7');
+  await expect(save).toBeDisabled();
+
+  await dialog.getByRole('combobox').click();
+  await page.getByRole('option', { name: '6회', exact: true }).click();
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(page.getByRole('article', { name: '직접 추가 약', exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: '직접 추가 약 수정', exact: true }).click();
+  const editDialog = page.getByRole('dialog', { name: '직접 추가 약 수정' });
+  await editDialog.getByRole('combobox').click();
+  await page.getByRole('option', { name: '필요 시', exact: true }).click();
+  await expect(editDialog.getByRole('button', { name: '저장', exact: true })).toBeEnabled();
+});
+
+for (const width of [375, 1280]) {
+  test(`OCR 미추출 복용 정보는 낮은 신뢰도 확인으로도 확정할 수 없다 (${width}px)`, async ({ page }, testInfo) => {
+    await authenticate(page);
+    let patchCount = 0;
+    await page.route('**/api/v1/ocr/**', async (route) => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      if (request.method() === 'PATCH' && path === '/api/v1/ocr/jobs/b_mock_9f21') {
+        patchCount += 1;
+        await fulfillJson(route, { recordId: 315, hasMedication: true, statusCode: 'active' });
+        return;
+      }
+      if (request.method() === 'GET' && path === '/api/v1/ocr/jobs/b_mock_9f21') {
+        await fulfillJson(route, {
+          batchId: 'b_mock_9f21',
+          ocrStatus: 'ready_for_review',
+          documentImageUrl: '',
+          fields: {
+            dispensedDate: { value: '2026-08-22', confidence: 'high' },
+          },
+          medications: [
+            { tempId: 'missing-intake', name: '미추출 복용약', confidence: 'low' },
+          ],
+          lowConfidenceCount: 1,
+        });
+        return;
+      }
+      if (
+        request.method() === 'GET' &&
+        (path === '/api/v1/ocr/jobs/b_mock_9f21/processed-image' ||
+          path === '/api/v1/ocr/jobs/b_mock_9f21/image')
+      ) {
+        await route.fulfill({ status: 200, contentType: 'image/png', body: ONE_PIXEL_PNG });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/ocr-review?batchId=b_mock_9f21');
+
+    await expect(page.getByRole('alert')).toContainText('복용 일수와 1일 복용 횟수를 모두 입력해주세요.');
+    await expect(page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true })).toBeDisabled();
+    await expect(page.getByRole('dialog', { name: '확인이 필요한 항목을 모두 보셨나요?' })).toHaveCount(0);
+    expect(patchCount).toBe(0);
+    await page.screenshot({ path: testInfo.outputPath(`ocr-missing-intake-${width}.png`), fullPage: true });
+  });
+}
 
 test('OCR 결과를 확정하면 해당 복약 시간 설정 화면으로 이동한다', async ({ page }) => {
   await authenticate(page);
@@ -1414,6 +1509,9 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
   await addDialog.getByLabel('약품명').fill('새 약');
   await addDialog.getByLabel('함량').fill('500mg');
   await addDialog.getByLabel('1회 투약량').fill('1캡슐');
+  await addDialog.getByLabel('복용 일수').fill('7');
+  await addDialog.getByRole('combobox').click();
+  await page.getByRole('option', { name: '2회', exact: true }).click();
   await addDialog.getByRole('button', { name: '저장', exact: true }).click();
   await expect(page.getByRole('heading', { name: '약 5개' })).toBeVisible();
 
@@ -1475,12 +1573,14 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
         days: 7,
       },
       { tempId: 'm3', name: '아세트아미노펜', strength: '650mg', doseQuantity: '1정', timesPerDay: null, days: 7 },
-      { tempId: 'm4', name: ' 파모티딘 원문 ', doseQuantity: '0.75' },
+      { tempId: 'm4', name: ' 파모티딘 원문 ', doseQuantity: '0.75', timesPerDay: 1, days: 7 },
       {
         tempId: expect.stringMatching(/^new_/),
         name: '새 약',
         strength: '500mg',
         doseQuantity: '1캡슐',
+        timesPerDay: 2,
+        days: 7,
       },
     ]),
   );
@@ -2480,6 +2580,9 @@ test('이미 완료되었거나 실패한 문서 OCR 상태를 기존 화면으�
   await page.getByRole('button', { name: '직접 추가', exact: true }).click();
   const medicationDialog = page.getByRole('dialog', { name: '약 추가' });
   await medicationDialog.getByLabel('약품명').fill('직접입력약');
+  await medicationDialog.getByLabel('복용 일수').fill('7');
+  await medicationDialog.getByRole('combobox').click();
+  await page.getByRole('option', { name: '1회', exact: true }).click();
   await medicationDialog.getByRole('button', { name: '저장', exact: true }).click();
   await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
   await expect(page).toHaveURL('/medication-schedule?recordId=315&ocrJobId=b_mock_9f21&flow=registration');

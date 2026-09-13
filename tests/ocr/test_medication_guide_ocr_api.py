@@ -598,6 +598,67 @@ async def test_document_ocr_omits_confidence_for_a_user_added_completed_medicati
     assert "confidence" not in medications[1]
 
 
+@pytest.mark.parametrize("registration_edit", [False, True])
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("name", "   "),
+        ("doseQuantity", None),
+        ("doseQuantity", "   "),
+        ("timesPerDay", "missing"),
+        ("timesPerDay", 0),
+        ("timesPerDay", 1.5),
+        ("days", "missing"),
+        ("days", None),
+        ("days", 0),
+        ("days", 366),
+        ("days", 1.5),
+    ],
+)
+async def test_document_confirmation_blocks_incomplete_intake_before_persistence(
+    field, value, registration_edit
+) -> None:
+    service = FakeJobService()
+    install_overrides(service)
+    medication = {"tempId": "med-1", "name": "테스트약", "doseQuantity": "0.5정", "timesPerDay": 2, "days": 7}
+    if value == "missing":
+        medication.pop(field)
+    else:
+        medication[field] = value
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.patch(
+                f"/api/v1/ocr/jobs/42?registrationEdit={str(registration_edit).lower()}",
+                json={"dispensedDate": "2026-08-25", "medications": [medication]},
+            )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 422
+    assert service.confirmations == []
+
+
+async def test_document_confirmation_preserves_explicit_prn_and_optional_dose_and_strength() -> None:
+    service = FakeJobService()
+    install_overrides(service)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.patch(
+                "/api/v1/ocr/jobs/42",
+                json={
+                    "dispensedDate": "2026-08-25",
+                    "medications": [{"tempId": "med-1", "name": "테스트약", "timesPerDay": None, "days": 7}],
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200
+    medication = service.confirmations[0][1].medications[0]
+    assert medication.times_per_day is None
+    assert medication.days == 7
+    assert "dose_quantity" not in medication.model_fields_set
+    assert "strength" not in medication.model_fields_set
+
+
 async def test_document_ocr_confirmation_adapts_the_public_body_to_the_job_service() -> None:
     service = PublicOcrFakeJobService(OcrJobStatusResponse(ocr_job_id="42", status=OcrJobStatus.READY_FOR_REVIEW))
     install_overrides(service)
@@ -640,21 +701,25 @@ async def test_document_confirmation_rejects_confidence_and_removed_clinical_fie
                 "/api/v1/ocr/jobs/42",
                 json={
                     "dispensedDate": "2026-08-25",
-                    "medications": [{"tempId": "med-1", "name": "약", "confidence": "high"}],
+                    "medications": [
+                        {"tempId": "med-1", "name": "약", "timesPerDay": 1, "days": 7, "confidence": "high"}
+                    ],
                 },
             )
             clinical = await client.patch(
                 "/api/v1/ocr/jobs/42",
                 json={
                     "dispensedDate": "2026-08-25",
-                    "medications": [{"tempId": "med-1", "name": "약", "efficacy": "효능"}],
+                    "medications": [{"tempId": "med-1", "name": "약", "timesPerDay": 1, "days": 7, "efficacy": "효능"}],
                 },
             )
             legacy_dose_object = await client.patch(
                 "/api/v1/ocr/jobs/42",
                 json={
                     "dispensedDate": "2026-08-25",
-                    "medications": [{"tempId": "med-1", "name": "약", "doseQuantity": {"value": 1}}],
+                    "medications": [
+                        {"tempId": "med-1", "name": "약", "timesPerDay": 1, "days": 7, "doseQuantity": {"value": 1}}
+                    ],
                 },
             )
     finally:
@@ -674,21 +739,25 @@ async def test_document_confirmation_enforces_public_text_lengths() -> None:
                 "/api/v1/ocr/jobs/42",
                 json={
                     "dispensedDate": "2026-08-25",
-                    "medications": [{"tempId": "med-1", "name": "약" * 101}],
+                    "medications": [{"tempId": "med-1", "name": "약" * 101, "timesPerDay": 1, "days": 7}],
                 },
             )
             too_long_strength = await client.patch(
                 "/api/v1/ocr/jobs/42",
                 json={
                     "dispensedDate": "2026-08-25",
-                    "medications": [{"tempId": "med-1", "name": "약", "strength": "1" * 51}],
+                    "medications": [
+                        {"tempId": "med-1", "name": "약", "timesPerDay": 1, "days": 7, "strength": "1" * 51}
+                    ],
                 },
             )
             too_long_dose_quantity = await client.patch(
                 "/api/v1/ocr/jobs/42",
                 json={
                     "dispensedDate": "2026-08-25",
-                    "medications": [{"tempId": "med-1", "name": "약", "doseQuantity": "1" * 51}],
+                    "medications": [
+                        {"tempId": "med-1", "name": "약", "timesPerDay": 1, "days": 7, "doseQuantity": "1" * 51}
+                    ],
                 },
             )
     finally:
