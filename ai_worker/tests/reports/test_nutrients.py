@@ -398,7 +398,9 @@ def test_registered_ingredient_metadata_expands_totals_without_converting_vitami
 
 def test_zero_observation_and_unknown_registered_schedule_render_only_relevant_nutrients() -> None:
     """Would fail if absent fields become zero rows or a known label amount becomes a fabricated total."""
-    known_zero = _product(1, "식이섬유 0 제품", calcium=None, iron=None, vitamin_c=None, vitamin_d=None, serving_desc="1정")
+    known_zero = _product(
+        1, "식이섬유 0 제품", calcium=None, iron=None, vitamin_c=None, vitamin_d=None, serving_desc="1정"
+    )
     known_zero.fiber_g = "0"
     schedule_unknown = _product(
         2,

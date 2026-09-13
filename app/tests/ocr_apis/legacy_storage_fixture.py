@@ -105,4 +105,3 @@ class TemporaryOcrStorage:
             return deleted
 
         return await asyncio.to_thread(delete)
-

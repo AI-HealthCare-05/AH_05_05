@@ -153,7 +153,9 @@ def test_rejects_symlink_root_and_skips_symlink_file(tmp_path: Path) -> None:
     assert {candidate.path.name for candidate in plan.eligible} == {f"{IMAGE_ID}.jpg"}
 
 
-def test_main_does_not_expose_unexpected_error_details(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_does_not_expose_unexpected_error_details(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     async def failed_run(_: object) -> int:
         raise RuntimeError("database password at C:/sensitive-path")
 

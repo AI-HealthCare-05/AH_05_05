@@ -102,9 +102,7 @@ def _catalog() -> V11EvidenceCatalog:
                 source_ids=("source:l",),
             ),
         ),
-        sources=(
-            CardSource(id="source:a", title="source", evidence_level="PUBLIC_GUIDE"),
-        ),
+        sources=(CardSource(id="source:a", title="source", evidence_level="PUBLIC_GUIDE"),),
     )
 
 
