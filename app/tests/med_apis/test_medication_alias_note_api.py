@@ -123,6 +123,7 @@ class TestMedicationNotesAPI(TestCase):
                 },
                 headers=headers,
             )
+            assert first.status_code == status.HTTP_201_CREATED, first.text
             second = await client.post(
                 NOTES_URL,
                 json={
@@ -132,6 +133,7 @@ class TestMedicationNotesAPI(TestCase):
                 },
                 headers=headers,
             )
+            assert second.status_code == status.HTTP_201_CREATED, second.text
             listed = await client.get(
                 NOTES_URL,
                 params={"episodeId": episode.id, "limit": 10},
@@ -147,11 +149,9 @@ class TestMedicationNotesAPI(TestCase):
             deleted = await client.delete(f"{NOTES_URL}/{note_id}", headers=headers)
             after_delete = await client.get(NOTES_URL, headers=headers)
 
-        assert first.status_code == status.HTTP_201_CREATED
         assert first.json()["careEpisodeId"] == episode.id
         assert first.json()["medicationId"] == medication.id
         assert first.json()["dosedAt"].startswith("2026-09-02T19:00")
-        assert second.status_code == status.HTTP_201_CREATED
         assert second.json()["medicationId"] is None
         assert listed.status_code == status.HTTP_200_OK
         assert listed.json()["total"] == 2
