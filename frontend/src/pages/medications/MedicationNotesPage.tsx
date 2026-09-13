@@ -271,8 +271,9 @@ export function MedicationNotesPage() {
       >
         <span className="min-w-0 flex-1">
           <strong className="block [overflow-wrap:anywhere] text-base text-foreground">{label}</strong>
-          <span className="mt-1 block [overflow-wrap:anywhere] text-sm text-muted-foreground">
-            {date && `${formatDateLabel(date, { includeYear: true })} · `}{episodeMedicationSummary(episode)}
+          <span className="mt-1 flex min-w-0 flex-col text-sm text-muted-foreground">
+            {date && <span className="block">{formatDateLabel(date, { includeYear: true })}</span>}
+            <span className="block [overflow-wrap:anywhere]">{summary}</span>
           </span>
         </span>
         <ChevronDown
