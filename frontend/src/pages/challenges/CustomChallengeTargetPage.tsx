@@ -179,8 +179,6 @@ export function CustomChallengeTargetPage() {
     <>
       <Header title={recommendation?.challengeName ?? '맞춤 챌린지'} onBack={goBack} className="h-auto! min-h-header py-2 [&_button]:shrink-0 [&_h1]:overflow-visible [&_h1]:whitespace-normal [&_h1]:break-words [&_h1]:[overflow-wrap:anywhere]" />
       <main className="flex flex-col gap-4 px-page-x py-5">
-      <span className="self-start rounded-pill bg-warning-bg px-2 py-1 text-micro font-bold text-warning-strong">맞춤</span>
-
       {!recommendation && !loadError ? <LoadingState label="참여 대상 불러오는 중">참여 대상을 불러오고 있어요.</LoadingState> : null}
       {loadError ? (
         <div role="alert" className="flex flex-col gap-3 rounded-card bg-card p-5 shadow-card">
@@ -190,12 +188,12 @@ export function CustomChallengeTargetPage() {
       ) : null}
       {recommendation ? (
         <>
-        <section className="flex flex-col gap-2 rounded-card bg-primary-bg p-5" aria-labelledby="custom-highlight-title">
+        <section className="flex flex-col gap-2 rounded-card bg-warning-bg p-5" aria-labelledby="custom-highlight-title">
           {recommendation.rewardBadge ? <span className="flex size-14 overflow-hidden rounded-pill bg-card grayscale">
             <img src={apiAssetUrl(recommendation.rewardBadge.imagePath)} alt={recommendation.rewardBadge.name} className="size-full object-contain" />
           </span> : null}
           <h2 id="custom-highlight-title" className="break-words text-base font-bold [overflow-wrap:anywhere]">{recommendation.rewardBadge?.name ?? recommendation.challengeName}</h2>
-          <p className="break-words text-sm text-primary [overflow-wrap:anywhere]">{recommendation.rewardBadge?.description || (supportedKind === 'medication' ? '처방 일정에 맞춰 복약 기록 남기기' : '매일 꾸준히 영양제 기록 남기기')}</p>
+          <p className="break-words text-sm text-warning-strong [overflow-wrap:anywhere]">{recommendation.rewardBadge?.description || (supportedKind === 'medication' ? '처방 일정에 맞춰 복약 기록 남기기' : '매일 꾸준히 영양제 기록 남기기')}</p>
         </section>
         <section className="flex flex-col gap-3 rounded-card bg-card p-5 shadow-card" aria-labelledby="custom-participation-guide-title">
           <h2 id="custom-participation-guide-title" className="text-base font-bold">참여 안내</h2>

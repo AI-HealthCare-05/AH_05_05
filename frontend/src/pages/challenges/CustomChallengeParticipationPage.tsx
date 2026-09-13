@@ -284,7 +284,7 @@ export function CustomChallengeParticipationPage() {
     <>
       <Header title={participation.challengeName} onBack={handleBack} className="h-auto! min-h-header py-2 [&_button]:shrink-0 [&_h1]:overflow-visible [&_h1]:whitespace-normal [&_h1]:break-words [&_h1]:[overflow-wrap:anywhere]" />
       <main className="flex flex-col gap-4 px-page-x py-5">
-      <p className="text-caption font-bold text-primary">{statusLabel(participation.status)}</p>
+      <p className="text-caption font-bold text-warning-strong">{statusLabel(participation.status)}</p>
 
       {error ? (
         <section role="alert" className="flex flex-col gap-2 rounded-card bg-card p-5 shadow-card">
@@ -293,7 +293,7 @@ export function CustomChallengeParticipationPage() {
         </section>
       ) : null}
 
-      <section className="flex flex-col gap-3 rounded-card bg-primary-bg p-5" aria-labelledby="custom-progress-title">
+      <section className="flex flex-col gap-3 rounded-card bg-warning-bg p-5" aria-labelledby="custom-progress-title">
         <div className="flex items-center justify-between gap-3"><h2 id="custom-progress-title" className="text-base font-bold">{finalized ? '최종 결과' : '내 진행률'}</h2><strong className="text-primary">{rate.toFixed(2)}%</strong></div>
         <div role="progressbar" aria-label="맞춤 챌린지 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={rate} className="h-2 overflow-hidden rounded-pill bg-border"><div className="h-full rounded-pill bg-primary" style={{ width: `${rate}%` }} /></div>
         <p className="text-sm text-foreground">{days.completed} / {days.target}일</p>
