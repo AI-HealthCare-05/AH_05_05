@@ -26,6 +26,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DoseSlotButton,
   ErrorDialog,
   Header,
   Input,
@@ -421,13 +422,13 @@ export function MedicationsPage({
             삭제
           </Button>
         ) : (
-          <button
-            type="button"
-            className="min-h-touch px-2 text-sm font-bold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          <Button
+            fullWidth={false}
+            variant="secondary"
             onClick={() => setSelectionMode(true)}
           >
             선택
-          </button>
+          </Button>
         )}
       </div>
     );
@@ -452,13 +453,14 @@ export function MedicationsPage({
               </button>
             </div>
           ) : (
-            <button
-              type="button"
-              className="min-h-touch shrink-0 rounded-button bg-primary px-3 text-sm font-bold text-white hover:bg-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            <Button
+              size="compact"
+              fullWidth={false}
+              className="px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               onClick={() => navigate('/reports/new?source=medications')}
             >
               AI 보고서 받기
-            </button>
+            </Button>
           )
         }
       />
@@ -780,10 +782,9 @@ function MedicationEpisodeSheet({
                               {MEAL_SLOTS.map((slot) => {
                                 const selected = (slots[medication.medicationId] ?? []).includes(slot.value);
                                 return (
-                                  <button
+                                  <DoseSlotButton
                                     key={slot.value}
-                                    type="button"
-                                    aria-pressed={selected}
+                                    selected={selected}
                                     aria-label={`${medication.name} ${slot.label}`}
                                     aria-describedby={
                                       showLimitError
@@ -792,15 +793,9 @@ function MedicationEpisodeSheet({
                                     }
                                     disabled={scheduleLoading || Boolean(scheduleError) || !schedule}
                                     onClick={() => onToggleSlot(medication.medicationId, slot.value)}
-                                    className={cn(
-                                      'rx-dose-slot min-h-touch rounded-input border text-sm',
-                                      selected
-                                        ? 'border-primary bg-[var(--color-primary)] font-bold text-card'
-                                        : 'border-border bg-card text-muted-foreground',
-                                    )}
                                   >
                                     {slot.short}
-                                  </button>
+                                  </DoseSlotButton>
                                 );
                               })}
                             </div>

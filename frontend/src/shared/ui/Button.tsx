@@ -15,6 +15,8 @@ import { cn } from '@/shared/lib/cn';
  */
 export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'style'> {
   variant?: 'primary' | 'secondary' | 'danger';
+  /** 일반 CTA는 52px, 카드·헤더 실행은 44px을 사용합니다. */
+  size?: 'default' | 'compact';
   /** 화면 하단 CTA는 대부분 가로 전체를 차지합니다. */
   fullWidth?: boolean;
   /** 실제 요청 중에만 사용합니다. 문구·너비를 유지하고 중복 입력을 막습니다. */
@@ -24,6 +26,7 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
 
 export function Button({
   variant = 'primary',
+  size = 'default',
   fullWidth = true,
   disabled = false,
   loading = false,
@@ -39,10 +42,11 @@ export function Button({
       disabled={inactive}
       aria-busy={loading || undefined}
       data-variant={variant}
+      data-size={size}
       className={cn(
         // 공통 — 최소 터치 영역 44px 보장(NFR-ACC-001)
-        'rx-button relative inline-flex min-h-touch items-center justify-center rounded-button px-4 text-sm font-bold',
-        'h-control',
+        'rx-button relative inline-flex min-h-touch shrink-0 items-center justify-center rounded-button px-4 text-sm font-bold',
+        size === 'compact' ? 'h-touch' : 'h-control',
         fullWidth && 'w-full',
         // 변형
         variant === 'primary' && !inactive && 'bg-primary text-card hover:bg-primary-strong',

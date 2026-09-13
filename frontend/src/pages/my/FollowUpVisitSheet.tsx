@@ -135,7 +135,7 @@ export function FollowUpVisitSheet({
               aria-label={`진료 시간 ${visitTime || '시간 미정'}`}
               aria-invalid={timeError ? true : undefined}
               aria-describedby={timeError ? 'follow-up-visit-time-error' : undefined}
-              className={`h-control min-w-0 flex-1 rounded-input border bg-card px-3.5 text-left text-[length:var(--text-control)] focus:outline-none focus:ring-2 focus:ring-ring ${
+              className={`rx-input h-control min-w-0 flex-1 rounded-input border bg-card px-3.5 text-left text-[length:var(--text-control)] focus:outline-none focus:ring-2 focus:ring-ring ${
                 timeError ? 'border-danger' : 'border-input'
               } ${visitTime ? 'text-foreground' : 'text-tertiary-foreground'}`}
               onClick={() => setTimePickerOpen(true)}

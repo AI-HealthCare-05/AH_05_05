@@ -89,7 +89,7 @@ test('focused text input hides launcher and restores it on blur', async ({ page 
   });
   await page.goto('/supplements', { waitUntil: 'domcontentloaded' });
   const launcher = page.getByRole('button', { name: '챗봇', exact: true });
-  await page.getByRole('button', { name: '둘러보기', exact: true }).click();
+  await page.getByRole('tab', { name: '둘러보기', exact: true }).click();
   const search = page.getByPlaceholder('제품명 또는 성분 검색');
   await search.focus();
   await expect(launcher).toBeHidden();

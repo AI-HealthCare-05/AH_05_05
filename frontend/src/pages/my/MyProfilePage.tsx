@@ -189,7 +189,7 @@ export function MyProfilePage({
               <GenderRadioGroup value={gender} onChange={setGender} />
               <button
                 type="button"
-                className="flex min-h-control w-full items-center justify-between rounded-card border border-input bg-card px-4 text-left text-sm font-medium text-foreground transition-colors hover:bg-muted-bg"
+                className="flex min-h-16 w-full items-center justify-between rounded-card border border-border bg-card px-4 text-left text-[15px] font-bold text-foreground transition-colors hover:bg-muted-bg"
                 onClick={() => setPasswordSheetOpen(true)}
               >
                 <span>비밀번호 변경</span>
@@ -204,13 +204,13 @@ export function MyProfilePage({
                 변경사항 저장
               </Button>
             </form>
-            <button
-              type="button"
-              className="mt-2 min-h-touch w-full rounded-button border border-border text-center text-sm font-medium text-danger-strong"
+            <Button
+              variant="secondary"
+              className="mt-2 text-danger-strong"
               onClick={() => setWithdrawDialogOpen(true)}
             >
               회원 탈퇴
-            </button>
+            </Button>
           </>
         )}
       </main>

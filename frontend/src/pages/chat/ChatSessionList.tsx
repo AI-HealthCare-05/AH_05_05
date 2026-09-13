@@ -1,3 +1,4 @@
+import { Plus } from 'lucide-react';
 import type { ChatSessionSummary } from '@/entities/chat';
 import { BottomTabbar, Button, Checkbox, Header, type TabKey } from '@/shared/ui';
 
@@ -68,8 +69,9 @@ export function ChatSessionList({
 
       <main className="flex flex-1 flex-col gap-4 overflow-y-auto px-page-x py-4">
         {!selectionMode && (
-          <Button aria-label="새 채팅" onClick={onNewChat} className="h-12 rounded-button">
-            + 새 상담
+          <Button size="compact" aria-label="새 채팅" onClick={onNewChat}>
+            <Plus aria-hidden className="mr-1 size-4" />
+            새 상담
           </Button>
         )}
         <h2 className="text-xl font-bold text-foreground">

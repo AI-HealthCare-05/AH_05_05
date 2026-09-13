@@ -378,7 +378,7 @@ function SupplementRecordEditor({ target, value, maskedName, onSave, onClose }: 
           <textarea
             id={fieldId} value={draft} maxLength={maxLength} rows={3} disabled={saving}
             placeholder={target === 'note' ? '복용하면서 기억할 점' : '먹어본 경험을 남겨주세요'}
-            className="w-full resize-none rounded-input border border-input bg-card px-3.5 py-3 text-base text-foreground placeholder:text-disabled-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            className="rx-input w-full resize-none rounded-input border border-input bg-card px-3.5 py-3 text-base text-foreground placeholder:text-disabled-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             onChange={event => setDraft(event.target.value)}
           />
           <div className="flex items-start justify-between gap-3 text-xs">

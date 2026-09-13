@@ -452,10 +452,11 @@ export function ChatPage({
         right={
           messages.length > 0 && !historyLoading ? (
             <Button
+              size="compact"
               fullWidth={false}
               variant="secondary"
               aria-label="채팅 종료"
-              className="h-touch min-w-[88px] px-3 text-primary"
+              className="min-w-[88px] px-3 text-primary"
               onClick={openFeedback}
             >
               채팅 종료
