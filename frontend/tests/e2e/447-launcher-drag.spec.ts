@@ -62,7 +62,7 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/v1/**', route => route.fulfill({ status: 404, json: {} }));
 });
 
-test('MY launcher stays at a freely dropped interior point without activating chat', async ({ page }, testInfo: TestInfo) => {
+test('MY launcher follows freely then snaps left at the dropped height without activating chat', async ({ page }, testInfo: TestInfo) => {
   test.skip(IS_REAL_API, MOCK_ONLY_REASON);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/dev/my-authenticated', { waitUntil: 'domcontentloaded' });
@@ -78,16 +78,22 @@ test('MY launcher stays at a freely dropped interior point without activating ch
   }, { x: scheduleBox.x + scheduleBox.width / 2, y: scheduleBox.y + scheduleBox.height / 2 });
   expect(centerOwnerBefore).toBe('챗봇');
 
-  await dragLauncher(page, launcher, { x: 154, y: 290 });
+  await launcher.hover();
+  const start = (await launcher.boundingBox())!;
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(154, 290, { steps: 6 });
+  const whileDragging = (await launcher.boundingBox())!;
+  expect(whileDragging.x).toBeGreaterThan(100);
+  expect(whileDragging.x).toBeLessThan(160);
+  await page.mouse.up();
   await page.mouse.move(8, 8);
 
   const dropped = (await launcher.boundingBox())!;
-  expect(dropped.x).toBeGreaterThan(100);
-  expect(dropped.x).toBeLessThan(160);
+  expect(dropped.x).toBeCloseTo(16, 0);
+  expect(dropped.y).toBeCloseTo(whileDragging.y, 0);
   expect(dropped.y).toBeGreaterThan(240);
   expect(dropped.y).toBeLessThan(300);
-  expect(dropped.x).toBeGreaterThan(16);
-  expect(dropped.x + dropped.width).toBeLessThan(374);
   const centerOwnerAfter = await page.evaluate(({ x, y }) => {
     const element = document.elementFromPoint(x, y);
     return element?.closest('[role="switch"]')?.getAttribute('aria-label') ?? null;
@@ -95,22 +101,22 @@ test('MY launcher stays at a freely dropped interior point without activating ch
   expect(centerOwnerAfter).toBe('일정 알림');
   await expect(page).toHaveURL(/\/dev\/my-authenticated$/);
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await page.screenshot({ path: testInfo.outputPath('task-7-free-placement-390.png') });
+  await page.screenshot({ path: testInfo.outputPath('task-7-snap-left-390.png') });
 });
 
-test('free position persists across reload and tab/non-tab routes without snapping', async ({ page }) => {
+test('right edge and dropped height persist across reload and tab/non-tab routes', async ({ page }, testInfo: TestInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/home', { waitUntil: 'domcontentloaded' });
   const launcher = page.getByRole('button', { name: '챗봇', exact: true });
-  await dragLauncher(page, launcher, { x: 174, y: 330 });
+  await dragLauncher(page, launcher, { x: 300, y: 330 });
   await page.mouse.move(8, 8);
   const chosen = (await launcher.boundingBox())!;
-  expect(chosen.x).toBeGreaterThan(110);
-  expect(chosen.x).toBeLessThan(160);
+  expect(chosen.x + chosen.width).toBeCloseTo(374, 0);
   expect(chosen.y).toBeGreaterThan(270);
   expect(chosen.y).toBeLessThan(330);
   expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? 'null'), launcherPositionKey))
-    .toEqual({ left: Math.round(chosen.x), top: Math.round(chosen.y) });
+    .toEqual({ edge: 'right', top: Math.round(chosen.y) });
+  await page.screenshot({ path: testInfo.outputPath('task-7-snap-right-390.png') });
 
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.mouse.move(8, 8);
@@ -133,6 +139,24 @@ test('free position persists across reload and tab/non-tab routes without snappi
   expect(restored.y).toBeCloseTo(chosen.y, 0);
 });
 
+test('an exact horizontal midpoint consistently snaps to the right edge without vertical snapping', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/home', { waitUntil: 'domcontentloaded' });
+  const launcher = page.getByRole('button', { name: '챗봇', exact: true });
+  await launcher.hover();
+  const start = (await launcher.boundingBox())!;
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(195, 380, { steps: 6 });
+  const whileDragging = (await launcher.boundingBox())!;
+  expect(whileDragging.x + whileDragging.width / 2).toBeCloseTo(195, 0);
+  await page.mouse.up();
+  await page.mouse.move(8, 8);
+  const snapped = (await launcher.boundingBox())!;
+  expect(snapped.x + snapped.width).toBeCloseTo(374, 0);
+  expect(snapped.y).toBeCloseTo(whileDragging.y, 0);
+});
+
 test('all edges clamp above actual navigation and a narrow viewport restores the preferred position when expanded', async ({ page }, testInfo: TestInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/home', { waitUntil: 'domcontentloaded' });
@@ -150,22 +174,45 @@ test('all edges clamp above actual navigation and a narrow viewport restores the
   box = (await launcher.boundingBox())!;
   expect(box.x + box.width).toBeCloseTo(374, 0);
 
-  await dragLauncher(page, launcher, { x: 310, y: 360 });
+  await dragLauncher(page, launcher, { x: 310, y: 680 });
   await page.mouse.move(8, 8);
   const preferred = (await launcher.boundingBox())!;
   const savedBeforeResize = await page.evaluate((key) => localStorage.getItem(key), launcherPositionKey);
   expect(preferred.x).toBeGreaterThan(260);
 
   await page.setViewportSize({ width: 320, height: 700 });
-  await expect.poll(async () => (await launcher.boundingBox())!.x).toBeLessThanOrEqual(244.5);
+  await expect.poll(async () => {
+    const resized = (await launcher.boundingBox())!;
+    return resized.x + resized.width;
+  }).toBeCloseTo(304, 0);
+  expect((await launcher.boundingBox())!.y).toBeLessThan(preferred.y);
   await expectLauncherInsideCurrentBounds(page, launcher);
   expect(await page.evaluate((key) => localStorage.getItem(key), launcherPositionKey)).toBe(savedBeforeResize);
-  await page.screenshot({ path: testInfo.outputPath('task-7-bounds-320.png') });
+  await page.screenshot({ path: testInfo.outputPath('task-7-snap-bounds-320.png') });
 
   await page.setViewportSize({ width: 1280, height: 844 });
   await page.mouse.move(8, 8);
-  await expect.poll(async () => (await launcher.boundingBox())!.x).toBeCloseTo(preferred.x, 0);
+  await expect.poll(async () => {
+    const resized = (await launcher.boundingBox())!;
+    return resized.x + resized.width;
+  }).toBeCloseTo(1264, 0);
+  expect((await launcher.boundingBox())!.y).toBeCloseTo(preferred.y, 0);
   await expectLauncherInsideCurrentBounds(page, launcher);
+});
+
+test('a legacy valid free position is converted once to its nearest edge and keeps its top', async ({ page }) => {
+  await page.addInitScript(({ key }) => {
+    localStorage.setItem(key, JSON.stringify({ left: 40, top: 240 }));
+  }, { key: launcherPositionKey });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/home', { waitUntil: 'domcontentloaded' });
+  const launcher = page.getByRole('button', { name: '챗봇', exact: true });
+  await page.mouse.move(8, 8);
+  const converted = (await launcher.boundingBox())!;
+  expect(converted.x).toBeCloseTo(16, 0);
+  expect(converted.y).toBeCloseTo(240, 0);
+  expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? 'null'), launcherPositionKey))
+    .toEqual({ edge: 'left', top: 240 });
 });
 
 test('under-threshold pointer movement and keyboard Enter/Space keep the guest action while drag suppresses only its generated click', async ({ page }) => {
@@ -227,10 +274,13 @@ test.describe('touch input', () => {
       type: 'touchMove',
       touchPoints: [{ x: 185, y: 350, id: 1, radiusX: 1, radiusY: 1, force: 1 }],
     });
+    const whileDragging = (await launcher.boundingBox())!;
+    expect(whileDragging.x).toBeGreaterThan(130);
+    expect(whileDragging.x).toBeLessThan(180);
     await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     const dropped = (await launcher.boundingBox())!;
-    expect(dropped.x).toBeGreaterThan(130);
-    expect(dropped.x).toBeLessThan(180);
+    expect(dropped.x).toBeCloseTo(16, 0);
+    expect(dropped.y).toBeCloseTo(whileDragging.y, 0);
     expect(await page.evaluate(() => (window as Window & { __launcherEvents?: string[] }).__launcherEvents))
       .toContain('pointerdown:touch');
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -343,8 +393,7 @@ for (const scenario of ['invalid', 'read-denied', 'write-denied'] as const) {
     await dragLauncher(page, launcher, { x: 160, y: 280 });
     await page.mouse.move(8, 8);
     const dropped = (await launcher.boundingBox())!;
-    expect(dropped.x).toBeGreaterThan(100);
-    expect(dropped.x).toBeLessThan(160);
+    expect(dropped.x).toBeCloseTo(16, 0);
     await expect(page).toHaveURL(/\/home$/);
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });

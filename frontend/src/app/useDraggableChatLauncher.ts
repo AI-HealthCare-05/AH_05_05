@@ -18,6 +18,20 @@ interface LauncherPosition {
   top: number;
 }
 
+type LauncherEdge = 'left' | 'right';
+
+interface LauncherPreference {
+  edge: LauncherEdge;
+  top: number;
+}
+
+interface LauncherBounds {
+  minLeft: number;
+  maxLeft: number;
+  minTop: number;
+  maxTop: number;
+}
+
 interface PointerGesture {
   pointerId: number;
   originX: number;
@@ -28,19 +42,28 @@ interface PointerGesture {
   dragging: boolean;
 }
 
-function readPreferredPosition(): LauncherPosition | null {
+function readPreferredPosition(element: HTMLButtonElement): LauncherPreference | null {
   if (typeof window === 'undefined') return null;
   try {
     const value: unknown = JSON.parse(window.localStorage.getItem(POSITION_STORAGE_KEY) ?? 'null');
     if (!value || typeof value !== 'object') return null;
-    const { left, top } = value as Partial<LauncherPosition>;
-    return Number.isFinite(left) && Number.isFinite(top) ? { left: left!, top: top! } : null;
+    const stored = value as Partial<LauncherPreference & LauncherPosition>;
+    if ((stored.edge === 'left' || stored.edge === 'right') && Number.isFinite(stored.top)) {
+      return { edge: stored.edge, top: stored.top! };
+    }
+    if (!Number.isFinite(stored.left) || !Number.isFinite(stored.top)) return null;
+    const preference = {
+      edge: nearestHorizontalEdge({ left: stored.left!, top: stored.top! }, element),
+      top: stored.top!,
+    } satisfies LauncherPreference;
+    savePreferredPosition(preference);
+    return preference;
   } catch {
     return null;
   }
 }
 
-function savePreferredPosition(position: LauncherPosition) {
+function savePreferredPosition(position: LauncherPreference) {
   try {
     window.localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify(position));
   } catch {
@@ -48,7 +71,7 @@ function savePreferredPosition(position: LauncherPosition) {
   }
 }
 
-function clampPosition(position: LauncherPosition, element: HTMLButtonElement): LauncherPosition {
+function getLauncherBounds(element: HTMLButtonElement): LauncherBounds {
   const viewport = window.visualViewport;
   const viewportLeft = viewport?.offsetLeft ?? 0;
   const viewportTop = viewport?.offsetTop ?? 0;
@@ -82,16 +105,41 @@ function clampPosition(position: LauncherPosition, element: HTMLButtonElement): 
     visibleBottom - VIEWPORT_INSET - rect.height - tailOverflow,
   );
 
+  return { minLeft, maxLeft, minTop, maxTop };
+}
+
+function clampPosition(position: LauncherPosition, element: HTMLButtonElement): LauncherPosition {
+  const bounds = getLauncherBounds(element);
   return {
-    left: Math.min(maxLeft, Math.max(minLeft, position.left)),
-    top: Math.min(maxTop, Math.max(minTop, position.top)),
+    left: Math.min(bounds.maxLeft, Math.max(bounds.minLeft, position.left)),
+    top: Math.min(bounds.maxTop, Math.max(bounds.minTop, position.top)),
+  };
+}
+
+function nearestHorizontalEdge(position: LauncherPosition, element: HTMLButtonElement): LauncherEdge {
+  const viewport = window.visualViewport;
+  const viewportCenter = (viewport?.offsetLeft ?? 0)
+    + (viewport?.width ?? window.innerWidth) / 2;
+  return position.left + element.getBoundingClientRect().width / 2 < viewportCenter
+    ? 'left'
+    : 'right';
+}
+
+function positionForPreference(
+  preference: LauncherPreference,
+  element: HTMLButtonElement,
+): LauncherPosition {
+  const bounds = getLauncherBounds(element);
+  return {
+    left: preference.edge === 'left' ? bounds.minLeft : bounds.maxLeft,
+    top: Math.min(bounds.maxTop, Math.max(bounds.minTop, preference.top)),
   };
 }
 
 /** Keeps launcher pointer mechanics separate from its existing auth/navigation action. */
 export function useDraggableChatLauncher(pathname: string, onActivate: () => void) {
   const launcherRef = useRef<HTMLButtonElement>(null);
-  const preferredRef = useRef<LauncherPosition | null>(null);
+  const preferredRef = useRef<LauncherPreference | null>(null);
   const gestureRef = useRef<PointerGesture | null>(null);
   const suppressPointerClickRef = useRef(false);
   const frameRef = useRef<number | null>(null);
@@ -102,7 +150,7 @@ export function useDraggableChatLauncher(pathname: string, onActivate: () => voi
     const launcher = launcherRef.current;
     const preferred = preferredRef.current;
     if (!launcher || !preferred) return;
-    setPosition(clampPosition(preferred, launcher));
+    setPosition(positionForPreference(preferred, launcher));
   }, []);
 
   const schedulePreferredClamp = useCallback(() => {
@@ -131,7 +179,9 @@ export function useDraggableChatLauncher(pathname: string, onActivate: () => voi
   }, []);
 
   useLayoutEffect(() => {
-    preferredRef.current = readPreferredPosition();
+    const launcher = launcherRef.current;
+    if (!launcher) return;
+    preferredRef.current = readPreferredPosition(launcher);
     applyPreferredPosition();
   }, [applyPreferredPosition]);
 
@@ -230,14 +280,17 @@ export function useDraggableChatLauncher(pathname: string, onActivate: () => voi
       const launcher = launcherRef.current;
       if (launcher) {
         const rect = launcher.getBoundingClientRect();
-        const preferred = clampPosition({
+        const clamped = clampPosition({
           left: Math.round(rect.left),
           top: Math.round(rect.top),
         }, launcher);
-        const committed = { left: Math.round(preferred.left), top: Math.round(preferred.top) };
-        preferredRef.current = committed;
-        setPosition(committed);
-        savePreferredPosition(committed);
+        const preference = {
+          edge: nearestHorizontalEdge(clamped, launcher),
+          top: Math.round(clamped.top),
+        } satisfies LauncherPreference;
+        preferredRef.current = preference;
+        setPosition(positionForPreference(preference, launcher));
+        savePreferredPosition(preference);
       }
     } else if (event.pointerType !== 'mouse') {
       // Some touch/pen browsers omit the compatibility click after pointer capture.
