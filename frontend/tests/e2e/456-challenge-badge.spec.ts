@@ -176,27 +176,29 @@ test('320px 둘러보기에서 공식·맞춤 배지가 제목 바로 앞에 있
   await expect(page).toHaveURL('/challenges/official/101');
 });
 
-test('390px 나의 챌린지에서 공식·맞춤 배지가 제목 바로 앞에 있고 상세 링크를 유지한다', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 390, height: 900 });
-  await page.route('**/api/v1/user/challenges', route => fulfillJson(route, { items: [officialParticipation], total_count: 1 }));
-  await page.route('**/api/v1/user/custom-challenge-participations', route => fulfillJson(route, { items: [customParticipation], totalCount: 1 }));
+for (const width of [320, 390]) {
+  test(`${width}px 나의 챌린지에서 공식·맞춤 배지가 제목 바로 앞에 있고 상세 링크를 유지한다`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.route('**/api/v1/user/challenges', route => fulfillJson(route, { items: [officialParticipation], total_count: 1 }));
+    await page.route('**/api/v1/user/custom-challenge-participations', route => fulfillJson(route, { items: [customParticipation], totalCount: 1 }));
 
-  await page.goto('/challenges');
-  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
+    await page.goto('/challenges');
+    await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
 
-  const officialCard = page.getByRole('article', { name: longOfficialName, exact: true });
-  const customCard = page.getByRole('article', { name: longCustomName, exact: true });
-  await expectBadgeImmediatelyBeforeTitle(officialCard, longOfficialName, '공식');
-  await expectBadgeImmediatelyBeforeTitle(customCard, longCustomName, '맞춤');
+    const officialCard = page.getByRole('article', { name: longOfficialName, exact: true });
+    const customCard = page.getByRole('article', { name: longCustomName, exact: true });
+    await expectBadgeImmediatelyBeforeTitle(officialCard, longOfficialName, '공식');
+    await expectBadgeImmediatelyBeforeTitle(customCard, longCustomName, '맞춤');
 
-  const officialDetail = officialCard.getByRole('link', { name: `${longOfficialName} 자세히 보기`, exact: true });
-  const customDetail = customCard.getByRole('link', { name: `${longCustomName} 자세히 보기`, exact: true });
-  await expect(officialDetail).toHaveAttribute('href', '/challenges/participations/501');
-  await expect(customDetail).toHaveAttribute('href', '/challenges/custom-participations/701');
-  await customDetail.focus();
-  await expect(customDetail).toBeFocused();
-  await expectNoHorizontalOverflow(page);
-  await page.screenshot({ path: testInfo.outputPath('challenge-badges-my-390.png'), fullPage: true, animations: 'disabled' });
-  await customDetail.click();
-  await expect(page).toHaveURL('/challenges/custom-participations/701');
-});
+    const officialDetail = officialCard.getByRole('link', { name: `${longOfficialName} 자세히 보기`, exact: true });
+    const customDetail = customCard.getByRole('link', { name: `${longCustomName} 자세히 보기`, exact: true });
+    await expect(officialDetail).toHaveAttribute('href', '/challenges/participations/501');
+    await expect(customDetail).toHaveAttribute('href', '/challenges/custom-participations/701');
+    await customDetail.focus();
+    await expect(customDetail).toBeFocused();
+    await expectNoHorizontalOverflow(page);
+    await page.screenshot({ path: testInfo.outputPath(`challenge-badges-my-${width}.png`), fullPage: true, animations: 'disabled' });
+    await customDetail.click();
+    await expect(page).toHaveURL('/challenges/custom-participations/701');
+  });
+}
