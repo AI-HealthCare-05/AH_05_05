@@ -346,6 +346,120 @@ async def test_join_day_reconciliation_handles_existing_equal_clock_data(changed
     assert [o.scheduled_at.time() for o in today if o.slot is not MealSlot.LUNCH] == [time(23, 58), time(23, 58)]
 
 
+async def _morning_only_late_join(*, evening_taken_before_join=False, joined_at=None):
+    user = await _user("add-slots@example.com")
+    _, template = await _templates()
+    source = await _standard_supplement(user)
+    await UserSettings.create(
+        user=user,
+        morning_medication_time=time(8),
+        lunch_medication_time=time(13),
+        evening_medication_time=time(18, 52),
+        bedtime_medication_time=time(23, 59),
+    )
+    joined_at = joined_at or JOINED_AT.replace(hour=20, minute=0)
+    if evening_taken_before_join:
+        dose = await _taken(source, joined_at.date(), MealSlot.EVENING)
+        await SupplementDose.filter(id=dose.id).update(taken_at=joined_at - timedelta(minutes=1))
+    joined = await CustomChallengeService(now_provider=lambda: joined_at).join(
+        user, template.id, CustomChallengeJoinRequest(target_ids=[source.id], idempotency_key="add-slots")
+    )
+    return user, source, joined, joined_at
+
+
+async def _save_supplement_slots(operation, user, source, slots, changed_at):
+    service = UserSupplementNutrientService(mutation_time_provider=lambda: changed_at)
+    if operation == "update":
+        await service.update(user, source.id, UserSupplementNutrientUpdateRequest(slots=slots))
+    else:
+        await service.upsert(
+            user,
+            source.supplement_nutrient_id,
+            UserSupplementNutrientUpsertRequest(
+                dose_amount=Decimal("1"),
+                dose_unit="정",
+                start_date=source.start_date,
+                slots=slots,
+            ),
+        )
+
+
+@pytest.mark.parametrize("operation", ["update", "upsert"])
+@pytest.mark.parametrize(
+    ("changed_clock", "expected_slots"),
+    [
+        (time(20, 5), [MealSlot.EVENING, MealSlot.BEDTIME]),
+        (time(23, 59), [MealSlot.BEDTIME]),
+    ],
+)
+async def test_adding_slots_on_join_day_starts_at_current_slot(operation, changed_clock, expected_slots):
+    user, source, joined, joined_at = await _morning_only_late_join()
+    assert not [o for o in joined.occurrences if o.scheduled_date == joined_at.date()]
+    changed_at = datetime.combine(joined_at.date(), changed_clock, tzinfo=config.TIMEZONE)
+
+    await _save_supplement_slots(operation, user, source, list(MealSlot), changed_at)
+
+    challenges = CustomChallengeService(now_provider=lambda: changed_at)
+    detail = await challenges.get(user, joined.id)
+    assert [o.slot for o in detail.occurrences if o.scheduled_date == joined_at.date()] == expected_slots
+    assert not any(o.is_completed for o in detail.occurrences)
+    assert detail.end_at == joined.end_at
+    assert len([o for o in detail.occurrences if o.scheduled_date > joined_at.date()]) == 24
+    await _save_supplement_slots(operation, user, source, list(MealSlot), changed_at + timedelta(seconds=1))
+    assert await challenges.get(user, joined.id) == detail
+    if MealSlot.EVENING in expected_slots:
+        dose = await _taken(source, joined_at.date(), MealSlot.EVENING)
+        await SupplementDose.filter(id=dose.id).update(taken_at=changed_at)
+        assert (await challenges.get(user, joined.id)).completed_count == 1
+        await dose.delete()
+        assert await challenges.get(user, joined.id) == detail
+
+
+@pytest.mark.parametrize("operation", ["update", "upsert"])
+async def test_adding_slots_does_not_restore_prejoin_taken_current_slot(operation):
+    user, source, joined, joined_at = await _morning_only_late_join(evening_taken_before_join=True)
+    changed_at = joined_at + timedelta(minutes=5)
+    await _save_supplement_slots(operation, user, source, list(MealSlot), changed_at)
+    detail = await CustomChallengeService(now_provider=lambda: changed_at).get(user, joined.id)
+    assert [o.slot for o in detail.occurrences if o.scheduled_date == joined_at.date()] == [MealSlot.BEDTIME]
+    assert detail.completed_count == 0
+
+
+@pytest.mark.parametrize("operation", ["update", "upsert"])
+async def test_adding_slots_after_midnight_preserves_prior_day_and_includes_full_today(operation):
+    user, source, joined, joined_at = await _morning_only_late_join(joined_at=JOINED_AT)
+    dose = await _taken(source, joined_at.date(), MealSlot.MORNING)
+    await SupplementDose.filter(id=dose.id).update(taken_at=joined_at + timedelta(hours=1))
+    before = await CustomChallengeService(now_provider=lambda: joined_at).get(user, joined.id)
+    changed_at = (joined_at + timedelta(days=1)).replace(hour=0, minute=0)
+
+    await _save_supplement_slots(operation, user, source, list(MealSlot), changed_at)
+
+    detail = await CustomChallengeService(now_provider=lambda: changed_at).get(user, joined.id)
+    assert [o for o in detail.occurrences if o.scheduled_date == joined_at.date()] == [
+        o for o in before.occurrences if o.scheduled_date == joined_at.date()
+    ]
+    assert [o.slot for o in detail.occurrences if o.scheduled_date == changed_at.date()] == list(MealSlot)
+    assert detail.completed_count == 1
+
+
+@pytest.mark.parametrize("operation", ["update", "upsert", "quantity_only"])
+async def test_saving_unchanged_slots_does_not_repair_absent_join_day_history(operation):
+    user, source, joined, joined_at = await _morning_only_late_join()
+    # Simulate an existing registration with the previously strict join-day snapshot.
+    for slot in (MealSlot.LUNCH, MealSlot.EVENING, MealSlot.BEDTIME):
+        await UserSupplementNutrientSlot.create(user_suppl_nutrient=source, slot=slot)
+    changed_at = joined_at + timedelta(minutes=5)
+    if operation == "quantity_only":
+        await UserSupplementNutrientService(mutation_time_provider=lambda: changed_at).update(
+            user, source.id, UserSupplementNutrientUpdateRequest(dose_amount=Decimal("2"))
+        )
+    else:
+        await _save_supplement_slots(operation, user, source, list(MealSlot), changed_at)
+    detail = await CustomChallengeService(now_provider=lambda: changed_at).get(user, joined.id)
+    assert [o.slot for o in detail.occurrences if o.scheduled_date == joined_at.date()] == [MealSlot.BEDTIME]
+
+
 async def test_foreign_removal_rejected_and_reconciliation_failure_rolls_back_source_and_goals():
     class FailingReconciler(CustomChallengeScheduleReconciler):
         async def reconcile(self, **kwargs):
