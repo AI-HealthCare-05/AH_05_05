@@ -48,19 +48,21 @@ def test_user_expression_manifest_is_frozen_and_covers_failure_classes() -> None
     }.issubset(categories)
 
 
-def test_v3_manifest_is_fixed_to_21_cases_and_tracks_historical_outcomes() -> None:
+def test_v3_manifest_is_fixed_to_20_cases_and_tracks_historical_outcomes() -> None:
     manifest = load_evaluation_manifest(
         Path("data/knowledge/evaluation/user_expression_queries_v3.yaml"),
     )
 
     assert manifest.schema_version == "medication-search-baseline-v3"
-    assert len(manifest.cases) == 21
+    assert len(manifest.cases) == 20
     assert sum(case.phase == "ACTIVE_PHASE" for case in manifest.cases) > 0
     assert all(case.evaluation_rationale for case in manifest.cases)
     assert all(case.historical_outcome is not None for case in manifest.cases)
     assert sum(case.historical_outcome == "PASS" for case in manifest.cases) == 11
     assert sum(case.historical_outcome == "PARTIAL" for case in manifest.cases) == 4
-    assert sum(case.historical_outcome == "FAIL" for case in manifest.cases) == 6
+    assert sum(case.historical_outcome == "FAIL" for case in manifest.cases) == 5
+    assert "20문항" in manifest.experiment_goal
+    assert "20문항" in manifest.activation_rule
     assert "13건" in manifest.activation_rule
 
 
@@ -79,6 +81,33 @@ def test_v3_manifest_expects_authoritative_products_for_user_facing_aliases() ->
         entity = cases[query_id].expected_entities[0]
         assert entity.canonical_name == "타이레놀산500밀리그램(아세트아미노펜)"
         assert entity.entity_type == "PRODUCT_NAME"
+
+
+def test_v3_manifest_treats_tylenol_alcohol_as_source_backed_drug_food_pair() -> None:
+    manifest = load_evaluation_manifest(
+        Path("data/knowledge/evaluation/user_expression_queries_v3.yaml"),
+    )
+    case = {case.query_id: case for case in manifest.cases}["drug-food-tylenol-alcohol"]
+
+    assert case.historical_outcome == "FAIL"
+    assert case.evidence_kind == "QDRANT_GOLD"
+    assert case.expected_interaction_types == ["DRUG_FOOD"]
+    assert {entity.canonical_name for entity in case.expected_entities} == {
+        "아세트아미노펜",
+        "알코올",
+    }
+    alcohol = next(entity for entity in case.expected_entities if entity.canonical_name == "알코올")
+    assert alcohol.entity_type == "FOOD_CATEGORY"
+    assert alcohol.kind == "FOOD"
+    assert alcohol.expected_sources == ["QDRANT"]
+
+
+def test_v3_manifest_excludes_patient_context_only_pair_from_search_baseline() -> None:
+    manifest = load_evaluation_manifest(
+        Path("data/knowledge/evaluation/user_expression_queries_v3.yaml"),
+    )
+
+    assert "deferred-safety-calcium-iron" not in {case.query_id for case in manifest.cases}
 
 
 def test_evaluation_vector_store_uses_runtime_dot_distance() -> None:

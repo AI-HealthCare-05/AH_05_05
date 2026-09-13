@@ -868,6 +868,36 @@ async def test_candidate_diagnostics_are_deduplicated_and_limited_to_twenty() ->
     assert sum(diagnostic.selected_in_top_5 for diagnostic in result.diagnostics.candidate_diagnostics) == 2
 
 
+async def test_audit_target_diagnostics_keep_gold_document_beyond_runtime_trace_limit() -> None:
+    chunks = [
+        build_chunk(
+            0.9 - index / 100,
+            chunk_id=f"{index:064x}",
+            document_id=("gold-document" if index == 24 else f"document-{index}"),
+            ingredient_names=["마그네슘"],
+            section_type=KnowledgeSectionType.FUNCTION,
+        )
+        for index in range(25)
+    ]
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=FakeKnowledgeStore(responses=[chunks]),
+        dataset_version="knowledge-full-v2-interaction-metadata",
+    )
+
+    result = await retriever.search_with_diagnostics(
+        execution_plan=build_execution_plan(
+            "마그네슘은 왜 먹나요?",
+            supplement_names=["마그네슘"],
+        ),
+        audit_target_document_ids={"gold-document"},
+    )
+
+    assert len(result.diagnostics.candidate_diagnostics) == 20
+    assert [diagnostic.document_id for diagnostic in result.diagnostics.audit_target_diagnostics] == ["gold-document"]
+    assert result.diagnostics.audit_target_diagnostics[0].adjusted_rank == 25
+
+
 async def test_search_attaches_only_adjacent_eligible_parent_context() -> None:
     child = build_chunk(
         0.82,

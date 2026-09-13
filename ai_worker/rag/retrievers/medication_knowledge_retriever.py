@@ -169,6 +169,7 @@ class MedicationKnowledgeRetriever:
         self,
         *,
         execution_plan: MedicationSearchExecutionPlan,
+        audit_target_document_ids: set[str] | None = None,
     ) -> KnowledgeRetrievalResult:
         plan = execution_plan.query_plan
         candidates = await self._candidate_retriever.retrieve(
@@ -201,6 +202,7 @@ class MedicationKnowledgeRetriever:
             parent_context_child_count=parent_context.child_count,
             parent_context_attached_count=parent_context.attached_parent_count,
             parent_context_rejected_mismatch_count=(parent_context.rejected_parent_mismatch_count),
+            audit_target_document_ids=audit_target_document_ids,
         )
         return KnowledgeRetrievalResult(
             chunks=parent_context.chunks,

@@ -236,6 +236,77 @@ async def test_search_collapses_semantically_identical_chunks_before_limit() -> 
         await client.close()
 
 
+async def test_search_with_trace_preserves_raw_candidates_before_refining() -> None:
+    client = AsyncQdrantClient(location=":memory:")
+    store = QdrantKnowledgeStore(
+        client=client,
+        collection_name="knowledge_release",
+        vector_size=3,
+    )
+
+    try:
+        await store.create_release_collection()
+        chunks = [
+            build_chunk(
+                "a",
+                content="성분: 비타민 B6\n기능: 단백질 대사에 필요",
+                title="비타민 B6",
+                document_id="source-a",
+                ingredient_names=["비타민 B6"],
+                section_type=KnowledgeSectionType.FUNCTION,
+            ),
+            build_chunk(
+                "b",
+                content="성분: 비타민 B6 기능: 단백질 대사에 필요",
+                title="비타민 B6",
+                document_id="source-b",
+                ingredient_names=["비타민 B6"],
+                section_type=KnowledgeSectionType.FUNCTION,
+            ),
+        ]
+        await store.upsert_chunks(chunks, [[1.0, 0.0, 0.0], [0.999, 0.001, 0.0]])
+
+        trace = await store.search_with_trace(
+            query_vector=[1.0, 0.0, 0.0],
+            search_query=KnowledgeSearchQuery(
+                query="비타민 B6 기능",
+                dataset_version="knowledge-pilot-v1",
+                ingredient_names=["비타민 B6"],
+                limit=5,
+            ),
+        )
+
+        assert [result.metadata.document_id for result in trace.raw_results] == ["source-a", "source-b"]
+        assert [result.metadata.document_id for result in trace.refined_results] == ["source-a"]
+    finally:
+        await client.close()
+
+
+async def test_find_chunks_by_document_id_returns_payloads_across_dataset_versions() -> None:
+    client = AsyncQdrantClient(location=":memory:")
+    store = QdrantKnowledgeStore(
+        client=client,
+        collection_name="knowledge_release",
+        vector_size=3,
+    )
+
+    try:
+        await store.create_release_collection()
+        await store.upsert_chunks(
+            [
+                build_chunk("a", document_id="gold-document", dataset_version="dataset-v1"),
+                build_chunk("b", document_id="gold-document", dataset_version="dataset-v2"),
+            ],
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        )
+
+        chunks = await store.find_chunks_by_document_id(document_id="gold-document")
+
+        assert {chunk.metadata.dataset_version for chunk in chunks} == {"dataset-v1", "dataset-v2"}
+    finally:
+        await client.close()
+
+
 async def test_search_scopes_results_to_title_named_in_query() -> None:
     client = AsyncQdrantClient(location=":memory:")
     store = QdrantKnowledgeStore(

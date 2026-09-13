@@ -427,6 +427,10 @@ class KnowledgeRetrievalDiagnostics(BaseModel):
         default_factory=list,
         max_length=20,
     )
+    audit_target_diagnostics: list[KnowledgeCandidateDiagnostic] = Field(
+        default_factory=list,
+        exclude=True,
+    )
 
 
 class KnowledgeCoverageRetryObservation(BaseModel):

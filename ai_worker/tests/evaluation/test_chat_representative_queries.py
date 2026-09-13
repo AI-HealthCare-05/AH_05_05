@@ -69,6 +69,13 @@ def test_chat_representative_queries_define_balanced_source_contracts() -> None:
         "SUPPLEMENT_SUPPLEMENT_INTERACTION",
     } <= interaction_tags
 
+    calcium_iron_case = next(case for case in cases if case["query_id"] == "mixed-registered-calcium-iron")
+    assert calcium_iron_case["question"] == "등록한 칼슘과 철분을 같이 먹어도 되나요?"
+    assert calcium_iron_case["expected"]["required_source_kinds"] == [
+        "PATIENT_SUPPLEMENT",
+        "PUBLIC_KNOWLEDGE",
+    ]
+
     valid_routes = {route.value for route in MedicationChatRoute}
     valid_sources = {kind.value for kind in MedicationChatSourceKind}
 

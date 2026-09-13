@@ -59,6 +59,7 @@ class MedicationKnowledgeDiagnosticsBuilder:
         parent_context_child_count: int = 0,
         parent_context_attached_count: int = 0,
         parent_context_rejected_mismatch_count: int = 0,
+        audit_target_document_ids: set[str] | None = None,
     ) -> KnowledgeRetrievalDiagnostics:
         return KnowledgeRetrievalDiagnostics(
             raw_candidate_count=len(results),
@@ -82,6 +83,16 @@ class MedicationKnowledgeDiagnosticsBuilder:
                 selected=selected,
                 plan=plan,
             ),
+            audit_target_diagnostics=(
+                self._candidate_diagnostics(
+                    observations=observations,
+                    selected=selected,
+                    plan=plan,
+                    target_document_ids=audit_target_document_ids,
+                )
+                if audit_target_document_ids
+                else []
+            ),
         )
 
     def _candidate_diagnostics(
@@ -90,6 +101,7 @@ class MedicationKnowledgeDiagnosticsBuilder:
         observations: list[MedicationKnowledgeCandidateObservation],
         selected: list[RetrievedKnowledgeChunk],
         plan: MedicationKnowledgeQueryPlan,
+        target_document_ids: set[str] | None = None,
     ) -> list[KnowledgeCandidateDiagnostic]:
         unique_observations: list[MedicationKnowledgeCandidateObservation] = []
         seen_hashes: set[str] = set()
@@ -103,11 +115,15 @@ class MedicationKnowledgeDiagnosticsBuilder:
             unique_observations,
             key=lambda observation: self._rank_key(observation.result, plan),
             reverse=True,
-        )[:20]
+        )
         selected_ids = {result.chunk_id for result in selected}
         pair_required = plan.interaction_pair is not None or self._pair_required(plan)
         diagnostics: list[KnowledgeCandidateDiagnostic] = []
         for adjusted_rank, observation in enumerate(ranked, start=1):
+            if target_document_ids is None and adjusted_rank > 20:
+                break
+            if target_document_ids is not None and observation.result.metadata.document_id not in target_document_ids:
+                continue
             result = observation.result
             reason = self._eligibility_reason(result, plan)
             raw_score = result.similarity_score
