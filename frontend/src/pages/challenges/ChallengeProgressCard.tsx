@@ -76,9 +76,9 @@ export function ChallengeProgressCard({
       </p>
       {directCheck ? (
         <Button
+          size="compact"
           onClick={onCheckIn}
           disabled={participation.todayCompleted || checkInDisabled}
-          className="h-11 min-h-11"
         >
           {checkInDisabled ? '시작 전이에요' : participation.todayCompleted ? '오늘 인증 완료' : '했어요'}
         </Button>

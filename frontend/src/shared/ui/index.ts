@@ -11,6 +11,8 @@ export { GenderRadioGroup } from './GenderRadioGroup';
 
 export { DoseSlotFields } from './DoseSlotFields';
 export type { DoseSlotFieldsProps } from './DoseSlotFields';
+export { DoseSlotButton } from './DoseSlotButton';
+export type { DoseSlotButtonProps } from './DoseSlotButton';
 
 export { StatusBadge } from './StatusBadge';
 export type { StatusBadgeProps, StatusBadgeType } from './StatusBadge';

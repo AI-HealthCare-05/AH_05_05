@@ -56,7 +56,7 @@ export function OfficialChallengeProgressCard({
       {refreshRequired ? (
         <div role="status" className="flex flex-col gap-2 rounded-input bg-muted-bg p-3">
           <p className="text-caption text-muted-foreground">최신 진행 정보 확인 필요</p>
-          <Button variant="secondary" onClick={onRefresh} disabled={pending} className="relative z-10 h-11 min-h-11">다시 불러오기</Button>
+          <Button size="compact" variant="secondary" onClick={onRefresh} disabled={pending} className="relative z-10">다시 불러오기</Button>
         </div>
       ) : (
         <>
@@ -75,7 +75,7 @@ export function OfficialChallengeProgressCard({
       ) : null}
       {error ? <p role="alert" className="text-caption text-danger-strong">{error}</p> : null}
       {isSelfActive ? (
-        <Button onClick={onCheckIn} disabled={pending || !participation.can_verify} className="relative z-10 h-11 min-h-11">{label}</Button>
+        <Button size="compact" onClick={onCheckIn} disabled={pending || !participation.can_verify} className="relative z-10">{label}</Button>
       ) : null}
     </article>
   );

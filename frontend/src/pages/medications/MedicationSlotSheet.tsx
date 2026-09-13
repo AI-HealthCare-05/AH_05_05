@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { MealSlot, MedicationOverviewItem } from '@/entities/medication';
-import { cn } from '@/shared/lib/cn';
 import { MEAL_SLOTS, SLOT_ORDER } from '@/shared/model/mealSlot';
-import { Button, Dialog, DialogContent, DialogDescription, DialogTitle } from '@/shared/ui';
+import { Button, Dialog, DialogContent, DialogDescription, DialogTitle, DoseSlotButton } from '@/shared/ui';
 
 interface MedicationSlotSheetProps {
   open: boolean;
@@ -54,21 +53,14 @@ export function MedicationSlotSheet({
           {MEAL_SLOTS.map((slot) => {
             const selected = selectedSlots.includes(slot.value);
             return (
-              <button
+              <DoseSlotButton
                 key={slot.value}
-                type="button"
-                aria-pressed={selected}
+                selected={selected}
                 aria-label={`${medication?.name ?? '약'} ${slot.label}`}
-                className={cn(
-                  'rx-dose-slot min-h-touch rounded-input border text-sm font-bold',
-                  selected
-                    ? 'border-primary bg-[var(--color-primary)] text-card'
-                    : 'border-border bg-card text-muted-foreground',
-                )}
                 onClick={() => toggleSlot(slot.value)}
               >
                 {slot.label}
-              </button>
+              </DoseSlotButton>
             );
           })}
         </div>
