@@ -12,6 +12,9 @@ async function openHome(page: Page, options: {
   longName?: string;
   initialRecords?: Dose[];
   slotTimeOverrides?: Partial<Record<string, string>>;
+  empty?: boolean;
+  startDate?: string;
+  holdLookup?: Promise<void>;
 } = {}) {
   const requests: Dose[] = [];
   let records: Dose[] = options.initialRecords ?? [];
@@ -30,13 +33,13 @@ async function openHome(page: Page, options: {
     } }));
     await page.route('**/api/v1/display/med/nutr/rank', route => route.fulfill({ status: 204 }));
     await page.route('**/api/v1/med/user-suppl-nutr?**', route => route.fulfill({ json: {
-      items: [
+      items: (options.empty ? [] : [
         { id: 501, name: options.longName ?? '오메가3', slots: ['MORNING', 'EVENING'] },
         { id: 502, name: '종합비타민', slots: ['MORNING'] },
         { id: 503, name: '비타민 D', slots: ['EVENING'] },
-      ].map(item => ({
+      ]).map(item => ({
         id: item.id, custom_name: item.name, dose_amount: '1.000', dose_unit: '정',
-        start_date: '2026-09-01', end_date: null, status: 'ACTIVE', score: null,
+        start_date: options.startDate ?? '2026-09-01', end_date: null, status: 'ACTIVE', score: null,
         review_body: null, note: null, created_at: '2026-09-01T09:00:00+09:00', updated_at: null,
         slots: item.slots.map(slot => ({
           slot,
@@ -44,10 +47,11 @@ async function openHome(page: Page, options: {
             ?? (slot === 'MORNING' ? '07:30:00' : '18:00:00'),
         })),
         supplement: null,
-      })), total: 3, offset: 0, limit: 100, nutrient_standard: null,
+      })), total: options.empty ? 0 : 3, offset: 0, limit: 100, nutrient_standard: null,
     } }));
     await page.route('**/api/v1/med/supplement-doses**', async route => {
       if (route.request().method() === 'GET') {
+        await options.holdLookup;
         if (failLookup) {
           await route.fulfill({ status: 500, json: { detail: 'lookup failure' } });
           return;
@@ -263,6 +267,7 @@ test('복용 기록 조회 실패 중에는 저장할 수 없고 조회를 재�
   const { morning, requests, recoverLookup } = await openHome(page, { failLookup: true });
   const panel = page.getByRole('tabpanel', { name: '오늘의 영양제' });
   await expect(panel.getByRole('alert')).toBeVisible();
+  await expect(panel.getByRole('button', { name: '영양제 살펴보기' })).toHaveCount(0);
   await expect(panel.getByRole('button', { name: '다 먹었어요' })).toHaveCount(0);
   expect(requests).toHaveLength(0);
   recoverLookup();
@@ -324,11 +329,66 @@ test('되돌리기 실패는 완료 상태를 유지하고 같은 false 요청�
   ]);
 });
 
-test('홈 영양제 살펴보기는 둘러보기 탭으로 진입한다', async ({ page }) => {
-  const { morning, requests } = await openHome(page);
-  await expect(morning.getByRole('button', { name: '종합비타민 선택' })).toBeVisible();
-  await page.getByRole('button', { name: '영양제 살펴보기' }).click();
+test('등록한 영양제가 없는 홈의 살펴보기는 둘러보기 탭으로 진입한다', async ({ page }) => {
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
+  const { requests } = await openHome(page, { empty: true });
+  const browse = page.getByRole('tabpanel', { name: '오늘의 영양제' })
+    .getByRole('button', { name: '영양제 살펴보기' });
+  await expect(browse).toHaveCount(1);
+  await browse.click();
   await expect(page).toHaveURL(/\/supplements\?tab=browse$/);
   await expect(page.getByRole('button', { name: '둘러보기' })).toHaveAttribute('aria-pressed', 'true');
   expect(requests).toHaveLength(0);
+});
+
+for (const width of [320, 390]) {
+  test(`등록된 영양제 홈은 복용 전과 전체 완료 후에도 살펴보기를 표시하지 않는다 (${width}px)`, async ({ page }, testInfo) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width, height: 844 });
+    const { morning } = await openHome(page);
+    const browse = page.getByRole('tabpanel', { name: '오늘의 영양제' })
+      .getByRole('button', { name: '영양제 살펴보기' });
+    await expect(morning.getByRole('button', { name: '오메가3 선택' })).toBeVisible();
+    await expect(browse).toHaveCount(0);
+    await morning.getByRole('button', { name: '다 먹었어요' }).scrollIntoViewIfNeeded();
+    await page.locator('img:visible').evaluateAll(async images => {
+      await Promise.all(images.map(image => (image as HTMLImageElement).decode()));
+    });
+    await page.screenshot({ path: testInfo.outputPath(`430-registered-supplement-home-${width}.png`), fullPage: true, animations: 'disabled' });
+    await morning.getByRole('button', { name: '다 먹었어요' }).click();
+    await expect(morning.getByRole('button', { name: '다 먹었어요' })).toBeDisabled();
+    await expect(browse).toHaveCount(0);
+  });
+}
+
+test('등록된 영양제가 미래에 시작해 오늘 회차가 없어도 살펴보기를 표시하지 않는다', async ({ page }) => {
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
+  let releaseLookup!: () => void;
+  const holdLookup = new Promise<void>(resolve => { releaseLookup = resolve; });
+  await openHome(page, { startDate: '2026-09-06', holdLookup });
+  const panel = page.getByRole('tabpanel', { name: '오늘의 영양제' });
+  try {
+    await expect(panel.getByRole('status')).toBeVisible();
+  } finally {
+    releaseLookup();
+  }
+  await expect(panel.getByRole('status')).toHaveCount(0);
+  await expect(panel.getByRole('alert')).toHaveCount(0);
+  await expect(panel.getByRole('group', { name: '아침 영양제' })).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: '영양제 살펴보기' })).toHaveCount(0);
+});
+
+test('등록된 영양제 기록을 불러오는 중에는 살펴보기를 표시하지 않는다', async ({ page }) => {
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
+  let releaseLookup!: () => void;
+  const holdLookup = new Promise<void>(resolve => { releaseLookup = resolve; });
+  const { morning } = await openHome(page, { holdLookup });
+  const panel = page.getByRole('tabpanel', { name: '오늘의 영양제' });
+  try {
+    await expect(panel.getByRole('status')).toBeVisible();
+    await expect(panel.getByRole('button', { name: '영양제 살펴보기' })).toHaveCount(0);
+  } finally {
+    releaseLookup();
+  }
+  await expect(morning).toBeVisible();
 });

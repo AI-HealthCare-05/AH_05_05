@@ -253,6 +253,7 @@ export function SupplementsBrowseView({
                   }}
                 >
                   {option.label}
+                  {selected ? (direction === 'asc' ? ' ▲' : ' ▼') : null}
                 </button>
               );
             })}
@@ -380,13 +381,13 @@ function SearchResultItem({
           <strong className="block [overflow-wrap:anywhere] text-base text-foreground">{product.productName}</strong>
           {product.ratingAverage !== null && product.reviewCount > 0 && (
             <span className="mt-1 block text-sm font-bold text-warning-strong">
-              ★{product.ratingAverage.toFixed(1)} · {product.reviewCount}
+              ★{product.ratingAverage.toFixed(1)} · 후기: {product.reviewCount}개
             </span>
           )}
         </span>
         {alreadyRegistered && (
-          <StatusBadge type="done" className="shrink-0 px-2.5 py-1 text-xs">
-            등록됨
+          <StatusBadge type="active" className="shrink-0 px-2.5 py-1 text-xs">
+            복용 중
           </StatusBadge>
         )}
         <DrawnChevron direction="right" className="size-5 shrink-0 text-disabled-foreground" />

@@ -1,3 +1,4 @@
+import asyncio
 import sqlite3
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
@@ -375,7 +376,7 @@ async def test_join_rejects_cardinality_ownership_idempotency_and_duplicate_acti
         )
 
 
-async def test_supplement_duplicate_active_check_uses_exact_canonical_target_set(
+async def test_supplement_duplicate_active_check_rejects_any_overlapping_target(
     service: CustomChallengeService,
 ) -> None:
     user = await _user()
@@ -388,18 +389,168 @@ async def test_supplement_duplicate_active_check_uses_exact_canonical_target_set
         CustomChallengeJoinRequest(target_ids=[first.id, second.id], idempotency_key="set-1"),
     )
 
-    subset = await service.join(
-        user,
-        supplement_template.id,
-        CustomChallengeJoinRequest(target_ids=[first.id], idempotency_key="set-2"),
-    )
-    assert [target.source_id for target in subset.targets] == [first.id]
+    with pytest.raises(CustomChallengeAlreadyActiveError):
+        await service.join(
+            user,
+            supplement_template.id,
+            CustomChallengeJoinRequest(target_ids=[first.id], idempotency_key="set-2"),
+        )
 
     with pytest.raises(CustomChallengeAlreadyActiveError):
         await service.join(
             user,
             supplement_template.id,
             CustomChallengeJoinRequest(target_ids=[second.id, first.id], idempotency_key="set-3"),
+        )
+
+
+async def test_supplement_overlap_preserves_retries_history_and_distinct_registrations(
+    service: CustomChallengeService,
+) -> None:
+    user = await _user()
+    _, template = await _templates()
+    first = await _supplement(user, name="비타민")
+    second = await _supplement(user, name="비타민")
+    third = await _supplement(user, name="오메가3")
+    original = await service.join(
+        user,
+        template.id,
+        CustomChallengeJoinRequest(
+            target_ids=[first.id],
+            idempotency_key="original",
+        ),
+    )
+    for ids in ([first.id, second.id], [third.id, first.id]):
+        with pytest.raises(CustomChallengeAlreadyActiveError):
+            await service.join(
+                user,
+                template.id,
+                CustomChallengeJoinRequest(
+                    target_ids=ids,
+                    idempotency_key=f"overlap-{ids}",
+                ),
+            )
+    distinct = await service.join(
+        user,
+        template.id,
+        CustomChallengeJoinRequest(
+            target_ids=[second.id, third.id],
+            idempotency_key="distinct",
+        ),
+    )
+    assert distinct.id != original.id
+    retry = await service.join(
+        user,
+        template.id,
+        CustomChallengeJoinRequest(
+            target_ids=[first.id],
+            idempotency_key="original",
+        ),
+    )
+    assert retry.id == original.id
+    await service.cancel(user, original.id)
+    rejoined = await service.join(
+        user,
+        template.id,
+        CustomChallengeJoinRequest(
+            target_ids=[first.id],
+            idempotency_key="rejoined",
+        ),
+    )
+    assert rejoined.id != original.id
+    assert (await service.get(user, original.id)).status.value == "CANCELLED"
+    assert await CustomChallengeParticipation.filter(user_id=user.id).count() == 3
+
+
+async def test_concurrent_supplement_joins_accept_only_one_overlapping_request(
+    service: CustomChallengeService,
+) -> None:
+    user = await _user()
+    _, template = await _templates()
+    first = await _supplement(user, name="비타민")
+    second = await _supplement(user, name="오메가3")
+    results = await asyncio.gather(
+        service.join(
+            user,
+            template.id,
+            CustomChallengeJoinRequest(
+                target_ids=[first.id, second.id],
+                idempotency_key="concurrent-all",
+            ),
+        ),
+        service.join(
+            user,
+            template.id,
+            CustomChallengeJoinRequest(
+                target_ids=[first.id],
+                idempotency_key="concurrent-subset",
+            ),
+        ),
+        return_exceptions=True,
+    )
+    assert sum(isinstance(result, CustomChallengeAlreadyActiveError) for result in results) == 1
+    assert sum(not isinstance(result, BaseException) for result in results) == 1
+    assert await CustomChallengeParticipation.filter(user_id=user.id).count() == 1
+
+
+async def test_existing_overlap_is_preserved_and_idempotent_after_policy_change(
+    service: CustomChallengeService,
+) -> None:
+    user = await _user()
+    _, template = await _templates()
+    first = await _supplement(user, name="비타민")
+    joined = await service.join(
+        user,
+        template.id,
+        CustomChallengeJoinRequest(
+            target_ids=[first.id],
+            idempotency_key="before-policy-first",
+        ),
+    )
+    # Fixture represents a legacy overlapping participation, without bypassing
+    # the current join service in production.
+    legacy = await CustomChallengeParticipation.create(
+        user_id=user.id,
+        template_id=template.id,
+        challenge_type=CustomChallengeType.SUPPLEMENT,
+        challenge_name=template.name,
+        joined_at=NOW,
+        end_at=NOW + timedelta(days=7),
+        idempotency_key="before-policy-second",
+    )
+    target = await CustomChallengeTarget.create(
+        participation_id=legacy.id,
+        source_id_snapshot=first.id,
+        target_name_snapshot="비타민",
+        supplement_registration_id=first.id,
+    )
+    await CustomChallengeOccurrence.create(
+        target_id=target.id,
+        scheduled_date=TEST_DATE,
+        slot=MealSlot.MORNING,
+        scheduled_at=NOW.replace(hour=8, minute=0),
+    )
+    await service.recommendations(user)
+    listed = await service.list(user)
+    assert {item.id for item in listed.items} == {joined.id, legacy.id}
+    assert all(item.status.value == "ACTIVE" for item in listed.items)
+    retried = await service.join(
+        user,
+        template.id,
+        CustomChallengeJoinRequest(
+            target_ids=[first.id],
+            idempotency_key="before-policy-second",
+        ),
+    )
+    assert retried.id == legacy.id
+    with pytest.raises(CustomChallengeAlreadyActiveError):
+        await service.join(
+            user,
+            template.id,
+            CustomChallengeJoinRequest(
+                target_ids=[first.id],
+                idempotency_key="new-overlap",
+            ),
         )
 
 

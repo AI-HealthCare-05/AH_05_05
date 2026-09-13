@@ -4,6 +4,9 @@ from ai_worker.chains.conditional_question_interpretation_chain import (
     build_conditional_question_interpretation_chain,
 )
 from ai_worker.chains.conversation_gate_chain import build_conversation_gate_chain
+from ai_worker.chains.interaction_evidence_reasoning_chain import (
+    build_interaction_evidence_reasoning_chain,
+)
 from ai_worker.chains.semantic_question_router import (
     LocalSemanticQuestionRouter,
     SentenceTransformerQuestionEmbeddingModel,
@@ -173,6 +176,16 @@ def build_medication_chat_core_service(
         if settings.CONDITIONAL_QUESTION_INTERPRETATION_ENABLED
         else None
     )
+    interaction_evidence_reasoning_chain = (
+        build_interaction_evidence_reasoning_chain(
+            model=settings.OPENAI_CHAT_MODEL,
+            api_key=settings.OPENAI_API_KEY,
+            timeout_seconds=settings.OPENAI_TIMEOUT_SECONDS,
+            max_retries=0,
+        )
+        if settings.INTERACTION_EVIDENCE_REASONING_ENABLED
+        else None
+    )
     conversation_gate_chain = (
         build_conversation_gate_chain(
             model=settings.CONVERSATION_GATE_MODEL,
@@ -240,6 +253,7 @@ def build_medication_chat_core_service(
         ),
         supplement_ingredient_catalog=supplement_ingredient_catalog,
         conditional_interpretation_chain=conditional_interpretation_chain,
+        interaction_evidence_reasoning_chain=interaction_evidence_reasoning_chain,
         conversation_gate_chain=conversation_gate_chain,
         conversation_response_generator=conversation_response_generator,
         semantic_question_router=semantic_question_router,

@@ -8,6 +8,7 @@ from ai_worker.llm.prompts.medication_chat_prompt import (
 )
 from ai_worker.schemas.chat import ChatHistoryMessage
 from ai_worker.schemas.enums import ChatRole, SafetyStatus
+from ai_worker.schemas.evidence_reasoning import EvidenceClaim, EvidenceReasoningOutput
 from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
@@ -78,6 +79,61 @@ def test_build_messages_applies_markdown_user_template() -> None:
     payload = json.loads(user_content.removeprefix("입력 데이터(JSON)\n"))
     assert payload["question"] == "타이레놀의 주의사항을 알려줘"
     assert payload["draft_answer"] == "주의사항: 확인된 초안입니다."
+
+
+def test_build_messages_includes_only_structured_evidence_reasoning_result() -> None:
+    request = MedicationChatRequest(
+        request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+        user_id=1,
+        question="마그네슘과 아연을 같이 먹어도 돼?",
+    )
+    result = MedicationChatResult(
+        request_id=request.request_id,
+        answer="확인된 상호작용 초안입니다.",
+        route=MedicationChatRoute.INTERACTION,
+        safety_status=SafetyStatus.SAFE,
+        prompt_version="draft-v1",
+        schema_version="medication-chat-result-v1",
+        evidence_reasoning=EvidenceReasoningOutput(
+            reasoning_status="SUPPORTED",
+            interaction_decision="INTERACTION_CONFIRMED",
+            claims=[
+                EvidenceClaim(
+                    section_type=KnowledgeSectionType.INTERACTION,
+                    pair_key="a" * 64,
+                    statement="두 성분의 직접 관계가 확인됐습니다.",
+                    evidence_ids=["chunk:abc"],
+                )
+            ],
+        ),
+    )
+
+    messages = build_medication_chat_messages(
+        request=request,
+        context=ActiveIntakeContext(user_id=1),
+        result=result,
+    )
+
+    user_content = messages[-1].content
+    assert isinstance(user_content, str)
+    payload = json.loads(user_content.removeprefix("입력 데이터(JSON)\n"))
+    assert payload["evidence_reasoning"] == {
+        "reasoning_status": "SUPPORTED",
+        "interaction_decision": "INTERACTION_CONFIRMED",
+        "claims": [
+            {
+                "section_type": "INTERACTION",
+                "pair_key": "a" * 64,
+                "statement": "두 성분의 직접 관계가 확인됐습니다.",
+                "evidence_ids": ["chunk:abc"],
+                "scope_note": None,
+            }
+        ],
+        "supported_action": None,
+        "missing_section_types": [],
+        "conflict_evidence_ids": [],
+        "conflict_pair_key": None,
+    }
 
 
 def test_build_messages_omits_unreferenced_history_from_general_question() -> None:
@@ -164,17 +220,25 @@ def test_build_messages_keeps_history_for_confirmed_session_reference() -> None:
 def test_system_prompt_requires_limited_markdown_product_answer() -> None:
     assert "✅ **효능**" in SYSTEM_PROMPT
     assert "`- ` 목록" in SYSTEM_PROMPT
-    assert "# 제목" in SYSTEM_PROMPT
-    assert "빈 항목은 출력하지" in SYSTEM_PROMPT
-    assert "질문과 직접 관계있는 정보만" in SYSTEM_PROMPT
+    assert "굵은 제품명만" in SYSTEM_PROMPT
+    assert "값이 없는 항목은 출력하지" in SYSTEM_PROMPT
+    assert "질문과 직접 관계있는 섹션" in SYSTEM_PROMPT
 
 
-def test_system_prompt_uses_v6_few_shot_and_private_answer_checklist() -> None:
-    assert MEDICATION_CHAT_PROMPT_VERSION == "medication-chat-prompt-v6"
-    assert "Few-shot" in SYSTEM_PROMPT
-    assert "내부 점검" in SYSTEM_PROMPT
-    assert "최종 답변에는 내부 점검 과정" in SYSTEM_PROMPT
-    assert "포함된 섹션만 출력" in SYSTEM_PROMPT
+def test_system_prompt_uses_v7_six_element_contract_and_private_checklist() -> None:
+    assert MEDICATION_CHAT_PROMPT_VERSION == "medication-chat-prompt-v7"
+    for heading in (
+        "역할(Role)",
+        "작업(Task)",
+        "내용(Content)",
+        "형식(Format)",
+        "제약(Constraint)",
+        "예시(Example)",
+    ):
+        assert heading in SYSTEM_PROMPT
+    assert "내부적으로 점검" in SYSTEM_PROMPT
+    assert "점검 과정이나 숨겨진 추론문은 출력하지" in SYSTEM_PROMPT
+    assert "covered section만 출력" in SYSTEM_PROMPT
     assert "초안에 포함된 의료 면책 문구를 유지" not in SYSTEM_PROMPT
     assert "✉️ **안내사항**" in SYSTEM_PROMPT
     assert "📭 **공식 확인 경로**" in SYSTEM_PROMPT
@@ -182,13 +246,12 @@ def test_system_prompt_uses_v6_few_shot_and_private_answer_checklist() -> None:
 
 
 def test_system_prompt_forbids_repeating_unverified_interaction_notice() -> None:
-    assert "`☑️ **확인하지 못한 조합**`이 있으면" in SYSTEM_PROMPT
-    assert "`근거를 확인하지 못한 항목`" in SYSTEM_PROMPT
+    assert "확인하지 못한 조합은 한 번만 표시" in SYSTEM_PROMPT
 
 
 def test_system_prompt_limits_each_requested_section_to_short_bullets() -> None:
-    assert "한 bullet은 약 70자 이내" in SYSTEM_PROMPT
-    assert "섹션당 핵심 bullet 한 개" in SYSTEM_PROMPT
+    assert "각 bullet은 한 가지 핵심만 약 70자 이내" in SYSTEM_PROMPT
+    assert "섹션당 최대 4개" in SYSTEM_PROMPT
 
 
 def test_prompt_limits_product_output_to_requested_sections() -> None:
@@ -226,7 +289,7 @@ def test_prompt_limits_product_output_to_requested_sections() -> None:
     assert isinstance(user_content, str)
     payload = json.loads(user_content.removeprefix("입력 데이터(JSON)\n"))
     assert payload["requested_section_types"] == ["FUNCTION", "CAUTION"]
-    assert "DAILY_INTAKE가 요청되지 않았다면" in SYSTEM_PROMPT
+    assert "covered section만 출력" in SYSTEM_PROMPT
 
 
 def test_system_prompt_treats_active_intake_as_requested_sections() -> None:
@@ -382,13 +445,10 @@ def test_build_messages_keeps_requested_dosage_in_draft() -> None:
 
 
 def test_system_prompt_limits_interaction_answer_to_matching_evidence() -> None:
-    assert "두 질문 성분을 모두" in SYSTEM_PROMPT
-    assert "근거에 없는 복용 간격·용량" in SYSTEM_PROMPT
-    assert "동물·세포 연구" in SYSTEM_PROMPT
+    assert "검증된 evidence claims" in SYSTEM_PROMPT
+    assert "의료 사실·수치·행동 지침은 초안 또는 검증된 claim 범위" in SYSTEM_PROMPT
 
 
 def test_system_prompt_distinguishes_product_and_ingredient_family_evidence() -> None:
-    assert "정확 제품의 RDBMS 안내를 우선" in SYSTEM_PROMPT
-    assert "성분 계열 일반 정보" in SYSTEM_PROMPT
-    assert "한국어로 핵심만 요약" in SYSTEM_PROMPT
-    assert "근거가 없는 항목은 만들지" in SYSTEM_PROMPT
+    assert "서버가 제공한 입력과 후보를 사실의 경계" in SYSTEM_PROMPT
+    assert "입력에 직접 근거가 없는 의료 사실은 확정하지" in SYSTEM_PROMPT

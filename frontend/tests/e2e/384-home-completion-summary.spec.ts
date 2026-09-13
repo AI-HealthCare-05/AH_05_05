@@ -8,7 +8,7 @@ test.beforeEach(() => {
   test.skip(IS_REAL_API, MOCK_ONLY_REASON);
 });
 
-test('복약 시간대 전체 완료는 헤더 chip 하나로 요약하고 선택·되돌리기를 구분한다', async ({
+test('복약 시간대 전체 완료도 각 처방명 위에 표시하고 선택·되돌리기를 구분한다', async ({
   page,
 }, testInfo) => {
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
@@ -32,13 +32,12 @@ test('복약 시간대 전체 완료는 헤더 chip 하나로 요약하고 선�
   await rows.nth(1).click();
   await detail.getByRole('button', { name: '먹었어요' }).click();
 
-  await expect(headerSummary).toHaveCount(1);
-  await expect(headerSummary).toHaveText('복용 완료');
-  await expect(detail.locator('[data-episode-completed-badge]')).toHaveCount(0);
+  await expect(headerSummary).toHaveCount(0);
+  await expect(detail.locator('[data-episode-completed-badge]')).toHaveCount(2);
   await page.screenshot({ path: testInfo.outputPath('384-medication-after.png'), fullPage: true });
 
   await rows.nth(0).click();
-  await expect(headerSummary).toHaveCount(1);
+  await expect(headerSummary).toHaveCount(0);
   await detail.getByRole('button', { name: '복약 기록 되돌리기' }).click();
   await expect(headerSummary).toHaveCount(0);
   await expect(detail.locator('[data-episode-completed-badge]')).toHaveCount(1);

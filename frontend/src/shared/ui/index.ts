@@ -47,5 +47,6 @@ export type { CheckboxFieldProps } from './CheckboxField';
 export { Switch } from './switch';
 export { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger } from './dialog';
 export { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from './select';
-export { Tabs, TabsContent, TabsList, TabsTrigger } from './tabs';
+export { NavigationTabs, Tabs, TabsContent, TabsList, TabsTrigger } from './tabs';
+export type { NavigationTabItem, NavigationTabsProps } from './tabs';
 export { Toaster } from './sonner';

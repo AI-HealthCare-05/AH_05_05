@@ -390,11 +390,51 @@ async def _fail_push(
     deactivate: bool,
     retry_count: int | None = None,
 ) -> None:
+    # Push provider 호출은 이미 끝났다. 교착이나 연결 오류가 나면 발송을 반복하지 않고
+    # 실패 결과를 DB에 기록하는 트랜잭션만 다시 시도한다.
+    for attempt in range(3):
+        try:
+            await _persist_push_failure(
+                job,
+                subscription,
+                alarm,
+                payload,
+                result,
+                deactivate=deactivate,
+                retry_count=retry_count,
+            )
+            return
+        except (OperationalError, DBConnectionError):
+            if attempt == 2:
+                raise
+            await asyncio.sleep(0.1 * (2**attempt))
+
+
+async def _persist_push_failure(
+    job: BackgroundJob,
+    subscription: PushSubscription,
+    alarm: Alarm,
+    payload: dict[str, object],
+    result: PushResult,
+    *,
+    deactivate: bool,
+    retry_count: int | None,
+) -> None:
     now = datetime.now(config.TIMEZONE)
     event_payload = dict(payload)
     if result.status_code is not None:
         event_payload["statusCode"] = result.status_code
     async with in_transaction() as connection:
+        job = await BackgroundJob.filter(id=job.id).using_db(connection).select_for_update().first()
+        if job is None or job.status != BackgroundJobStatus.PROCESSING:
+            return
+        # AlarmEvent의 FK 공유 잠금을 먼저 잡고 구독을 UPDATE하면, 같은 구독을 쓰는
+        # 동시 실패 트랜잭션끼리 잠금 승격 교착이 난다. 구독 행을 먼저 배타 잠금한다.
+        subscription = (
+            await PushSubscription.filter(id=subscription.id).using_db(connection).select_for_update().first()
+        )
+        if subscription is None:
+            return
         event = await AlarmEvent.create(
             using_db=connection,
             alarm_id=alarm.id,

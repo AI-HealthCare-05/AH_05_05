@@ -4,7 +4,10 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
-from ai_worker.llm.prompts.prompt_assets import load_prompt_template_document
+from ai_worker.llm.prompts.prompt_assets import (
+    MedicationPromptStage,
+    load_prompt_chain_stage,
+)
 from ai_worker.schemas.conversation_gate import ConversationIntent, SymptomFollowUpField
 
 
@@ -35,10 +38,14 @@ class AsyncConversationResponseClient(Protocol):
     async def ainvoke(self, messages: Any) -> ConversationResponsePayload | dict[str, Any]: ...
 
 
-PROMPT_DOCUMENT = load_prompt_template_document("conversation_response_prompt_v1.md")
+CONVERSATION_RESPONSE_PROMPT_VERSION = "conversation-response-prompt-v7"
+
+PROMPT_DOCUMENT = load_prompt_chain_stage(
+    MedicationPromptStage.CONVERSATION_RESPONSE,
+)
 PROMPT = ChatPromptTemplate.from_messages(
     [
-        ("system", PROMPT_DOCUMENT.system),
+        ("system", PROMPT_DOCUMENT.compiled_system),
         ("human", PROMPT_DOCUMENT.user),
     ]
 )
@@ -76,6 +83,9 @@ class ConversationResponseGenerator:
                 "많이 불편하시겠어요. 증상 원인이나 치료 약 추천은 할 수 없지만, "
                 "현재 복용 중인 약과 함께 먹어도 되는지는 확인해드릴 수 있어요. "
                 "추가로 복용하려는 약의 제품명 또는 성분명을 알려주세요."
+            ),
+            ConversationIntent.SENSITIVE_REQUEST: (
+                "일반적인 정의는 안내할 수 있지만, 제조·구입·사용 방법은 안내할 수 없습니다."
             ),
         }
         return self._format_answer(input=input, body=bodies.get(input.intent, "무엇을 도와드릴까요?"))

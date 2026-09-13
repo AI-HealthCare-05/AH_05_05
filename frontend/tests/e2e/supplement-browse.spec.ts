@@ -52,9 +52,9 @@ test('영양제 기본 화면은 내 영양제이고 쿼리로 둘러보기를 �
   test.skip(IS_REAL_API, '고정된 내 영양제 목록을 확인하는 목업 전용 테스트입니다.');
   await page.goto('/dev/supplements');
 
-  const tabs = page.getByRole('group', { name: '영양제 화면' });
-  await expect(tabs.getByRole('button', { name: '내 영양제' })).toHaveAttribute(
-    'aria-pressed',
+  const tabs = page.getByRole('tablist', { name: '영양제 화면' });
+  await expect(tabs.getByRole('tab', { name: '내 영양제' })).toHaveAttribute(
+    'aria-selected',
     'true',
   );
   await expect(page.getByRole('heading', { name: /먹고 있는 영양제/ })).toBeVisible();
@@ -62,8 +62,8 @@ test('영양제 기본 화면은 내 영양제이고 쿼리로 둘러보기를 �
 
   await page.goto('/dev/supplements?tab=browse');
 
-  await expect(tabs.getByRole('button', { name: '둘러보기' })).toHaveAttribute(
-    'aria-pressed',
+  await expect(tabs.getByRole('tab', { name: '둘러보기' })).toHaveAttribute(
+    'aria-selected',
     'true',
   );
   await page.getByRole('banner').getByRole('button', { name: 'AI 보고서 받기' }).click();
@@ -74,12 +74,12 @@ test('탭을 반복해서 바꿔도 replace 이동이라 브라우저 이력이 
   await page.goto('/dev/gallery');
   await page.goto('/dev/supplements');
 
-  const tabs = page.getByRole('group', { name: '영양제 화면' });
-  await tabs.getByRole('button', { name: '둘러보기' }).click();
+  const tabs = page.getByRole('tablist', { name: '영양제 화면' });
+  await tabs.getByRole('tab', { name: '둘러보기' }).click();
   await expect(page).toHaveURL(/\/dev\/supplements\?tab=browse$/);
-  await tabs.getByRole('button', { name: '내 영양제' }).click();
+  await tabs.getByRole('tab', { name: '내 영양제' }).click();
   await expect(page).toHaveURL(/\/dev\/supplements$/);
-  await tabs.getByRole('button', { name: '둘러보기' }).click();
+  await tabs.getByRole('tab', { name: '둘러보기' }).click();
   await expect(page).toHaveURL(/\/dev\/supplements\?tab=browse$/);
 
   await page.goBack();
@@ -92,21 +92,22 @@ test('둘러보기에서 내 영양제로 돌아오면 기존 목록과 성분 �
   test.skip(IS_REAL_API, '고정된 내 영양제 목록과 합계를 확인하는 목업 전용 테스트입니다.');
   await page.goto('/dev/supplements?tab=browse');
 
-  const tabs = page.getByRole('group', { name: '영양제 화면' });
-  await tabs.getByRole('button', { name: '내 영양제' }).click();
+  const tabs = page.getByRole('tablist', { name: '영양제 화면' });
+  await tabs.getByRole('tab', { name: '내 영양제' }).click();
 
   await expect(page.getByRole('heading', { name: /먹고 있는 영양제/ })).toBeVisible();
-  await expect(page.getByRole('heading', { name: '성분 합계' })).toBeVisible();
-  await expect(page.getByText('등록한 영양제의 성분만 더한 값이에요')).toBeVisible();
+  const totals = page.getByRole('region', { name: '성분 합계' });
+  await expect(totals.getByRole('heading', { name: '성분 합계' })).toBeVisible();
+  await expect(totals.getByRole('article')).toHaveCount(8);
 });
-test('둘러보기는 랭킹 5개와 등록된 제품 상태를 보여준다', async ({ page }) => {
+test('둘러보기는 랭킹 5개와 현재 복용 중인 제품 상태를 보여준다', async ({ page }) => {
   test.skip(IS_REAL_API, '목업의 고정 랭킹과 등록 상태를 확인하는 테스트입니다.');
   await page.goto('/dev/supplements?tab=browse');
 
   const ranking = page.getByLabel('영양제 랭킹');
   await expect(ranking.getByText('RxVita가 골랐어요', { exact: true })).toBeVisible();
   await expect(ranking.getByRole('listitem')).toHaveCount(5);
-  await expect(ranking.getByText('등록됨', { exact: true })).toBeVisible();
+  await expect(ranking.getByText('복용 중', { exact: true })).toBeVisible();
 });
 
 test('검색 결과는 평점 집계를 보여주고 제품 상세로 이동한다', async ({ page }) => {
@@ -116,8 +117,8 @@ test('검색 결과는 평점 집계를 보여주고 제품 상세로 이동한�
   await page.getByPlaceholder('제품명 또는 성분 검색').fill('센트룸');
   const results = page.getByLabel('영양제 검색 결과');
   await expect(results.getByText('센트룸 실버 우먼', { exact: true })).toBeVisible();
-  await expect(results.getByText('★4.2 · 12', { exact: true })).toBeVisible();
-  await expect(results.getByText('★0.0 · 0', { exact: true })).toHaveCount(0);
+  await expect(results.getByText('★4.2 · 후기: 12개', { exact: true })).toBeVisible();
+  await expect(results.getByText('★0.0 · 후기: 0개', { exact: true })).toHaveCount(0);
 
   const sorts = page.getByRole('group', { name: '검색 결과 정렬' });
   await sorts.getByRole('button', { name: '이름순' }).click();

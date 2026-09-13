@@ -75,6 +75,30 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/v1/medications', (route) =>
     fulfillJson(route, [overview(353, false, 5), overview(354, true, 0)]),
   );
+  await page.route('**/api/v1/med/medication/schedule/353', (route) =>
+    fulfillJson(route, {
+      start: overview(353, false, 5).start,
+      mealTimes: MEAL_TIMES,
+      medications: [
+        {
+          medicationId: 3530,
+          name: LONG_MEDICATION_NAME,
+          dose: '125/500mg 2정',
+          timesPerDay: 4,
+          timing: '식후',
+          slots: ['morning', 'lunch', 'evening', 'bedtime'],
+        },
+        {
+          medicationId: 3531,
+          name: '아세트아미노펜복합연질캡슐',
+          dose: '650mg 1캡슐',
+          timesPerDay: 2,
+          timing: '식후',
+          slots: ['morning', 'evening'],
+        },
+      ],
+    }),
+  );
 });
 
 test('상태 행을 카드 왼쪽 위에 두고 모든 처방 정보를 폭별로 자르지 않는다', async ({
@@ -87,9 +111,10 @@ test('상태 행을 카드 왼쪽 위에 두고 모든 처방 정보를 폭별�
     await page.goto('/medications');
 
     const activeCard = page.getByRole('button', { name: /2026년 9월 5일 처방.*복용 중/ });
+    const activeArticle = page.locator('article').filter({ has: activeCard });
     const title = activeCard.getByText(LONG_ALIAS, { exact: true });
-    const status = activeCard.getByText('복용 중', { exact: true });
-    const remaining = activeCard.getByText('5일 남음', { exact: true });
+    const status = activeArticle.getByText('복용 중', { exact: true });
+    const remaining = activeArticle.getByText('5일 남음', { exact: true });
     const period = activeCard.getByText('2026년 9월 5일 ~ 14일', { exact: true });
 
     await expect(activeCard).toBeVisible();
@@ -125,10 +150,13 @@ test('상태 행을 카드 왼쪽 위에 두고 모든 처방 정보를 폭별�
     await activeCard.click();
     const details = page.getByRole('region', { name: '2026년 9월 5일 처방 상세' });
     await expectTextFits(details.getByText(new RegExp(LONG_MEDICATION_NAME)));
-    await expect(details.getByText('자기전 22:30', { exact: true })).toBeVisible();
+    await expect(details.getByRole('columnheader', { name: '자기전', exact: true })).toBeVisible();
+    await expect(details.getByRole('img', { name: '자기전', exact: true })).toBeVisible();
+    await expect(details).not.toContainText(/\d{2}:\d{2}/);
 
     const finishedCard = page.getByRole('button', { name: /2026년 8월 1일 처방.*복용 완료/ });
-    const finishedStatus = finishedCard.getByText('복용 완료', { exact: true });
+    const finishedArticle = page.locator('article').filter({ has: finishedCard });
+    const finishedStatus = finishedArticle.getByText('복용 완료', { exact: true });
     const finishedTitle = finishedCard.getByText('지난 장기 처방', { exact: true });
     const [finishedStatusBox, finishedTitleBox] = await Promise.all([
       finishedStatus.boundingBox(),
@@ -138,7 +166,7 @@ test('상태 행을 카드 왼쪽 위에 두고 모든 처방 정보를 폭별�
     expect(finishedTitleBox).not.toBeNull();
     expect(Math.abs(finishedStatusBox!.x - finishedTitleBox!.x)).toBeLessThanOrEqual(2);
     expect(finishedStatusBox!.y + finishedStatusBox!.height).toBeLessThanOrEqual(finishedTitleBox!.y);
-    await expect(finishedCard.getByText(/일 남음|D-Day|D-\d+/)).toHaveCount(0);
+    await expect(finishedArticle.getByText(/일 남음|D-Day|D-\d+/)).toHaveCount(0);
   }
 });
 
@@ -147,7 +175,7 @@ test('본 카드의 펼침과 연필 편집, 기본 카드 D-Day, 선택 모드�
   await page.goto('/medications');
 
   const featureCard = page.getByRole('button', { name: /2026년 9월 5일 처방.*복용 중/ });
-  await expect(featureCard.getByText('5일 남음', { exact: true })).toBeVisible();
+  await expect(page.locator('article').filter({ has: featureCard }).getByText('5일 남음', { exact: true })).toBeVisible();
   await featureCard.click();
   await expect(page.getByRole('region', { name: '2026년 9월 5일 처방 상세' })).toBeVisible();
   await expect(page.getByRole('dialog', { name: '처방 편집' })).toHaveCount(0);
@@ -157,7 +185,7 @@ test('본 카드의 펼침과 연필 편집, 기본 카드 D-Day, 선택 모드�
   await expect(page.getByRole('region', { name: '2026년 9월 5일 처방 상세' })).toHaveCount(0);
   await page.getByRole('dialog').getByRole('button', { name: '닫기' }).click();
 
-  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await page.getByRole('button', { name: '선택', exact: true }).click();
   const checkbox = page.getByRole('checkbox', { name: '2026년 9월 5일 처방 선택' });
   await featureCard.click();
   await expect(checkbox).toBeChecked();

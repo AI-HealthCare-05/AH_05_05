@@ -12,6 +12,7 @@ import { ApiError, getAuthGeneration } from '@/shared/api/client';
 import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { Button, Header } from '@/shared/ui';
 import { LoadingState } from '@/shared/ui/LoadingState';
+import { navigateBackOrReplace } from '@/shared/lib/navigation';
 
 type SupportedKind = 'medication' | 'supplement';
 
@@ -30,6 +31,7 @@ export function CustomChallengeTargetPage() {
   const [searchParams] = useSearchParams();
   const templateId = positiveId(searchParams.get('templateId'));
   const navigate = useNavigate();
+  const goBack = () => navigateBackOrReplace(navigate, '/challenges/browse');
   const { principalKey } = useSession();
   const principalRef = useRef(principalKey);
   const generationRef = useRef(0);
@@ -175,9 +177,9 @@ export function CustomChallengeTargetPage() {
 
   return (
     <>
-      <Header title={recommendation?.challengeName ?? '맞춤 챌린지'} onBack={() => navigate('/challenges/tailored')} className="h-auto! min-h-header py-2 [&_button]:shrink-0 [&_h1]:overflow-visible [&_h1]:whitespace-normal [&_h1]:break-words [&_h1]:[overflow-wrap:anywhere]" />
+      <Header title={recommendation?.challengeName ?? '맞춤 챌린지'} onBack={goBack} className="h-auto! min-h-header py-2 [&_button]:shrink-0 [&_h1]:overflow-visible [&_h1]:whitespace-normal [&_h1]:break-words [&_h1]:[overflow-wrap:anywhere]" />
       <main className="flex flex-col gap-4 px-page-x py-5">
-      <p className="text-caption text-muted-foreground">맞춤 챌린지</p>
+      <span className="self-start rounded-pill bg-warning-bg px-2 py-1 text-micro font-bold text-warning-strong">맞춤</span>
 
       {!recommendation && !loadError ? <LoadingState label="참여 대상 불러오는 중">참여 대상을 불러오고 있어요.</LoadingState> : null}
       {loadError ? (
@@ -214,14 +216,14 @@ export function CustomChallengeTargetPage() {
           <div className="flex flex-col gap-2">
             {recommendation.targets.map(target => {
               const existingParticipationId = joinedMedicationIds[target.id] ?? target.existingParticipationId;
-              const alreadyMedication = supportedKind === 'medication' && existingParticipationId !== null;
+              const alreadyParticipating = existingParticipationId !== null;
               return (
                 <label key={target.id} className="flex min-h-touch items-start gap-3 rounded-input bg-muted-bg p-3 text-sm">
                   <input
                     type="checkbox"
                     aria-label={`${target.name} 선택`}
                     checked={selectedIds.includes(target.id)}
-                    disabled={alreadyMedication || pending}
+                    disabled={alreadyParticipating || pending}
                     onChange={event => {
                       const checked = event.target.checked;
                       setActionError(null);
@@ -233,14 +235,11 @@ export function CustomChallengeTargetPage() {
                   />
                   <span className="min-w-0 break-words [overflow-wrap:anywhere]">
                     <strong className="block text-foreground">{target.name}</strong>
-                    {alreadyMedication ? (
+                    {alreadyParticipating ? (
                       <Link to={`/challenges/custom-participations/${existingParticipationId}`} className="block text-xs font-bold text-primary">
-                        이미 참여 중인 처방 보기 ›
+                        이미 참여 중인 {supportedKind === 'medication' ? '처방' : '영양제'} 보기 ›
                       </Link>
                     ) : null}
-                    {supportedKind === 'supplement' && target.existingParticipationId !== null
-                      ? <span className="text-xs text-muted-foreground">이 영양제가 포함된 참여 기록이 있어요</span>
-                      : null}
                   </span>
                 </label>
               );

@@ -22,7 +22,10 @@ for (const source of ['medications', 'supplements'] as const) {
       }
     });
     await page.goto(`/${source}`);
-    await expect(page.getByRole('button', { name: '삭제', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', {
+      name: source === 'medications' ? '선택' : '삭제',
+      exact: true,
+    })).toBeVisible();
     await page.getByRole('banner').getByRole('button', { name: 'AI 보고서 받기' }).click();
     await expect(page).toHaveURL(new RegExp(`/reports/new\\?source=${source}$`));
     await expect(page.getByRole('heading', { name: '현재 복용 정보를 함께 살펴봐요' })).toBeVisible();
@@ -54,12 +57,12 @@ test('direct report URLs remain protected for guests', async ({ browser }) => {
 test('body management remains available and report UI fits a narrow screen', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 320, height: 740 });
   await page.goto('/medications');
-  await expect(page.getByRole('button', { name: '삭제', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await expect(page.getByRole('button', { name: '선택', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '선택', exact: true }).click();
   await expect(page.getByRole('heading', { name: '삭제할 처방을 선택하세요' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '선택한 처방 삭제' })).toBeDisabled();
-  await expect(page.getByRole('button', { name: '완료', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '완료', exact: true }).click();
+  await expect(page.getByRole('button', { name: '삭제', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '취소', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '취소', exact: true }).click();
   await page.getByRole('button', { name: 'AI 보고서 받기' }).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('medication-report-320.png'), fullPage: true });

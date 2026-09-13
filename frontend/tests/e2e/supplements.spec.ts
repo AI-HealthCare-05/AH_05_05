@@ -12,7 +12,7 @@ test('RNI를 우선한 기준선과 상한선을 표시하고 초과를 세 가�
   const totals = page.getByRole('region', { name: '성분 합계' });
   const exceededCard = totals.getByRole('article', { name: '비타민 A 성분 합계' });
   const exceeded = exceededCard.getByRole('heading', { name: '비타민 A', exact: true });
-  const neutral = totals.getByText('비타민 D', { exact: true });
+  const neutral = totals.getByRole('heading', { name: '비타민 D', exact: true });
   await expect(exceeded).toBeVisible();
   await expect(exceededCard.getByText('상한 초과', { exact: true })).toBeVisible();
   await expect(exceededCard.getByText('3,200', { exact: true })).toBeVisible();
@@ -69,15 +69,15 @@ test('기준과 상한의 누락 조합을 숨기거나 임의 판정하지 않�
 test('사용자 기준 정보와 합계 범위의 필수 고지를 모두 표시한다', async ({ page }) => {
   await page.goto('/dev/supplements');
 
-  await expect(page.getByText('기준 · 2025 한국인 영양소 섭취기준 · 만 26세 남성')).toBeVisible();
+  await expect(page.getByText('2025 한국인 영양소 섭취기준 · 만 26세 남성', { exact: true })).toBeVisible();
   await expect(
     page.getByText(
-      '등록한 영양제의 성분만 더한 값이에요',
+      '검색된 영양제의 성분만 합산된 결과예요.',
     ),
   ).toBeVisible();
   await expect(
-    page.getByText('직접 입력한 0개는 성분을 알 수 없어 합계에 포함하지 않았습니다.'),
-  ).toHaveCount(0);
+    page.getByText('직접 입력한 영양제는 성분 합산에 포함되지 않아요.'),
+  ).toBeVisible();
 });
 
 test('생년월일이나 성별이 없으면 기준을 숨기고 기본정보 입력으로 안내한다', async ({ page }) => {
@@ -154,7 +154,7 @@ test('제품을 고르면 하나의 행만 펼쳐지고 1회 섭취량과 추천
   await expect(slots.getByRole('button', { name: '아침' })).toHaveAttribute('aria-pressed', 'true');
   await expect(slots.getByRole('button', { name: '자기전' })).toHaveAttribute('aria-pressed', 'false');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await expect(first.getByText('제품 표시사항의 섭취방법을 채워놨어요.')).toBeVisible();
+  await expect(first.getByText('제품 정보의 복용 권장사항을 참고하세요.')).toBeVisible();
 
   await second.getByRole('button', { name: /고려은단 멀티비타민 올인원/ }).click();
   await expect(first.getByText('1회에')).toHaveCount(0);
@@ -191,7 +191,7 @@ test('표준 섭취량이 없으면 1정으로 시작하고 프리필 안내를 
   await product.getByRole('button', { name: /얼라이브 원스데일리 포 우먼/ }).click();
 
   await expect(product.getByText('1 정', { exact: true })).toBeVisible();
-  await expect(product.getByText('제품 표시사항의 섭취방법을 채워놨어요.')).toHaveCount(0);
+  await expect(product.getByText('제품 정보의 복용 권장사항을 참고하세요.')).toHaveCount(0);
   await expect(product.getByRole('button', { name: '1회 섭취량 줄이기' })).toBeDisabled();
 
   const increase = product.getByRole('button', { name: '1회 섭취량 늘리기' });
@@ -212,9 +212,8 @@ test('표준 제품을 추가하면 회당 수량과 슬롯 수를 합계에 곱
   await expect(sheet).toBeHidden();
   const supplementList = page.getByRole('region', { name: '먹고 있는 영양제' });
   await expect(supplementList.getByRole('button').first()).toContainText('고려은단 멀티비타민 올인원');
-  await expect(supplementList.getByRole('button').first()).toContainText(
-    '하루 1회 · 1회 2정 · 아침',
-  );
+  await expect(supplementList.getByRole('button').first()).toContainText('하루 1회 · 1회 2정');
+  await expect(supplementList.getByRole('button').first()).toContainText('아침');
   await expect(page.getByText('4,000', { exact: true })).toBeVisible();
   await expect(page.getByText('추가했어요')).toHaveCount(0);
 });
@@ -239,14 +238,15 @@ test('검색하지 못한 제품은 이름만 직접 입력하고 성분 합계 
   const supplementList = page.getByRole('region', { name: '먹고 있는 영양제' });
   const manual = supplementList.getByRole('button').first();
   await expect(manual).toContainText('우리집 영양제');
-  await expect(manual).toContainText('성분 정보 없음');
-  await expect(manual).toContainText('하루 1회 · 1회 1정 · 자기전');
+  await expect(manual.getByText('성분 정보 없음', { exact: true })).toHaveCount(0);
+  await expect(manual).toContainText('하루 1회 · 1회 1정');
+  await expect(manual).toContainText('자기전');
   await expect(
-    page.getByText('직접 입력한 1개는 성분을 알 수 없어 합계에 포함하지 않았어요.'),
+    page.getByText('직접 입력한 영양제는 성분 합산에 포함되지 않아요.'),
   ).toBeVisible();
   await expect(
     page.getByText(
-      '등록한 영양제의 성분만 더한 값이에요',
+      '검색된 영양제의 성분만 합산된 결과예요.',
     ),
   ).toBeVisible();
 });
@@ -265,7 +265,8 @@ test('목록 카드에서 회당 수량과 슬롯을 편집하면 카드와 성�
   await sheet.getByRole('button', { name: '저장' }).click();
 
   const omega = supplementList.getByRole('button', { name: /오메가3/ });
-  await expect(omega).toContainText('하루 3회 · 1회 1정 · 아침 · 점심 · 저녁');
+  await expect(omega).toContainText('하루 3회 · 1회 1정');
+  await expect(omega).toContainText('아침 · 점심 · 저녁');
   await expect(page.getByText('3,500', { exact: true })).toBeVisible();
 });
 

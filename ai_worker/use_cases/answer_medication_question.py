@@ -16,6 +16,9 @@ from ai_worker.chains.conversation_gate_chain import (
     ConversationGateChain,
     ConversationGateInput,
 )
+from ai_worker.chains.interaction_evidence_reasoning_chain import (
+    InteractionEvidenceReasoningChain,
+)
 from ai_worker.chains.medication_query_plan_chain import (
     MedicationQueryPlanChain,
     MedicationQueryPlanChainInput,
@@ -82,6 +85,9 @@ from ai_worker.llm.generators.conversation_response_generator import (
     ConversationResponseGenerator,
     ConversationResponseInput,
 )
+from ai_worker.llm.prompts.medication_chat_prompt import (
+    MEDICATION_CHAT_PROMPT_VERSION,
+)
 from ai_worker.observability.chat_tracer import ChatTracer, NoOpChatTracer
 from ai_worker.rag.errors import GuidelineRetrievalError
 from ai_worker.rag.metadata.supplement_interaction_registry import (
@@ -95,6 +101,7 @@ from ai_worker.rag.query_builders.coverage_gap_query_expander import (
 from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
     MedicationKnowledgeQueryBuilder,
 )
+from ai_worker.schemas.chat import ChatHistoryMessage
 from ai_worker.schemas.conversation_gate import (
     ConversationClassification,
     ConversationDisposition,
@@ -102,6 +109,11 @@ from ai_worker.schemas.conversation_gate import (
     ConversationSafetySignal,
 )
 from ai_worker.schemas.enums import SafetyStatus
+from ai_worker.schemas.evidence_reasoning import (
+    EvidenceItem,
+    EvidenceReasoningInput,
+    EvidenceReasoningOutput,
+)
 from ai_worker.schemas.interaction import (
     InteractionEntity,
     InteractionEntityKind,
@@ -164,7 +176,6 @@ from ai_worker.use_cases.medication_chat_pipeline import (
 )
 from ai_worker.use_cases.medication_note_summary import MedicationNoteSummaryUseCase
 
-MEDICATION_CHAT_PROMPT_VERSION = "medication-chat-prompt-v3"
 MEDICATION_CHAT_SCHEMA_VERSION = "medication-chat-result-v1"
 logger = logging.getLogger(__name__)
 
@@ -207,6 +218,17 @@ class _QuestionRoutingOutcome:
 
 class AnswerMedicationQuestionUseCase:
     _MAX_PRODUCT_NAME_CANDIDATES = 12
+    _ENTITY_FREE_CONVERSATION_INTENTS = frozenset(
+        {
+            ConversationIntent.GREETING,
+            ConversationIntent.CASUAL,
+            ConversationIntent.VAGUE_SYMPTOM,
+            ConversationIntent.SPECIFIC_SYMPTOM,
+            ConversationIntent.FOLLOW_UP_SCHEDULE,
+            ConversationIntent.MEDICATION_NOTE_SUMMARY,
+            ConversationIntent.SENSITIVE_REQUEST,
+        }
+    )
     _PARENTHETICAL_DESCRIPTION_PATTERN = re.compile(r"\s*[\(（][^()（）]*[\)）]")
     _EXACT_PRODUCT_REQUIRED_PATTERN = re.compile(
         r"복용법|사용법|어떻게\s*(?:먹|복용)|"
@@ -243,6 +265,7 @@ class AnswerMedicationQuestionUseCase:
         supplement_ingredient_catalog: SupplementIngredientCatalog | None = None,
         query_plan_chain: MedicationQueryPlanChain | None = None,
         conditional_interpretation_chain: ConditionalQuestionInterpretationChain | None = None,
+        interaction_evidence_reasoning_chain: InteractionEvidenceReasoningChain | None = None,
         conversation_gate_chain: ConversationGateChain | None = None,
         conversation_response_generator: ConversationResponseGenerator | None = None,
         conversation_safety_policy: ConversationSafetyPolicy | None = None,
@@ -265,6 +288,7 @@ class AnswerMedicationQuestionUseCase:
         self._supplement_ingredient_catalog = supplement_ingredient_catalog
         self._query_plan_chain = query_plan_chain or build_medication_query_plan_chain()
         self._conditional_interpretation_chain = conditional_interpretation_chain
+        self._interaction_evidence_reasoning_chain = interaction_evidence_reasoning_chain
         self._conversation_gate_chain = conversation_gate_chain
         self._conversation_response_generator = conversation_response_generator
         self._conversation_safety_policy = conversation_safety_policy or ConversationSafetyPolicy()
@@ -277,7 +301,7 @@ class AnswerMedicationQuestionUseCase:
         self._medication_note_summary_use_case = medication_note_summary_use_case
         self._assembler = MedicationAnswerAssembler()
 
-    async def execute(
+    async def execute(  # noqa: C901 - 의료 안전 경로의 단계별 조기 반환을 명시적으로 유지한다.
         self,
         request: MedicationChatRequest,
         *,
@@ -311,7 +335,9 @@ class AnswerMedicationQuestionUseCase:
         request = prepared_question.request
         resolution = prepared_question.resolution
         early_result = prepared_question.early_result
-        supplement_names = [] if early_result is not None else await self._supplement_ingredient_names()
+        if early_result is not None:
+            return early_result
+        supplement_names = await self._supplement_ingredient_names()
         planning = await self._plan_question(
             request=request,
             resolution=resolution,
@@ -382,6 +408,10 @@ class AnswerMedicationQuestionUseCase:
                 rules = []
                 rule_status = InteractionRuleLookupStatus.RULE_REPOSITORY_UNAVAILABLE
             else:
+                rules = self._rules_for_query_plan(
+                    rules=rules,
+                    query_plan=query_plan,
+                )
                 rule_status = (
                     InteractionRuleLookupStatus.MATCHED if rules else InteractionRuleLookupStatus.NO_APPROVED_RULE
                 )
@@ -556,6 +586,10 @@ class AnswerMedicationQuestionUseCase:
             progress_callback=progress_callback,
         ):
             return terminal_result
+        evidence_reasoning = await self._reason_about_interaction_evidence(
+            request=request,
+            evidence=evidence,
+        )
         unsupported_pairs = self._unsupported_interaction_pairs(
             query_plan=query_plan,
             rules=rules,
@@ -609,6 +643,9 @@ class AnswerMedicationQuestionUseCase:
                     ingredient_family_reference=(ingredient_family_reference),
                     ingredient_family=query_plan.ingredient_family,
                     unsupported_pairs=unsupported_pairs,
+                    question_interaction_pairs=(
+                        query_plan.interaction_pairs if request.conversation_interaction_reference_names else []
+                    ),
                     evidence_coverage=evidence_coverage,
                 ),
                 route=route,
@@ -630,6 +667,7 @@ class AnswerMedicationQuestionUseCase:
                     )
                 ),
                 evidence_coverage=evidence_coverage,
+                evidence_reasoning=evidence_reasoning,
                 official_warning_texts=self._official_warning_texts(
                     guide_lookup.guide,
                 ),
@@ -721,6 +759,107 @@ class AnswerMedicationQuestionUseCase:
             generated=generated,
             execution_plan=execution_plan,
         )
+
+    async def _reason_about_interaction_evidence(
+        self,
+        *,
+        request: MedicationChatRequest,
+        evidence: MedicationEvidenceBundle,
+    ) -> EvidenceReasoningOutput | None:
+        chain = self._interaction_evidence_reasoning_chain
+        query_plan = evidence.query_plan
+        execution_plan = evidence.execution_plan
+        rules = evidence.rules
+        interaction_chunks = self._interaction_evidence_chunks(
+            answer_chunks=list(evidence.answer_chunks),
+            interaction_pair_keys=execution_plan.interaction_pair_keys,
+        )
+        entity_names = list(
+            dict.fromkeys(
+                [
+                    *query_plan.entity_names,
+                    *execution_plan.medication_names,
+                    *execution_plan.supplement_names,
+                ]
+            )
+        )
+        if (
+            chain is None
+            or not evidence.interaction_question
+            or len(entity_names) < 2
+            or (not rules and not interaction_chunks)
+        ):
+            return None
+
+        async with self._tracer.span(
+            "medication.evidence_reasoning",
+            run_type="llm",
+        ) as reasoning_span:
+            try:
+                approved_rules = [
+                    EvidenceItem(
+                        evidence_id=f"rule:{rule.interaction_rule_id}",
+                        content=" ".join(rule.effect_texts),
+                        section_types=[KnowledgeSectionType.INTERACTION],
+                        pair_keys=[rule.pair_key],
+                        study_scope="APPROVED_RULE",
+                    )
+                    for rule in rules
+                ]
+                evidence_items = [
+                    EvidenceItem(
+                        evidence_id=f"chunk:{chunk.chunk_id}",
+                        content=chunk.content,
+                        section_types=[chunk.metadata.section_type],
+                        pair_keys=chunk.metadata.interaction_pair_keys,
+                        study_scope=chunk.metadata.study_population.value,
+                    )
+                    for chunk in interaction_chunks
+                ]
+                reasoning_input = EvidenceReasoningInput(
+                    question=request.question,
+                    entity_names=entity_names,
+                    requested_section_types=query_plan.section_types,
+                    interaction_pair_keys=execution_plan.interaction_pair_keys,
+                    evidence_items=evidence_items,
+                    approved_rules=approved_rules,
+                    risk_profile=request.risk_profile.model_dump(mode="json"),
+                )
+                raw_result = await chain.ainvoke(reasoning_input)
+                result = EvidenceReasoningOutput.model_validate(raw_result)
+            except Exception as error:
+                reasoning_span.end(
+                    {
+                        "status": "FAILED",
+                        "error_type": type(error).__name__,
+                    }
+                )
+                return None
+            reasoning_span.end(
+                {
+                    "status": result.reasoning_status.value,
+                    "interaction_decision": result.interaction_decision.value,
+                    "claim_count": len(result.claims),
+                    "missing_section_types": [section.value for section in result.missing_section_types],
+                }
+            )
+            return result
+
+    @staticmethod
+    def _interaction_evidence_chunks(
+        *,
+        answer_chunks: list[RetrievedKnowledgeChunk],
+        interaction_pair_keys: list[str],
+    ) -> list[RetrievedKnowledgeChunk]:
+        requested_pair_keys = set(interaction_pair_keys)
+        return [
+            chunk
+            for chunk in answer_chunks
+            if (
+                chunk.metadata.section_type is KnowledgeSectionType.INTERACTION
+                or bool(requested_pair_keys.intersection(chunk.metadata.interaction_pair_keys))
+            )
+        ]
 
     async def current_medication_names(
         self,
@@ -998,6 +1137,10 @@ class AnswerMedicationQuestionUseCase:
             return planning
 
         candidate_entities = {f"candidate_{index}": entity for index, entity in enumerate(planning.query_plan.entities)}
+        allowed_search_terms = self._conditional_allowed_search_terms(
+            planning.query_plan,
+        )
+        candidate_pair_keys = list(planning.query_plan.interaction_pair_keys)
 
         async with self._tracer.span("query.plan.conditional") as conditional_span:
             try:
@@ -1008,6 +1151,15 @@ class AnswerMedicationQuestionUseCase:
                             candidate_entities=candidate_entities,
                             requested_section_types=planning.query_plan.section_types,
                             trigger_reasons=trigger_reasons,
+                            candidate_pair_keys=candidate_pair_keys,
+                            allowed_search_terms=allowed_search_terms,
+                            session_reference_entities={
+                                f"session_{index}": entity.name
+                                for index, entity in enumerate(
+                                    request.session_reference.entities,
+                                )
+                            },
+                            current_query_plan=planning.query_plan,
                         ),
                         config={
                             "metadata": {
@@ -1032,6 +1184,8 @@ class AnswerMedicationQuestionUseCase:
                 planning=planning,
                 output=output,
                 candidate_entities=candidate_entities,
+                candidate_pair_keys=candidate_pair_keys,
+                allowed_search_terms=allowed_search_terms,
             )
             accepted_entity_count = len([key for key in output.candidate_entity_keys if key in candidate_entities])
             trace_outputs = {
@@ -1067,12 +1221,15 @@ class AnswerMedicationQuestionUseCase:
             reasons.append(ConditionalInterpretationReasonCode.SESSION_REFERENCE)
         return reasons
 
-    @staticmethod
+    @classmethod
     def _validated_conditional_plan(
+        cls,
         *,
         planning: MedicationQuestionPlanResult,
         output: ConditionalQuestionInterpretationOutput,
         candidate_entities: dict[str, MedicationQueryEntity],
+        candidate_pair_keys: list[str],
+        allowed_search_terms: list[str],
     ) -> MedicationQuestionPlanResult:
         query_plan = planning.query_plan
         validated_entities = [
@@ -1092,8 +1249,58 @@ class AnswerMedicationQuestionUseCase:
                 ]
             )
         )
+        validated_pair_keys = (
+            [pair_key for pair_key in output.interaction_pair_keys if pair_key in candidate_pair_keys]
+            if (output.route == MedicationChatRoute.INTERACTION or KnowledgeSectionType.INTERACTION in section_types)
+            else []
+        )
+        validated_stimuli = [
+            stimulus.query
+            for stimulus in output.stimuli
+            if cls._is_allowed_conditional_stimulus(
+                query=stimulus.query,
+                allowed_search_terms=allowed_search_terms,
+                selected_entities=validated_entities,
+            )
+        ]
+        if output.stimuli and not validated_stimuli:
+            return planning
+        selected_pair_keys = validated_pair_keys or query_plan.interaction_pair_keys
+        if validated_pair_keys:
+            selected_pair_key_set = set(selected_pair_keys)
+            selected_pairs = [pair for pair in query_plan.interaction_pairs if pair.pair_key in selected_pair_key_set]
+            selected_interaction_pair = (
+                query_plan.interaction_pair
+                if (
+                    query_plan.interaction_pair is not None
+                    and query_plan.interaction_pair.pair_key in selected_pair_key_set
+                )
+                else None
+            )
+            alternate_queries = cls._alternate_queries_for_selected_pairs(
+                query_plan=query_plan,
+                selected_pairs=selected_pairs,
+            )
+        else:
+            selected_pairs = query_plan.interaction_pairs
+            selected_interaction_pair = query_plan.interaction_pair
+            alternate_queries = query_plan.alternate_queries
         validated_query_plan = query_plan.model_copy(
-            update={"section_types": section_types},
+            update={
+                "section_types": section_types,
+                "interaction_pair": selected_interaction_pair,
+                "interaction_pairs": selected_pairs,
+                "interaction_types": list(dict.fromkeys(pair.pair_type for pair in selected_pairs)),
+                "interaction_pair_keys": selected_pair_keys,
+                "alternate_queries": list(
+                    dict.fromkeys(
+                        [
+                            *alternate_queries,
+                            *validated_stimuli,
+                        ]
+                    )
+                ),
+            },
         )
         normalized_names = list(
             dict.fromkeys(
@@ -1106,7 +1313,10 @@ class AnswerMedicationQuestionUseCase:
         interpretation = planning.interpretation.model_copy(
             update={
                 "normalized_entity_names": normalized_names,
+                "resolved_question": output.normalized_question,
                 "requested_section_types": section_types,
+                "needs_clarification": output.needs_clarification,
+                "clarification_question": output.clarification_question,
                 "query_plan_hash": validated_query_plan.query_plan_hash,
             }
         )
@@ -1124,6 +1334,69 @@ class AnswerMedicationQuestionUseCase:
                 confidence=output.confidence,
                 reason_codes=[],
             ),
+        )
+
+    @staticmethod
+    def _alternate_queries_for_selected_pairs(
+        *,
+        query_plan: MedicationKnowledgeQueryPlan,
+        selected_pairs: list[MedicationInteractionQueryPair],
+    ) -> list[str]:
+        pair_key_by_query = {
+            f"{pair.left_name} {pair.right_name} 상호작용": pair.pair_key for pair in query_plan.interaction_pairs
+        }
+        if query_plan.interaction_pair is not None:
+            pair_key_by_query[query_plan.interaction_pair.english_query] = query_plan.interaction_pair.pair_key
+        selected_pair_keys = {pair.pair_key for pair in selected_pairs}
+        filtered_queries = [
+            query
+            for query in query_plan.alternate_queries
+            if query not in pair_key_by_query or pair_key_by_query[query] in selected_pair_keys
+        ]
+        selected_pair_queries = [f"{pair.left_name} {pair.right_name} 상호작용" for pair in selected_pairs]
+        return list(dict.fromkeys([*filtered_queries, *selected_pair_queries]))
+
+    @staticmethod
+    def _conditional_allowed_search_terms(
+        query_plan: MedicationKnowledgeQueryPlan,
+    ) -> list[str]:
+        values = [
+            *(entity.surface for entity in query_plan.entities),
+            *(entity.canonical_name for entity in query_plan.entities),
+            *query_plan.entity_names,
+            *re.findall(
+                r"[0-9a-zA-Z가-힣μ㎍%]+",
+                query_plan.expanded_query,
+            ),
+        ]
+        return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+
+    @staticmethod
+    def _is_allowed_conditional_stimulus(
+        *,
+        query: str,
+        allowed_search_terms: list[str],
+        selected_entities: list[MedicationQueryEntity],
+    ) -> bool:
+        query_tokens = set(re.findall(r"[0-9a-zA-Z가-힣μ㎍%]+", query.casefold()))
+        allowed_tokens = {
+            token
+            for term in allowed_search_terms
+            for token in re.findall(
+                r"[0-9a-zA-Z가-힣μ㎍%]+",
+                term.casefold(),
+            )
+        }
+        selected_entity_tokens = {
+            token
+            for entity in selected_entities
+            for token in re.findall(
+                r"[0-9a-zA-Z가-힣μ㎍%]+",
+                entity.canonical_name.casefold(),
+            )
+        }
+        return bool(
+            query_tokens and selected_entity_tokens.intersection(query_tokens) and query_tokens.issubset(allowed_tokens)
         )
 
     async def _semantically_route_question(
@@ -1289,26 +1562,38 @@ class AnswerMedicationQuestionUseCase:
                 resolution=None,
                 early_result=None,
             )
+        if self._requires_qdrant_conversation_safety_preflight(resolution):
+            conversation_result = await self._conversation_terminal_result(
+                request=request,
+                context=context,
+                allowed_intents=frozenset({ConversationIntent.SENSITIVE_REQUEST}),
+            )
+            if conversation_result is not None:
+                return PreparedMedicationQuestion(
+                    request=request,
+                    resolution=resolution,
+                    early_result=conversation_result,
+                )
         request = await self._with_symptom_interaction_follow_up(
             request=request,
             resolution=resolution,
         )
-        if self._is_entity_free_unresolved_question(resolution):
-            schedule_result = await self._conversation_terminal_result(
+        request, resolution = await self._with_conversation_interaction_references(
+            request=request,
+            context=context,
+            resolution=resolution,
+        )
+        if self._is_entity_free_conversation_candidate(resolution):
+            conversation_result = await self._conversation_terminal_result(
                 request=request,
                 context=context,
-                allowed_intents=frozenset(
-                    {
-                        ConversationIntent.FOLLOW_UP_SCHEDULE,
-                        ConversationIntent.MEDICATION_NOTE_SUMMARY,
-                    }
-                ),
+                allowed_intents=self._ENTITY_FREE_CONVERSATION_INTENTS,
             )
-            if schedule_result is not None:
+            if conversation_result is not None:
                 return PreparedMedicationQuestion(
                     request=request,
                     resolution=resolution,
-                    early_result=schedule_result,
+                    early_result=conversation_result,
                 )
         if resolution.scope in {
             MedicationQuestionScope.GREETING,
@@ -1361,6 +1646,10 @@ class AnswerMedicationQuestionUseCase:
             or not request.history
             or resolution.scope is not MedicationQuestionScope.IN_SCOPE
             or not resolution.entities
+            or self._is_explicit_entity_guide_request(
+                question=request.question,
+                resolution=resolution,
+            )
         ):
             return request
 
@@ -1402,6 +1691,83 @@ class AnswerMedicationQuestionUseCase:
             return request
         return request.model_copy(update={"symptom_interaction_follow_up": True})
 
+    @staticmethod
+    def _is_explicit_entity_guide_request(
+        *,
+        question: str,
+        resolution: MedicationQuestionResolution,
+    ) -> bool:
+        if is_interaction_question(question):
+            return False
+        query_plan = MedicationKnowledgeQueryBuilder(
+            catalog_entities=resolution.entities,
+        ).build(question)
+        return bool(query_plan.section_types)
+
+    async def _with_conversation_interaction_references(
+        self,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        resolution: MedicationQuestionResolution,
+    ) -> tuple[MedicationChatRequest, MedicationQuestionResolution]:
+        if not self._is_entity_free_conversation_candidate(resolution):
+            return request, resolution
+
+        referenced_request = await self._conversation_interaction_reference_request(
+            request=request,
+        )
+        if referenced_request is None:
+            return request, resolution
+
+        referenced_resolution = await self._resolve_question(
+            request=referenced_request,
+            context=context,
+        )
+        return referenced_request, referenced_resolution or resolution
+
+    async def _conversation_interaction_reference_request(
+        self,
+        *,
+        request: MedicationChatRequest,
+    ) -> MedicationChatRequest | None:
+        """최근 대화의 두 대상을 현재 상호작용 질문으로 안전하게 보완한다."""
+
+        if (
+            self._conversation_gate_chain is None
+            or not request.history
+            or not is_interaction_question(request.question)
+        ):
+            return None
+
+        try:
+            classification = ConversationClassification.model_validate(
+                await self._conversation_gate_chain.ainvoke(
+                    ConversationGateInput(
+                        question=request.question,
+                        recent_history=request.history,
+                    )
+                )
+            )
+        except Exception:
+            return None
+
+        if (
+            classification.intent is not ConversationIntent.SYMPTOM_INTERACTION_FOLLOW_UP
+            or classification.safety_signal is not ConversationSafetySignal.NONE
+            or len(classification.interaction_reference_names) != 2
+        ):
+            return None
+
+        reference_text = " ".join(classification.interaction_reference_names)
+        return request.model_copy(
+            update={
+                "question": f"{request.question} {reference_text}",
+                "symptom_interaction_follow_up": True,
+                "conversation_interaction_reference_names": classification.interaction_reference_names,
+            }
+        )
+
     async def _conversation_terminal_result(
         self,
         *,
@@ -1434,6 +1800,11 @@ class AnswerMedicationQuestionUseCase:
                     }
                 )
                 return None
+            classification = await self._normalize_note_summary_safety_signal(
+                question=request.question,
+                history=request.history,
+                classification=classification,
+            )
             classify_span.end(
                 {
                     "intent": classification.intent.value,
@@ -1450,7 +1821,11 @@ class AnswerMedicationQuestionUseCase:
                 }
             )
 
-        if allowed_intents is not None and classification.intent not in allowed_intents:
+        if (
+            allowed_intents is not None
+            and classification.intent not in allowed_intents
+            and classification.safety_signal is ConversationSafetySignal.NONE
+        ):
             return None
 
         return await self._conversation_classification_result(
@@ -1459,15 +1834,65 @@ class AnswerMedicationQuestionUseCase:
             classification=classification,
         )
 
+    async def _normalize_note_summary_safety_signal(
+        self,
+        *,
+        question: str,
+        history: list[ChatHistoryMessage],
+        classification: ConversationClassification,
+    ) -> ConversationClassification:
+        """과거 기록 요약을 현재 응급 상황으로 오인하지 않도록 한다."""
+
+        if classification.intent is not ConversationIntent.MEDICATION_NOTE_SUMMARY:
+            return classification
+        if (
+            classification.safety_signal is ConversationSafetySignal.HEALTH_URGENCY
+            and not self._urgent_health_signal_policy.evaluate(question)
+        ):
+            return classification.model_copy(
+                update={"safety_signal": ConversationSafetySignal.NONE},
+            )
+        if (
+            classification.safety_signal is ConversationSafetySignal.HARMFUL_INSTRUCTIONS
+            and history
+            and self._conversation_gate_chain is not None
+        ):
+            try:
+                current_question_classification = ConversationClassification.model_validate(
+                    await self._conversation_gate_chain.ainvoke(
+                        ConversationGateInput(question=question),
+                    )
+                )
+            except Exception:
+                return classification
+            if (
+                current_question_classification.intent is ConversationIntent.MEDICATION_NOTE_SUMMARY
+                and current_question_classification.safety_signal is ConversationSafetySignal.NONE
+            ):
+                return current_question_classification
+        return classification
+
     @staticmethod
-    def _is_entity_free_unresolved_question(
+    def _is_entity_free_conversation_candidate(
         resolution: MedicationQuestionResolution,
     ) -> bool:
         return (
-            resolution.status is MedicationExpressionResolutionStatus.UNRESOLVED
+            resolution.status
+            in {
+                MedicationExpressionResolutionStatus.UNRESOLVED,
+                MedicationExpressionResolutionStatus.CLARIFICATION_REQUIRED,
+            }
             and resolution.entity_resolution_available
             and not resolution.entities
         )
+
+    @staticmethod
+    def _requires_qdrant_conversation_safety_preflight(
+        resolution: MedicationQuestionResolution,
+    ) -> bool:
+        """벡터 카탈로그의 넓은 엔터티가 민감 요청을 RAG로 우회하지 않게 한다."""
+
+        return any(entity.source is MedicationQueryEntitySource.QDRANT for entity in resolution.entities)
 
     async def _conversation_classification_result(
         self,
@@ -1601,6 +2026,10 @@ class AnswerMedicationQuestionUseCase:
             ConversationIntent.GREETING: (
                 MedicationChatRoute.OUT_OF_SCOPE,
                 MedicationChatReasonCode.CONVERSATION_GREETING,
+            ),
+            ConversationIntent.SENSITIVE_REQUEST: (
+                MedicationChatRoute.OUT_OF_SCOPE,
+                MedicationChatReasonCode.CONVERSATION_SENSITIVE_EDUCATION,
             ),
         }.get(classification.intent)
         if route_and_reason is None:
@@ -2004,6 +2433,12 @@ class AnswerMedicationQuestionUseCase:
                 early_result,
                 interpretation=interpretation,
             )
+        if interpretation.needs_clarification and interpretation.clarification_question:
+            return await self._conditional_clarification_result(
+                request=request,
+                context=context,
+                interpretation=interpretation,
+            )
         if self._can_answer_from_active_context(
             question=request.question,
             context=context,
@@ -2025,6 +2460,33 @@ class AnswerMedicationQuestionUseCase:
             context=context,
             interpretation=interpretation,
             decision=dose_decision,
+        )
+
+    async def _conditional_clarification_result(
+        self,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        interpretation: MedicationQuestionInterpretation,
+    ) -> MedicationChatResult:
+        if not interpretation.clarification_question:
+            raise ValueError("조건부 확인 응답에는 확인 질문이 필요합니다.")
+        result = MedicationChatResult(
+            request_id=request.request_id,
+            answer=interpretation.clarification_question,
+            route=MedicationChatRoute.CLARIFICATION,
+            safety_status=SafetyStatus.RESTRICTED,
+            safety_reason_codes=[
+                MedicationChatReasonCode.AMBIGUOUS_QUERY_EXPRESSION.value,
+            ],
+            prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
+            schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
+            context_hash=self._context_hash(context),
+            question_interpretation=interpretation,
+        )
+        return await self._grounded_claim_validator.validate(
+            context=context,
+            result=result,
         )
 
     @classmethod
@@ -2092,6 +2554,8 @@ class AnswerMedicationQuestionUseCase:
         planning: MedicationQuestionPlanResult,
     ) -> MedicationQuestionPlanResult:
         """등록 복약정보를 명시했지만 질문 본문에 대상이 없을 때만 검색 대상을 보완한다."""
+        if request.conversation_interaction_reference_names:
+            return planning
         if request.symptom_interaction_follow_up:
             return cls._with_symptom_interaction_follow_up_query_plan(
                 request=request,
@@ -2645,6 +3109,13 @@ class AnswerMedicationQuestionUseCase:
             rag_unavailable=rag_unavailable,
             interpretation=interpretation,
         )
+        if execution_plan.query_plan.interaction_pairs:
+            draft = self._question_interaction_no_evidence_result(
+                request=request,
+                context=context,
+                execution_plan=execution_plan,
+                draft=draft,
+            )
         if self._allows_general_supplement_guidance_without_direct_evidence(
             question=request.question,
             query_plan=execution_plan.query_plan,
@@ -2664,6 +3135,41 @@ class AnswerMedicationQuestionUseCase:
             context=context,
             execution_plan=execution_plan,
             draft=draft,
+        )
+
+    def _question_interaction_no_evidence_result(
+        self,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        execution_plan: MedicationSearchExecutionPlan,
+        draft: MedicationChatResult,
+    ) -> MedicationChatResult:
+        """직접 근거가 없는 질문 조합도 대상과 등록 복약정보를 분리해 보여준다."""
+
+        answer_context = self._answer_context_for_route(
+            context=context,
+            request=request,
+            route=MedicationChatRoute.INTERACTION,
+        )
+        return draft.model_copy(
+            update={
+                "answer": self._assembler.assemble(
+                    context=answer_context,
+                    guide=None,
+                    rules=[],
+                    chunks=[],
+                    interaction_question=True,
+                    question_interaction_pairs=execution_plan.query_plan.interaction_pairs,
+                ),
+                "route": MedicationChatRoute.INTERACTION,
+                "sources": self._build_sources(
+                    context=answer_context,
+                    guide_lookup=MedicationGuideLookup(),
+                    rules=[],
+                    chunks=[],
+                ),
+            }
         )
 
     @staticmethod
@@ -3020,6 +3526,17 @@ class AnswerMedicationQuestionUseCase:
             approved_rules_hash=cls._approved_rules_hash(rules),
             limit=limit,
         )
+
+    @staticmethod
+    def _rules_for_query_plan(
+        *,
+        rules: list[InteractionRuleFact],
+        query_plan: MedicationKnowledgeQueryPlan,
+    ) -> list[InteractionRuleFact]:
+        requested_pair_keys = set(query_plan.interaction_pair_keys)
+        if not requested_pair_keys:
+            return rules
+        return [rule for rule in rules if rule.pair_key in requested_pair_keys]
 
     @staticmethod
     def _approved_rules_hash(rules: list[InteractionRuleFact]) -> str:

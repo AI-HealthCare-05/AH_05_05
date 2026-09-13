@@ -150,10 +150,16 @@ export function mockListMedicationNotes({ episodeId, limit = 20, cursor }: Medic
   };
 }
 
-export function mockListMedicationNoteEpisodes(): MedicationNoteEpisode[] {
+export function mockListMedicationNoteEpisodes(
+  options: { includeWithoutNotes?: boolean } = {},
+): MedicationNoteEpisode[] {
   const byEpisodeId = new Map<number, MedicationNoteEpisode>();
   for (const note of readNotes().map(hydrateNote)) {
-    if (byEpisodeId.has(note.careEpisodeId)) continue;
+    const existing = byEpisodeId.get(note.careEpisodeId);
+    if (existing) {
+      if (options.includeWithoutNotes) existing.noteCount = (existing.noteCount ?? 0) + 1;
+      continue;
+    }
     const representative = [...note.availableMedications].sort((a, b) => a.id - b.id)[0];
     byEpisodeId.set(note.careEpisodeId, {
       careEpisodeId: note.careEpisodeId,
@@ -162,7 +168,35 @@ export function mockListMedicationNoteEpisodes(): MedicationNoteEpisode[] {
       status: note.careEpisodeStatus,
       representativeMedicationName: representative?.name ?? null,
       medicationCount: note.availableMedications.length,
+      ...(options.includeWithoutNotes ? { noteCount: 1 } : {}),
+      ...(options.includeWithoutNotes ? { medications: note.availableMedications } : {}),
+      ...(options.includeWithoutNotes ? { firstDoseAt: null } : {}),
     });
+  }
+  if (options.includeWithoutNotes) {
+    for (const overview of mockMedicationOverviews()) {
+      const firstDoseAt = overview.start.date + 'T' + overview.mealTimes[overview.start.slot] + ':00';
+      const existing = byEpisodeId.get(overview.recordId);
+      if (existing) {
+        existing.firstDoseAt = firstDoseAt;
+        continue;
+      }
+      byEpisodeId.set(overview.recordId, {
+        careEpisodeId: overview.recordId,
+        alias: overview.alias ?? null,
+        startDate: overview.start.date,
+        firstDoseAt,
+        status: overview.isFinished ? 'COMPLETED' : 'ACTIVE',
+        representativeMedicationName: overview.medications[0]?.name ?? null,
+        medicationCount: overview.medications.length,
+        noteCount: 0,
+        medications: overview.medications.map((medication) => ({
+          id: medication.medicationId,
+          name: medication.name,
+          dose: medication.dose || null,
+        })),
+      });
+    }
   }
   return [...byEpisodeId.values()].sort(
     (a, b) =>

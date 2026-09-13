@@ -732,6 +732,21 @@ async def update_common_code_group(
     return CommonCodeGroupResponse.model_validate(await service.update_group(group_id, request, actor.admin_id))
 
 
+@admin_router.delete(
+    "/common-code-groups/{group_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="공통코드 그룹 삭제",
+)
+async def delete_common_code_group(
+    _: AdminOnly,
+    group_id: Annotated[int, Path(gt=0)],
+    service: Annotated[CommonCodeService, Depends(get_common_code_service)],
+) -> Response:
+    """사용 중이 아닌 그룹과 하위 상세코드를 함께 삭제한다."""
+    await service.delete_group(group_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @admin_router.get(
     "/common-code-groups/{group_id}/codes",
     response_model=CommonCodeListResponse,

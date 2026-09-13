@@ -1,11 +1,88 @@
 import { expect, test } from 'playwright/test';
 
 import { IS_REAL_API, MOCK_ONLY_REASON } from './helpers/mode';
+import { waitForVisibleImages } from './helpers/visibleImages';
 
 test.setTimeout(20_000);
 
 test.beforeEach(() => {
   test.skip(IS_REAL_API, MOCK_ONLY_REASON);
+});
+
+for (const width of [375, 390, 1280]) {
+  test(`개발 배지 목록·빈 상태·상세·없음 화면은 공통 상단을 유지한다 (${width}px)`, async ({ page }, testInfo) => {
+    test.setTimeout(30_000);
+    await page.setViewportSize({ width, height: 900 });
+    const cases = [
+      ['/dev/challenges/badges', '내 배지'],
+      ['/dev/challenges/badges-empty', '내 배지'],
+      ['/dev/challenges/badges/badge-walk', '배지 상세'],
+      ['/dev/challenges/badges/not-found', '배지를 찾을 수 없어요'],
+    ] as const;
+
+    for (const [path, title] of cases) {
+      await page.goto(path);
+      const header = page.getByRole('banner');
+      const main = page.getByRole('main');
+      const back = header.getByRole('button', { name: '뒤로 가기' });
+      await expect(header.getByRole('heading', { name: title, exact: true })).toHaveCount(1);
+      await expect(page.getByRole('heading', { name: title, exact: true })).toHaveCount(1);
+      await expect(back).toBeVisible();
+
+      const [headerBox, mainBox, backBox, style] = await Promise.all([
+        header.boundingBox(),
+        main.boundingBox(),
+        back.boundingBox(),
+        header.evaluate((element) => {
+          const computed = getComputedStyle(element);
+          return {
+            backgroundColor: computed.backgroundColor,
+            borderBottomStyle: computed.borderBottomStyle,
+            borderBottomWidth: computed.borderBottomWidth,
+          };
+        }),
+      ]);
+      expect(headerBox).not.toBeNull();
+      expect(mainBox).not.toBeNull();
+      expect(backBox).not.toBeNull();
+      expect(headerBox!.height).toBe(64);
+      expect(headerBox!.x).toBe(mainBox!.x);
+      expect(headerBox!.width).toBe(mainBox!.width);
+      expect(backBox!.width).toBeGreaterThanOrEqual(44);
+      expect(backBox!.height).toBeGreaterThanOrEqual(44);
+      expect(style.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+      expect(style.borderBottomStyle).toBe('solid');
+      expect(style.borderBottomWidth).toBe('1px');
+    }
+
+    await page.goto('/dev/challenges/badges');
+    await expect(page.getByRole('heading', { name: '내 배지', exact: true })).toBeVisible();
+    const badgeGrid = page.getByRole('list', { name: '챌린지 배지' });
+    await expect(badgeGrid.getByRole('listitem')).toHaveCount(6);
+    await expect(badgeGrid.locator('img')).toHaveCount(6);
+    await waitForVisibleImages(page);
+    await page.screenshot({
+      path: testInfo.outputPath(`dev-badge-header-${width}.png`),
+      fullPage: true,
+      animations: 'disabled',
+    });
+  });
+}
+
+test('개발 배지 상단 뒤로가기는 직접 진입에서도 안전한 dev 경로를 사용한다', async ({ page }) => {
+  const cases = [
+    ['/dev/challenges/badges', '/dev/challenges'],
+    ['/dev/challenges/badges/not-found', '/dev/challenges/badges'],
+  ] as const;
+
+  for (const [path, fallback] of cases) {
+    await page.goto(path);
+    await page.evaluate(() => {
+      window.history.replaceState({ ...window.history.state, idx: 0 }, '');
+    });
+    await page.getByRole('banner').getByRole('button', { name: '뒤로 가기' }).click();
+    await expect(page).toHaveURL(new RegExp(`${fallback.replaceAll('/', '\\/')}$`));
+  }
 });
 
 test('배지함은 획득 상태를 구분하고 상세에서 기록 기준을 설명한다', async ({ page }) => {
@@ -46,22 +123,25 @@ test('획득한 배지가 없으면 다음 행동이 있는 빈 상태를 보여
   await expect(page).toHaveURL(/\/dev\/challenges\/browse$/);
 });
 
-test('홈 챌린지는 요약과 이동만 제공하고 직접 인증 액션은 두지 않는다', async ({ page }) => {
+test('홈 챌린지는 공식 직접 인증과 맞춤 자동 기록 경계를 유지한다', async ({ page }) => {
   await page.goto('/dev/home-active');
 
   const challenge = page.getByRole('region', { name: '챌린지' });
-  await expect(challenge.getByRole('link', { name: /감기약 복약 챌린지/ })).toBeVisible();
-  await expect(challenge.getByRole('link', { name: /영양제 루틴 챌린지/ })).toBeVisible();
-  await expect(challenge.getByRole('button', { name: /했어요/ })).toHaveCount(0);
+  const official = challenge.getByRole('article', { name: '매일 30분 걷기', exact: true });
+  const custom = challenge.getByRole('article', { name: '감기약 복약 챌린지', exact: true });
+  await expect(official.getByRole('button', { name: /했어요/ })).toBeVisible();
+  await expect(custom.getByRole('link', { name: /감기약 복약 챌린지/ })).toBeVisible();
+  await expect(custom.getByRole('button', { name: /했어요/ })).toHaveCount(0);
+  await expect(challenge.getByRole('link', { name: /영양제 루틴/ })).toBeVisible();
 });
 
-test('홈 챌린지 빈 상태는 최신 맞춤 진입 문구를 제공한다', async ({ page }) => {
+test('홈 챌린지 빈 상태는 챌린지 목록 진입을 제공한다', async ({ page }) => {
   await page.goto('/dev/home-challenge-empty');
 
   const challenge = page.getByRole('region', { name: '챌린지' });
-  await expect(challenge.getByText('참여 중인 챌린지가 없어요')).toBeVisible();
-  await challenge.getByRole('link', { name: '맞춤 챌린지 보기' }).click();
-  await expect(page).toHaveURL(/\/dev\/challenges\/tailored$/);
+  await expect(challenge.getByText('챌린지를 등록하고 생활습관 개선에 도전하세요.')).toBeVisible();
+  await challenge.getByRole('link', { name: '전체 보기' }).click();
+  await expect(page).toHaveURL(/\/dev\/challenges$/);
 });
 
 test('홈 챌린지는 모든 활성 유형을 공식과 맞춤으로 구분하고 지난 기록은 제외한다', async ({ page }, testInfo) => {
@@ -72,8 +152,10 @@ test('홈 챌린지는 모든 활성 유형을 공식과 맞춤으로 구분하�
   for (const title of ['매일 30분 걷기', '첫 도전 마무리']) {
     await expect(summary.getByRole('link', { name: new RegExp(title) }).getByText('공식', { exact: true })).toBeVisible();
   }
-  for (const title of ['감기약 복약 챌린지', '영양제 루틴 챌린지', '이번 주 기록 돌아보기', '다음 진료 준비하기']) {
-    await expect(summary.getByRole('link', { name: new RegExp(title) }).getByText('맞춤', { exact: true })).toBeVisible();
+  for (const title of ['감기약 복약 챌린지', '영양제 루틴', '이번 주 기록 돌아보기', '다음 진료 준비하기']) {
+    const custom = summary.getByRole('article', { name: title, exact: true });
+    await expect(custom.getByText('맞춤', { exact: true })).toBeVisible();
+    await expect(custom.getByRole('button', { name: /했어요/ })).toHaveCount(0);
   }
   await expect(summary.getByRole('link', { name: /8월 31일|저녁 산책|아침 스트레칭/ })).toHaveCount(0);
   expect(await summary.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
@@ -84,8 +166,11 @@ test('복약이 없는 홈에서도 독립적인 챌린지 요약을 보여준�
   await page.goto('/dev/home-empty');
 
   const challenge = page.getByRole('region', { name: '챌린지' });
-  await expect(challenge.getByRole('link', { name: /감기약 복약 챌린지/ })).toBeVisible();
-  await expect(challenge.getByRole('button', { name: /했어요/ })).toHaveCount(0);
+  const official = challenge.getByRole('article', { name: '매일 30분 걷기', exact: true });
+  const custom = challenge.getByRole('article', { name: '감기약 복약 챌린지', exact: true });
+  await expect(official.getByRole('button', { name: /했어요/ })).toBeVisible();
+  await expect(custom.getByRole('link', { name: /감기약 복약 챌린지/ })).toBeVisible();
+  await expect(custom.getByRole('button', { name: /했어요/ })).toHaveCount(0);
 });
 
 test('마이페이지 챌린지 기록은 내 챌린지로 이동한다', async ({ page }) => {

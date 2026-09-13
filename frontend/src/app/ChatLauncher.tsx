@@ -1,5 +1,4 @@
 import { useState, type ReactNode } from 'react';
-import { MessageCircleMore } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router';
 import { LoginPromptSheet } from '@/pages/home/LoginPromptSheet';
 import { useSession } from './SessionContext';
@@ -25,9 +24,6 @@ export function ChatLauncher({ children }: { children: ReactNode }) {
       >
         <span className="chat-launcher-portrait" aria-hidden="true">
           <img src="/images/default-profile.png" alt="" />
-        </span>
-        <span className="chat-launcher-indicator" data-chat-indicator aria-hidden="true">
-          <MessageCircleMore size={16} strokeWidth={2.3} />
         </span>
       </button>
       <LoginPromptSheet open={loginOpen} onOpenChange={setLoginOpen} onLogin={() => {

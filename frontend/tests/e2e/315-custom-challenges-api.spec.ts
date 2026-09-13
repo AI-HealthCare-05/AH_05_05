@@ -367,7 +367,7 @@ test('supplement sends one canonical set and keeps its key when retrying', async
     templateId: 41,
     challengeType: 'SUPPLEMENT',
     challengeName: supplement.challengeName,
-    targets: [201, 203].map((sourceId, index) => ({ id: 810 + index, sourceId, name: `영양제 ${sourceId}` })),
+    targets: [201, 202].map((sourceId, index) => ({ id: 810 + index, sourceId, name: `영양제 ${sourceId}` })),
   });
   const requests: Array<{ targetIds: number[]; idempotencyKey: string }> = [];
   await page.route('**/api/v1/user/custom-challenge-recommendations/41/participations', route => {
@@ -382,7 +382,8 @@ test('supplement sends one canonical set and keeps its key when retrying', async
   }));
 
   await page.goto('/challenges/tailored/supplement?templateId=41');
-  await page.getByLabel('비타민D 선택').check();
+  await expect(page.getByLabel('비타민D 선택')).toBeDisabled();
+  await page.getByLabel('유산균 선택').check();
   await page.getByLabel('오메가3 선택').check();
   await page.getByRole('button', { name: '선택한 영양제로 참여하기' }).click();
   await expect(page.getByRole('alert')).toContainText('다시 시도해주세요.');
@@ -390,8 +391,8 @@ test('supplement sends one canonical set and keeps its key when retrying', async
   await expect(page).toHaveURL(/\/challenges\/custom-participations\/801$/);
 
   expect(requests).toHaveLength(2);
-  expect(requests[0].targetIds).toEqual([201, 203]);
-  expect(requests[1].targetIds).toEqual([201, 203]);
+  expect(requests[0].targetIds).toEqual([201, 202]);
+  expect(requests[1].targetIds).toEqual([201, 202]);
   expect(requests[1].idempotencyKey).toBe(requests[0].idempotencyKey);
 });
 
@@ -488,13 +489,20 @@ test('a delayed recommendation response cannot replace another account route', a
     json: { items: [], total_count: 0, offset: 0, limit: 100 },
   }));
   let release!: () => void;
+  let switchedRoute = false;
   const gate = new Promise<void>(resolve => { release = resolve; });
   await page.route('**/api/v1/user/custom-challenge-recommendations', async route => {
+    if (switchedRoute) {
+      await route.fulfill({ json: { items: [], totalCount: 0 } });
+      return;
+    }
     await gate;
     await route.fulfill({ json: { items: [medicationA], totalCount: 1 } });
   });
 
   await page.goto('/challenges/tailored');
+  await expect(page.getByRole('status')).toBeVisible();
+  switchedRoute = true;
   await page.evaluate(() => {
     sessionStorage.setItem('poke.account-principal', 'another-account@example.com');
     window.history.pushState({}, '', '/challenges/browse');
@@ -503,7 +511,8 @@ test('a delayed recommendation response cannot replace another account route', a
   release();
 
   await expect(page).toHaveURL(/\/challenges\/browse$/);
-  await expect(page.getByRole('combobox', { name: '챌린지 종류' })).toBeVisible();
+  await page.getByRole('button', { name: '맞춤 챌린지 펼치기', exact: true }).click();
+  await expect(page.getByRole('region', { name: '맞춤 챌린지', exact: true })).toContainText('지금 참여할 수 있는 맞춤 챌린지가 없어요.');
   await expect(page.getByText(medicationA.challengeName)).toHaveCount(0);
 });
 
@@ -535,7 +544,7 @@ test('a delayed join cannot navigate after leaving the target page', async ({ pa
   await page.waitForTimeout(100);
 
   await expect(page).toHaveURL(/\/challenges\/browse$/);
-  await expect(page.getByRole('combobox', { name: '챌린지 종류' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '맞춤 챌린지 펼치기', exact: true })).toBeVisible();
   expect(targetRequests).toEqual([[101]]);
 });
 
@@ -1022,7 +1031,7 @@ for (const challengeType of ['MEDICATION', 'SUPPLEMENT']) {
     await expect(dialog).toHaveCount(0);
     await expect(page.getByText('취소', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: '챌린지 참여 취소', exact: true })).toHaveCount(0);
-    await page.getByRole('button', { name: '내 챌린지로 돌아가기' }).click();
+    await page.getByRole('banner').getByRole('button', { name: '뒤로 가기', exact: true }).click();
     await expect(page.getByRole('region', { name: '진행 중인 챌린지' }).getByRole('article')).toHaveCount(0);
     await page.getByRole('button', { name: '지난 기록 펼치기' }).click();
     await expect(page.getByRole('region', { name: '지난 기록' }).getByRole('article')).toContainText('취소');

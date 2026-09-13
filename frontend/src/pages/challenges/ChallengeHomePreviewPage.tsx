@@ -5,7 +5,7 @@ import type { DoseRecord, MedicationOverview } from '@/entities/medication/types
 import { useChallengeMock } from '@/features/challenges';
 import { BottomTabbar, DrawnChevron, Header } from '@/shared/ui';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
-import { HomeSectionTabs } from '@/pages/home/HomePage';
+import { HomeSectionPanel, HomeSectionTabs } from '@/pages/home/HomePage';
 import { MedicationTimeline } from '@/pages/home/MedicationTimeline';
 import { HomeChallengeSummary } from './HomeChallengeSummary';
 
@@ -49,32 +49,33 @@ export function ChallengeHomePreviewPage() {
         목업 홈 · 2026.09.13 저녁 · 실제 복약 기록에 저장되지 않아요
       </p>
       <main className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-page-x py-5 [scrollbar-gutter:stable]">
-        <HomeSectionTabs activeTab={tab} onChange={setTab} />
-        <div id={`home-panel-${tab}`} role="tabpanel" aria-labelledby={`home-tab-${tab}`}>
-          {tab === 'medication' ? (
-            <MedicationTimeline
-              referenceTime={PREVIEW_EVENING}
-              overviews={overviews}
-              doseRecords={records}
-              currentDate={demoToday}
-              onDoseChange={(ids, slot, taken) => {
-                if (!taken && medicationEpisodes.some((episode) => ids.includes(episode.recordId) && participations.some((item) => item.episodeId === episode.id && item.status === 'achieved'))) {
-                  toast.info('달성 후 기록 취소·배지 회수 정책은 협의 중이라 이 목업에서는 취소하지 않아요.');
-                  return Promise.resolve(false);
-                }
-                if (slot === 'evening') setMedicationDose(ids, taken);
-                return Promise.resolve(true);
-              }}
-              onMemo={() => toast.info('복약 메모 작성은 이 챌린지 목업의 검토 범위에 포함되지 않아요.')}
-            />
-          ) : (
-            <section aria-label="오늘의 영양제" className="space-y-3 rounded-card bg-card p-5 shadow-card">
-              <h2 className="text-base font-bold">저녁 19:00</h2>
-              <p className="text-sm">오메가3 <span className="float-right text-muted-foreground">1캡슐</span></p>
-              <p className="text-caption text-muted-foreground">영양제는 표시용 예시예요. 이번 연동 검토는 복약 탭에서 진행해요.</p>
-            </section>
-          )}
-        </div>
+        <HomeSectionTabs activeTab={tab} onChange={setTab}>
+          <HomeSectionPanel value={tab}>
+            {tab === 'medication' ? (
+              <MedicationTimeline
+                referenceTime={PREVIEW_EVENING}
+                overviews={overviews}
+                doseRecords={records}
+                currentDate={demoToday}
+                onDoseChange={(ids, slot, taken) => {
+                  if (!taken && medicationEpisodes.some((episode) => ids.includes(episode.recordId) && participations.some((item) => item.episodeId === episode.id && item.status === 'achieved'))) {
+                    toast.info('달성 후 기록 취소·배지 회수 정책은 협의 중이라 이 목업에서는 취소하지 않아요.');
+                    return Promise.resolve(false);
+                  }
+                  if (slot === 'evening') setMedicationDose(ids, taken);
+                  return Promise.resolve(true);
+                }}
+                onMemo={() => toast.info('복약 메모 작성은 이 챌린지 목업의 검토 범위에 포함되지 않아요.')}
+              />
+            ) : (
+              <section aria-label="오늘의 영양제" className="space-y-3 rounded-card bg-card p-5 shadow-card">
+                <h2 className="text-base font-bold">저녁 19:00</h2>
+                <p className="text-sm">오메가3 <span className="float-right text-muted-foreground">1캡슐</span></p>
+                <p className="text-caption text-muted-foreground">영양제는 표시용 예시예요. 이번 연동 검토는 복약 탭에서 진행해요.</p>
+              </section>
+            )}
+          </HomeSectionPanel>
+        </HomeSectionTabs>
         <HomeChallengeSummary />
         <p className="text-caption text-muted-foreground">9월 7일 처방은 13/14회 예시예요. 챌린지 참여 후 저녁 기록으로 개별 달성과 배지 획득을 확인해보세요.</p>
         <Link to="/dev/challenges/tailored/medication" className="min-h-touch py-3 text-right text-sm font-bold text-primary">

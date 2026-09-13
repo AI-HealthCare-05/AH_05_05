@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from tortoise.timezone import now
@@ -46,20 +46,38 @@ class DbFollowUpScheduleProvider:
                 follow_up_visit_id=visit.id,
                 visit_at=self._combine_visit_at(
                     visit_date=visit.visit_date,
-                    visit_time=visit.visit_time,
+                    visit_time=self._normalize_visit_time(visit.visit_time),
                 ),
-                visit_time=visit.visit_time,
+                visit_time=self._normalize_visit_time(visit.visit_time),
                 hospital=visit.hospital,
             )
             for visit in visits
         ]
 
     @staticmethod
+    def _normalize_visit_time(
+        visit_time: time | timedelta | None,
+    ) -> time | None:
+        if not isinstance(visit_time, timedelta):
+            return visit_time
+
+        total_seconds = int(visit_time.total_seconds())
+        hours, remainder = divmod(total_seconds, 60 * 60)
+        minutes, seconds = divmod(remainder, 60)
+        return time(
+            hour=hours,
+            minute=minutes,
+            second=seconds,
+            microsecond=visit_time.microseconds,
+        )
+
+    @staticmethod
     def _combine_visit_at(
         *,
         visit_date: date,
-        visit_time: time | None,
+        visit_time: time | timedelta | None,
     ) -> datetime:
+        visit_time = DbFollowUpScheduleProvider._normalize_visit_time(visit_time)
         return datetime.combine(
             visit_date,
             visit_time or time.min,

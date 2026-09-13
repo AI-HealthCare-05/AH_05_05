@@ -8,6 +8,7 @@ import { getAuthGeneration } from '@/shared/api/client';
 import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { Button } from '@/shared/ui/Button';
 import { TodayChallengeCarousel, type TodayChallengeCard } from './TodayChallengeCarousel';
+import { officialChallengeProgress } from './officialChallengeProgress';
 import '@/shared/ui/home-clay.css';
 
 const koreaDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -70,7 +71,7 @@ function MockHomeChallengeSummary({ empty }: { empty: boolean }) {
       progress: item.percent + '% 진행 중', rate: rate(item.percent, item.target), completed: item.todayCompleted,
       onCheckIn: item.kind === 'official' && item.status === 'active' ? () => checkIn(item.id) : undefined };
   });
-  return <SummaryFrame base="/dev/challenges" mock>{items.length ? <TodayChallengeCarousel items={items} /> : <p className="py-4 text-sm text-muted-foreground">오늘 남은 챌린지가 없어요</p>}</SummaryFrame>;
+  return <SummaryFrame base="/dev/challenges" mock>{items.length ? <TodayChallengeCarousel items={items} /> : <p className="py-4 text-sm text-muted-foreground">{!empty && participations.some(item => item.status === 'active') ? '오늘 예정된 챌린지가 없어요.' : '챌린지를 등록하고 생활습관 개선에 도전하세요.'}</p>}</SummaryFrame>;
 }
 
 function OfficialHomeChallengeSummary({ principal }: { principal: string | null }) {
@@ -146,7 +147,7 @@ function OfficialHomeChallengeSummary({ principal }: { principal: string | null 
   ).map(item => ({ id: 'official-' + item.id, title: item.challenge_name, href: '/challenges/participations/' + item.id, official: true,
     image: item.challenge.reward_badge?.image_path ? apiAssetUrl(item.challenge.reward_badge.image_path) : '/images/challenges/badge-walk.png',
     badgeName: item.challenge.reward_badge?.name ?? '공식 챌린지 배지',
-    progress: rate(item.progress_rate, item.target_count) + '% 진행 중', rate: rate(item.progress_rate, item.target_count),
+    progress: officialChallengeProgress(item).label, rate: officialChallengeProgress(item).rate,
     completed: officialDone(item), pending: pending[item.id], error: actionErrors[item.id],
     onCheckIn: item.status === 'ACTIVE' && item.can_verify && item.today === today && item.challenge.check_type_code === 'SELF' ? () => void checkIn(item) : undefined }));
   const customCards: TodayChallengeCard[] = (custom.items ?? []).filter(item =>
@@ -160,11 +161,13 @@ function OfficialHomeChallengeSummary({ principal }: { principal: string | null 
       completed: item.occurrences.filter(occurrence => occurrence.scheduledDate === today).every(occurrence => occurrence.isCompleted) };
   });
   const items = [...officialCards, ...customCards];
+  const hasActiveParticipation = (official.items ?? []).some(item => item.status === 'ACTIVE')
+    || (custom.items ?? []).some(item => item.status === 'ACTIVE');
   const loading = (official.items === null && !official.error) || (custom.items === null && !custom.error);
   return <SummaryFrame>
     {items.length > 0 && <TodayChallengeCarousel items={items} />}
     {loading && items.length === 0 && <div role="status" aria-label="오늘 챌린지 불러오는 중" className="flex min-h-[226px] items-center justify-center gap-2 text-caption text-muted-foreground"><span aria-hidden className="size-4 rounded-full border-2 border-primary-bg border-t-primary motion-safe:animate-spin" />오늘 챌린지를 확인하고 있어요</div>}
-    {!loading && !official.error && !custom.error && items.length === 0 && <p className="py-4 text-sm text-muted-foreground">오늘 남은 챌린지가 없어요</p>}
+    {!loading && !official.error && !custom.error && items.length === 0 && <p className="py-4 text-sm text-muted-foreground">{hasActiveParticipation ? '오늘 예정된 챌린지가 없어요.' : '챌린지를 등록하고 생활습관 개선에 도전하세요.'}</p>}
     {([['공식 챌린지', official], ['맞춤 챌린지', custom]] as const).map(([label, state]) => state.error && <section key={label} aria-label={label} className="flex flex-col gap-2 py-2">
       <p role="alert" className="text-sm text-muted-foreground">{state.error}</p>
       <Button variant="secondary" className="h-11 min-h-11" onClick={state.reload}>다시 불러오기</Button>

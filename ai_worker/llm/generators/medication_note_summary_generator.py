@@ -7,13 +7,16 @@ from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
 from ai_worker.domain.errors import MedicationNoteSummaryGenerationError
-from ai_worker.llm.prompts.prompt_assets import load_prompt_template_document
+from ai_worker.llm.prompts.prompt_assets import (
+    MedicationPromptStage,
+    load_prompt_chain_stage,
+)
 from ai_worker.schemas.medication_note_summary import (
     MedicationNoteSummaryPayload,
     MedicationNoteSummarySelection,
 )
 
-MEDICATION_NOTE_SUMMARY_PROMPT_VERSION = "medication-note-summary-prompt-v1"
+MEDICATION_NOTE_SUMMARY_PROMPT_VERSION = "medication-note-summary-prompt-v7"
 
 
 class AsyncMedicationNoteSummaryClient(Protocol):
@@ -23,10 +26,12 @@ class AsyncMedicationNoteSummaryClient(Protocol):
     ) -> MedicationNoteSummaryPayload | dict[str, Any]: ...
 
 
-PROMPT_DOCUMENT = load_prompt_template_document("medication_note_summary_prompt_v1.md")
+PROMPT_DOCUMENT = load_prompt_chain_stage(
+    MedicationPromptStage.MEDICATION_NOTE_SUMMARY,
+)
 PROMPT = ChatPromptTemplate.from_messages(
     [
-        ("system", PROMPT_DOCUMENT.system),
+        ("system", PROMPT_DOCUMENT.compiled_system),
         ("human", PROMPT_DOCUMENT.user),
     ]
 )

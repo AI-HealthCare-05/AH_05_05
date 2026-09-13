@@ -88,6 +88,14 @@ def test_medication_note_summary_route_is_persisted_as_patient_db() -> None:
     assert ChatRepository._chat_route(result) is ChatRouteType.PATIENT_DB
 
 
+def test_follow_up_schedule_route_is_persisted_as_patient_db() -> None:
+    result = build_core_result().model_copy(
+        update={"route": MedicationChatRoute.FOLLOW_UP_SCHEDULE},
+    )
+
+    assert ChatRepository._chat_route(result) is ChatRouteType.PATIENT_DB
+
+
 @pytest.mark.asyncio
 async def test_accept_request_creates_ordered_user_and_pending_assistant_messages() -> None:
     user = await create_user()

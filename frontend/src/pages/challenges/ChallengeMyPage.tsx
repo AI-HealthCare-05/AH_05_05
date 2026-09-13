@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation } from 'react-router';
 
 import { useChallengeMock } from '@/features/challenges';
+import { NavigationTabs } from '@/shared/ui';
 import { ChallengeBadgeArt } from './ChallengeBadgeArt';
 import { ChallengeProgressCard } from './ChallengeProgressCard';
 import { ChallengePageHeading } from './ChallengePageHeading';
@@ -25,14 +26,13 @@ export function ChallengeMyPage() {
     <>
       <ChallengePageHeading />
       <main className="flex flex-col gap-4 px-page-x py-5">
-      <nav aria-label="챌린지 보기" className="grid h-11 grid-cols-2 rounded-input bg-muted-bg p-1">
-        <Link aria-current="page" to={base} className="flex items-center justify-center rounded-[9px] bg-card text-sm font-bold text-primary shadow-card">
-          마이
-        </Link>
-        <Link to={`${base}/browse`} className="flex items-center justify-center rounded-[9px] text-sm font-medium text-muted-foreground">
-          둘러보기
-        </Link>
-      </nav>
+      <NavigationTabs
+        label="챌린지 보기"
+        items={[
+          { label: '나의 챌린지', to: base, end: true },
+          { label: '둘러보기', to: `${base}/browse` },
+        ]}
+      />
 
       <section className="flex flex-col gap-3 rounded-card bg-primary-bg p-5" aria-labelledby="badge-summary-title">
         <h2 id="badge-summary-title" className="text-base font-bold">작은 실천이 쌓이고 있어요</h2>

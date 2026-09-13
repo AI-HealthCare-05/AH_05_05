@@ -11,7 +11,6 @@ import {
   DialogHeader,
   DialogTitle,
   DoseSlotFields,
-  StatusBadge,
 } from '@/shared/ui';
 
 interface EditSupplementSheetProps {
@@ -152,23 +151,12 @@ export function EditSupplementSheet({
                 aria-label="내 영양제 요약"
                 className="rounded-card border border-border bg-card p-4 shadow-card"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <h2 className="[overflow-wrap:anywhere] text-xl font-bold text-foreground">{supplement.name}</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {formatDose(supplement.doseAmount, supplement.doseUnit)} ·{' '}
-                      {supplement.slots.map((slot) => mealSlotLabel(slot, 'short')).join(' · ')}
-                      {note.trim() ? ' · 메모 있음' : ''}
-                    </p>
-                  </div>
-                  {score !== null && (
-                    <span
-                      aria-label={`별 ${score}점`}
-                      className="shrink-0 text-lg font-bold text-warning-strong"
-                    >
-                      {displayStars(score)}
-                    </span>
-                  )}
+                <div className="min-w-0">
+                  <h2 className="[overflow-wrap:anywhere] text-xl font-bold text-foreground">{supplement.name}</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {formatDose(supplement.doseAmount, supplement.doseUnit)} ·{' '}
+                    {supplement.slots.map((slot) => mealSlotLabel(slot, 'short')).join(' · ')}
+                  </p>
                 </div>
               </section>
 
@@ -204,7 +192,7 @@ export function EditSupplementSheet({
                       {note.trim() ? '수정하기' : '등록하기'}
                     </button>
                   </div>
-                  <p className="mt-4 whitespace-pre-wrap break-words text-sm text-foreground">
+                  <p className="mt-4 whitespace-pre-wrap [overflow-wrap:anywhere] text-sm text-foreground">
                     {note.trim() || '작성한 메모가 없어요.'}
                   </p>
                 </div>
@@ -215,7 +203,7 @@ export function EditSupplementSheet({
                       {reviewBody.trim() ? '수정하기' : '등록하기'}
                     </button>
                   </div>
-                  <p className="mt-4 whitespace-pre-wrap break-words text-sm text-foreground">
+                  <p className="mt-4 whitespace-pre-wrap [overflow-wrap:anywhere] text-sm text-foreground">
                     {reviewBody.trim() || '작성한 후기가 없어요.'}
                   </p>
                 </div>
@@ -235,12 +223,6 @@ export function EditSupplementSheet({
                 <h2 className="mb-3 text-lg font-bold text-foreground">복용 정보 수정</h2>
               </div>
             </>
-          )}
-
-          {supplement && !supplement.nutrientDataAvailable && (
-            <StatusBadge type="done" className="px-2.5 py-1 text-sm">
-              성분 정보 없음
-            </StatusBadge>
           )}
 
           <DoseSlotFields

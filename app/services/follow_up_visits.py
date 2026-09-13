@@ -27,8 +27,8 @@ class FollowUpVisitService:
                 using_db=connection,
                 **data.model_dump(),
             )
-            settings, _ = await UserSettings.get_or_create(user_id=user.id, using_db=connection)
-            await FollowUpVisitAlarmService.sync_alarm(visit, settings.evening_medication_time, connection)
+            await UserSettings.get_or_create(user_id=user.id, using_db=connection)
+            await FollowUpVisitAlarmService.sync_alarm(visit, connection)
         return self._to_response(visit)
 
     async def list(
@@ -102,13 +102,9 @@ class FollowUpVisitService:
                     update_fields=[*updates, "updated_at"],
                 )
             if visit.visit_date != original_visit_date:
-                settings, _ = await UserSettings.get_or_create(
-                    user_id=user.id,
-                    using_db=connection,
-                )
+                await UserSettings.get_or_create(user_id=user.id, using_db=connection)
                 await FollowUpVisitAlarmService.sync_alarm(
                     visit,
-                    settings.evening_medication_time,
                     connection,
                 )
         return self._to_response(visit)

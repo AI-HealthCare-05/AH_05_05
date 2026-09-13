@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { DrawnChevron } from '@/shared/ui/DrawnArrow';
+import { ChallengeTypeBadge } from './ChallengeTypeBadge';
 import './today-challenges.css';
 
 export interface TodayChallengeCard {
@@ -42,7 +43,7 @@ export function TodayChallengeCarousel({ items }: { items: TodayChallengeCard[] 
     <div ref={viewport} aria-label="오늘 할 챌린지" tabIndex={0} className="rx-today-challenge-scroll">
       {items.map(item => <article key={item.id} aria-label={item.title} className="rx-today-challenge-item">
         <Link to={item.href} aria-label={`${item.title}, ${item.progress}, 상세 보기`} className="rx-today-challenge-detail">
-        <span className="self-start rounded-pill bg-primary-bg px-2 py-0.5 text-micro font-bold text-primary">{item.official ? '공식' : '맞춤'}</span>
+        <ChallengeTypeBadge official={item.official} />
         <img src={item.image} alt={item.badgeName} width={56} height={56} className="size-14 self-center rounded-pill object-contain" />
         <span className="rx-challenge-title text-center text-sm font-bold [overflow-wrap:anywhere]">{item.title}</span>
         <span className="mt-auto text-center text-caption text-muted-foreground">{item.progress}</span>
@@ -50,13 +51,15 @@ export function TodayChallengeCarousel({ items }: { items: TodayChallengeCard[] 
           <span className="block h-full rounded-pill bg-primary" style={{ width: `${item.rate}%` }} />
         </span>
         </Link>
-        {item.completed ? <p className="rx-today-challenge-state text-primary" aria-live="polite"><svg aria-hidden="true" className="rx-drawn-icon size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 4 4L19 6" pathLength="1" /></svg>달성</p>
-          : item.onCheckIn ? <button type="button" aria-label={`${item.title} 했어요`} disabled={item.pending} onClick={item.onCheckIn} className="rx-today-challenge-checkin">{item.pending ? '저장 중…' : '했어요'}</button>
-          : <p className="rx-today-challenge-state text-muted-foreground" aria-live="polite">미달성</p>}
+        {item.completed ? <p className="rx-today-challenge-state text-primary" aria-live="polite"><svg aria-hidden="true" className="rx-drawn-icon size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 4 4L19 6" pathLength="1" /></svg>완료</p>
+          : item.onCheckIn ? <div className="flex items-center gap-2">{!item.official && <span className="text-micro text-muted-foreground">미완료</span>}<button type="button" aria-label={`${item.title} 했어요`} disabled={item.pending} onClick={item.onCheckIn} className="rx-today-challenge-checkin min-w-0 flex-1">{item.pending ? '저장 중…' : '했어요'}</button></div>
+          : !item.official && <p className="rx-today-challenge-state text-muted-foreground" aria-live="polite">미완료</p>}
         {item.error && <p role="alert" className="text-center text-caption text-destructive">{item.error}</p>}
       </article>)}
     </div>
-    {edges.left && <button type="button" aria-label="이전 챌린지" className="rx-today-challenge-arrow -left-3" onClick={() => move(-1)}><DrawnChevron direction="left" className="size-5" /></button>}
-    {edges.right && <button type="button" aria-label="다음 챌린지" className="rx-today-challenge-arrow -right-3" onClick={() => move(1)}><DrawnChevron direction="right" className="size-5" /></button>}
+    {(edges.left || edges.right) && <div className="mt-2 flex justify-end gap-2">
+      <button type="button" aria-label="이전 챌린지" disabled={!edges.left} className="rx-today-challenge-arrow" onClick={() => move(-1)}><DrawnChevron direction="left" className="size-5" /></button>
+      <button type="button" aria-label="다음 챌린지" disabled={!edges.right} className="rx-today-challenge-arrow" onClick={() => move(1)}><DrawnChevron direction="right" className="size-5" /></button>
+    </div>}
   </div>;
 }

@@ -30,9 +30,6 @@
 .rx-today-challenge-checkin { border-radius: var(--radius-button); background: var(--color-primary); color: var(--color-primary-foreground); }
 .rx-today-challenge-checkin:disabled { opacity: 0.65; cursor: wait; }
 .rx-today-challenge-arrow {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -43,5 +40,6 @@
   color: var(--color-primary);
   box-shadow: var(--shadow-card);
 }
+.rx-today-challenge-arrow:disabled { opacity: 0.35; cursor: default; }
 @keyframes rx-today-reveal { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .rx-today-challenge-item { animation: none; } }

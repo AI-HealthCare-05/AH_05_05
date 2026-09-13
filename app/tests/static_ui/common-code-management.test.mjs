@@ -4,6 +4,7 @@ import test from "node:test";
 
 const pageUrl = new URL("../../static/templates/common-code-management.html", import.meta.url);
 const moduleUrl = new URL("../../static/js/common-code-management.js", import.meta.url);
+const managementStylesUrl = new URL("../../static/css/management.css", import.meta.url);
 
 test("common code management exposes category-aware split lists and edit dialogs", async () => {
   const html = await readFile(pageUrl, "utf8");
@@ -73,6 +74,33 @@ test("group edit payload omits immutable category and group code", async () => {
     description: "설명",
     is_active: true,
   });
+});
+
+test("group actions enable delete only for an unused group", async () => {
+  const { renderGroupActions } = await import(moduleUrl);
+
+  assert.equal(
+    renderGroupActions({ id: 7, can_delete: true }, true),
+    '<span class="common-code-row-actions"><button type="button" class="ui-link-button" data-edit-group="7">수정</button>'
+      + '<button type="button" class="ui-link-button ui-link-button-danger" data-delete-group="7">삭제</button></span>',
+  );
+  assert.equal(
+    renderGroupActions({ id: 8, can_delete: false }, true),
+    '<span class="common-code-row-actions"><button type="button" class="ui-link-button" data-edit-group="8">수정</button>'
+      + '<button type="button" class="ui-link-button ui-link-button-danger" data-delete-group="8" disabled aria-disabled="true" title="사용 중인 공통코드 그룹은 삭제할 수 없습니다.">삭제</button></span>',
+  );
+  assert.equal(renderGroupActions({ id: 9, can_delete: true }, false), "-");
+});
+
+test("group action buttons render with an eight pixel gap", async () => {
+  const { renderGroupActions } = await import(moduleUrl);
+  const styles = await readFile(managementStylesUrl, "utf8");
+
+  assert.match(
+    renderGroupActions({ id: 7, can_delete: true }, true),
+    /^<span class="common-code-row-actions">.*수정.*삭제.*<\/span>$/,
+  );
+  assert.match(styles, /\.common-code-row-actions\s*\{[^}]*gap:\s*8px;/s);
 });
 
 test("sort order input removes every non-digit character", async () => {
@@ -170,4 +198,55 @@ test("the two code sanitizers agree on every input", async () => {
       `입력 ${JSON.stringify(input)} 에서 갈렸다`,
     );
   }
+});
+
+test("code input guard blocks Korean before insertion but allows code characters and deletion", async () => {
+  const { guardCodeInput } = await import(moduleUrl);
+  let koreanBlocked = false;
+  let latinBlocked = false;
+  let deletionBlocked = false;
+
+  guardCodeInput({
+    type: "beforeinput",
+    data: "한",
+    preventDefault() { koreanBlocked = true; },
+  });
+  guardCodeInput({
+    type: "beforeinput",
+    data: "a_1",
+    preventDefault() { latinBlocked = true; },
+  });
+  guardCodeInput({
+    type: "beforeinput",
+    data: null,
+    preventDefault() { deletionBlocked = true; },
+  });
+
+  assert.equal(koreanBlocked, true);
+  assert.equal(latinBlocked, false);
+  assert.equal(deletionBlocked, false);
+});
+
+test("code input guard blocks an active IME keydown before composition text appears", async () => {
+  const { guardCodeInput } = await import(moduleUrl);
+  let imeBlocked = false;
+  let latinBlocked = false;
+
+  guardCodeInput({
+    type: "keydown",
+    key: "Process",
+    keyCode: 229,
+    isComposing: true,
+    preventDefault() { imeBlocked = true; },
+  });
+  guardCodeInput({
+    type: "keydown",
+    key: "a",
+    keyCode: 65,
+    isComposing: false,
+    preventDefault() { latinBlocked = true; },
+  });
+
+  assert.equal(imeBlocked, true);
+  assert.equal(latinBlocked, false);
 });

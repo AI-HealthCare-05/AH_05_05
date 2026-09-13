@@ -103,23 +103,21 @@ test('completion pill stays above the hospital name across widths, expansion, se
   await row.click();
   await detail.getByRole('button', { name: '먹었어요', exact: true }).click();
   await expect(row).toHaveAttribute('aria-pressed', 'false');
-  await expect(headerSummary).toHaveText('복용 완료');
-  await expect(pill).toHaveCount(0);
+  await expect(headerSummary).toHaveCount(0);
+  await expect(pill).toHaveText('복용 완료');
   for (const width of [320, 390, 1280]) {
     await page.setViewportSize({ width, height: 844 });
-    const summaryBox = (await headerSummary.boundingBox())!;
-    const titleBox = (await timeline.locator('p').first().boundingBox())!;
-    expect(summaryBox.x).toBeGreaterThanOrEqual(titleBox.x + titleBox.width - 1);
-    expect(Math.abs(
-      summaryBox.y + summaryBox.height / 2 - (titleBox.y + titleBox.height / 2),
-    )).toBeLessThanOrEqual(4);
+    const pillBox = (await pill.boundingBox())!;
+    const titleBox = (await row.getByRole('heading').boundingBox())!;
+    expect(pillBox.y + pillBox.height).toBeLessThanOrEqual(titleBox.y);
+    expect(Math.abs(pillBox.x - titleBox.x)).toBeLessThanOrEqual(2);
     expect(await detail.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
     expect((await detail.getByRole('button', { name: /처방 접기$/ }).boundingBox())!.width).toBe(44);
     await page.screenshot({ path: testInfo.outputPath(`353-home-medication-completion-${width}.png`), fullPage: true });
   }
   await row.click();
   await expect(row).toHaveAttribute('aria-pressed', 'true');
-  await expect(headerSummary).toHaveText('복용 완료');
+  await expect(pill).toHaveText('복용 완료');
   await detail.getByRole('button', { name: '복약 기록 되돌리기' }).click();
   await expect(headerSummary).toHaveCount(0);
   await expect(pill).toHaveCount(0);
@@ -161,8 +159,8 @@ for (const { hiddenFails, allVisibleTaken } of [
       await expect.poll(() => requests.map(item => item.recordId).sort()).toEqual([12, 12, 24]);
     }
     await detail.getByRole('button', { name: '다른 처방 펼치기' }).click();
-    await expect(page.locator('[data-medication-completed-summary]')).toHaveCount(1);
-    await expect(detail.locator('[data-episode-completed-badge]')).toHaveCount(0);
+    await expect(page.locator('[data-medication-completed-summary]')).toHaveCount(0);
+    await expect(detail.locator('[data-episode-completed-badge]')).toHaveCount(3);
     await expect(detail.getByRole('button', { name: '복약 기록 되돌리기' })).toBeDisabled();
     expect(requests.every(item => item.recordId !== 36 && item.taken)).toBe(true);
   });
@@ -265,14 +263,14 @@ test('처방이 3개 이상이면 두 행만 먼저 보여줘도 기본 복용�
 
   const action = detail.getByRole('button', { name: '먹었어요' });
   await action.click();
-  await expect(page.locator('[data-medication-completed-summary]')).toHaveCount(1);
-  await expect(detail.locator('[data-episode-completed-badge]')).toHaveCount(0);
+  await expect(page.locator('[data-medication-completed-summary]')).toHaveCount(0);
+  await expect(detail.locator('[data-episode-completed-badge]')).toHaveCount(2);
   await expect(detail.getByRole('article').nth(2)).toHaveCount(0);
   await detail.getByRole('button', { name: '다른 처방 펼치기' }).click();
   const hiddenEpisode = detail.getByRole('article').nth(2);
   await expect(hiddenEpisode.getByRole('heading', { name: '첫 처방', exact: true })).toBeVisible();
-  await expect(hiddenEpisode.locator('[data-episode-completed-badge]')).toHaveCount(0);
-  await expect(page.locator('[data-medication-completed-summary]')).toHaveText('복용 완료');
+  await expect(hiddenEpisode.locator('[data-episode-completed-badge]')).toHaveText('복용 완료');
+  await expect(page.locator('[data-medication-completed-summary]')).toHaveCount(0);
   await expect(hiddenEpisode.getByRole('button', { name: '첫 처방 · 8월 22일 처방 복용 완료' })).toHaveAttribute(
     'aria-pressed',
     'false',

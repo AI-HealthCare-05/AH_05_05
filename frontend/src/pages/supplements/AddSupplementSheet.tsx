@@ -50,6 +50,7 @@ export function AddSupplementSheet({
   const [manualName, setManualName] = useState('');
   const [saving, setSaving] = useState(false);
   const searchGenerationRef = useRef(0);
+  const selectedProductCardRef = useRef<HTMLElement | null>(null);
   const isPresetProductMode = presetProductId !== null;
 
   useEffect(() => {
@@ -133,8 +134,28 @@ export function AddSupplementSheet({
     };
   }, [debouncedQuery, isPresetProductMode, manualMode, open, query]);
 
+  useEffect(() => {
+    if (!open || selectedProductId === null) return;
+    let frame = 0;
+    const revealSelection = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        selectedProductCardRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      });
+    };
+    revealSelection();
+    const list = selectedProductCardRef.current?.closest('ul');
+    const observer = new ResizeObserver(revealSelection);
+    if (list) observer.observe(list);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [open, selectedProductId]);
+
   const selectedProduct =
     results.find((product) => product.productId === selectedProductId) ?? null;
+  const showSelectedResults = selectedProduct !== null && !searching && !searchError;
 
   function reset() {
     searchGenerationRef.current += 1;
@@ -236,12 +257,46 @@ export function AddSupplementSheet({
     }
   }
 
+  const resultHint = total > PAGE_SIZE && (
+    <div className="flex shrink-0 items-start gap-2 rounded-card bg-primary-bg p-3 text-sm text-muted-foreground">
+      <Info aria-hidden className="mt-0.5 size-5 shrink-0 text-primary-strong" />
+      <p>
+        <strong className="font-bold text-foreground">{total}개가 찾아졌어요.</strong>{' '}
+        {USE_MOCK
+          ? '통 앞면의 브랜드를 함께 넣으면 빨리 찾아요 — 예: 센트룸 종합비타민'
+          : '제품명 일부를 더 입력하면 결과를 좁힐 수 있어요.'}
+      </p>
+    </div>
+  );
+
+  const manualEntry = (
+    <div className="flex shrink-0 items-center justify-center gap-2 border-t border-border py-4 text-sm text-muted-foreground">
+      <span>찾는 제품이 없나요?</span>
+      <button
+        type="button"
+        className="min-h-touch font-bold text-primary-strong"
+        onClick={() => {
+          setSelectedProductId(null);
+          setManualName('');
+          setDoseAmount(DEFAULT_DOSE_AMOUNT);
+          setSlots(['morning']);
+          setManualMode(true);
+        }}
+      >
+        직접 입력
+      </button>
+    </div>
+  );
+
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent
         variant="sheet"
         aria-describedby="supplement-add-description"
-        className="flex max-h-[88dvh] min-h-[70dvh] flex-col gap-4 overflow-hidden p-5 pb-0"
+        className={cn(
+          'flex max-h-[94dvh] min-h-[70dvh] flex-col gap-4 overflow-hidden p-5 pb-0',
+          selectedProduct && 'pb-[max(0.5rem,env(safe-area-inset-bottom))]',
+        )}
       >
         <span aria-hidden className="mx-auto h-1 w-10 shrink-0 rounded-pill bg-border" />
         <div className="shrink-0 pr-10">
@@ -320,17 +375,7 @@ export function AddSupplementSheet({
         ) : (
           <>
             <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-              {total > PAGE_SIZE && (
-                <div className="flex shrink-0 items-start gap-2 rounded-card bg-primary-bg p-3 text-sm text-muted-foreground">
-                  <Info aria-hidden className="mt-0.5 size-5 shrink-0 text-primary-strong" />
-                  <p>
-                    <strong className="font-bold text-foreground">{total}개가 찾아졌어요.</strong>{' '}
-                    {USE_MOCK
-                      ? '통 앞면의 브랜드를 함께 넣으면 빨리 찾아요 — 예: 센트룸 종합비타민'
-                      : '제품명 일부를 더 입력하면 결과를 좁힐 수 있어요.'}
-                  </p>
-                </div>
-              )}
+              {!showSelectedResults && resultHint}
 
               {searching ? (
                 <p role="status" className="py-8 text-center text-sm text-muted-foreground">
@@ -355,11 +400,13 @@ export function AddSupplementSheet({
                   className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pb-2"
                   onScroll={handleResultsScroll}
                 >
+                  {selectedProduct && resultHint && <li className="shrink-0">{resultHint}</li>}
                   {results.map((product) => {
                     const selected = product.productId === selectedProductId;
                     return (
-                      <li key={product.productId}>
+                      <li key={product.productId} className="shrink-0">
                         <article
+                          ref={selected ? selectedProductCardRef : undefined}
                           className={cn(
                             'overflow-hidden rounded-card border bg-card shadow-card',
                             selected ? 'border-primary' : 'border-transparent',
@@ -392,7 +439,7 @@ export function AddSupplementSheet({
                           </button>
 
                           {selected && (
-                            <div className="mx-4 flex flex-col gap-3 border-t border-border py-4">
+                            <div className="mx-4 flex flex-col gap-3 border-t border-border py-3 [&_p[aria-live]:empty]:hidden">
                               <DoseSlotFields
                                 doseAmount={doseAmount}
                                 doseUnit={product.doseUnit}
@@ -403,7 +450,7 @@ export function AddSupplementSheet({
                               />
                               {product.recommendedDoseAmount !== null && (
                                 <p className="text-sm text-muted-foreground">
-                                  제품 표시사항의 섭취방법을 채워놨어요.
+                                  제품 정보의 복용 권장사항을 참고하세요.
                                 </p>
                               )}
                               <Button
@@ -423,6 +470,7 @@ export function AddSupplementSheet({
                       더 불러오는 중...
                     </li>
                   )}
+                  {selectedProduct && <li className="shrink-0">{manualEntry}</li>}
                 </ul>
               ) : (
                 <div className="flex flex-1 items-center justify-center text-center text-sm text-muted-foreground">
@@ -431,22 +479,7 @@ export function AddSupplementSheet({
               )}
             </div>
 
-            <div className="-mx-5 flex shrink-0 items-center justify-center gap-2 border-t border-border px-5 py-4 text-sm text-muted-foreground">
-              <span>찾는 제품이 없나요?</span>
-              <button
-                type="button"
-                className="min-h-touch font-bold text-primary-strong"
-                onClick={() => {
-                  setSelectedProductId(null);
-                  setManualName('');
-                  setDoseAmount(DEFAULT_DOSE_AMOUNT);
-                  setSlots(['morning']);
-                  setManualMode(true);
-                }}
-              >
-                직접 입력
-              </button>
-            </div>
+            {!showSelectedResults && <div className="-mx-5 shrink-0 px-5">{manualEntry}</div>}
           </>
         )}
       </DialogContent>

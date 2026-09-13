@@ -59,18 +59,24 @@ export function SupplementRankingCard({
                   onClick={() => onSelect(item.productId)}
                 >
                   <RankNumber rank={item.rank} />
-                  <strong className="min-w-0 flex-1 [overflow-wrap:anywhere] text-base text-foreground">
+                  <strong
+                    title={item.name}
+                    className="min-w-0 flex-1 truncate text-sm text-foreground"
+                  >
                     {item.name}
                   </strong>
                   {!registrationPending && item.alreadyRegistered && (
-                    <StatusBadge type="done" className="px-2.5 py-1 text-xs">등록됨</StatusBadge>
+                    <StatusBadge type="active" className="px-2.5 py-1 text-xs">복용 중</StatusBadge>
                   )}
                   <DrawnChevron direction="right" className="size-5 shrink-0 text-disabled-foreground" />
                 </button>
               ) : (
                 <div className="flex min-h-touch items-center gap-3 px-4 py-2">
                   <RankNumber rank={item.rank} />
-                  <strong className="min-w-0 flex-1 [overflow-wrap:anywhere] text-base text-foreground">
+                  <strong
+                    title={item.name}
+                    className="min-w-0 flex-1 truncate text-sm text-foreground"
+                  >
                     {item.name}
                   </strong>
                 </div>
@@ -85,7 +91,7 @@ export function SupplementRankingCard({
 
 function RankNumber({ rank }: { rank: number }) {
   return (
-    <span className="flex size-8 shrink-0 items-center justify-center rounded-pill bg-muted-bg text-sm font-bold text-foreground tnum">
+    <span className="flex size-7 shrink-0 items-center justify-center rounded-pill bg-muted-bg text-xs font-bold text-foreground tnum">
       {rank}
     </span>
   );

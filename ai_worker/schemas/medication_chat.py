@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from ai_worker.domain.chat_content_compactor import CHAT_CONTENT_MAX_LENGTH
 from ai_worker.schemas.chat import ChatHistoryMessage
 from ai_worker.schemas.enums import SafetyStatus
+from ai_worker.schemas.evidence_reasoning import EvidenceReasoningOutput
 from ai_worker.schemas.interaction import InteractionEntityKind
 from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_search import (
@@ -151,6 +152,7 @@ class MedicationChatReasonCode(StrEnum):
     MEDICATION_NOTE_SUMMARY_REQUESTED = "MEDICATION_NOTE_SUMMARY_REQUESTED"
     MEDICATION_NOTE_SUMMARY_UNAVAILABLE = "MEDICATION_NOTE_SUMMARY_UNAVAILABLE"
     SENSITIVE_REQUEST_BLOCKED = "SENSITIVE_REQUEST_BLOCKED"
+    CONVERSATION_SENSITIVE_EDUCATION = "CONVERSATION_SENSITIVE_EDUCATION"
     OUT_OF_SCOPE_REDIRECTED = "OUT_OF_SCOPE_REDIRECTED"
     HEALTH_URGENCY = "HEALTH_URGENCY"
     PERSONAL_DOSE_CHANGE_CONFIRMATION_REQUIRED = "PERSONAL_DOSE_CHANGE_CONFIRMATION_REQUIRED"
@@ -225,6 +227,10 @@ class MedicationChatRequest(BaseModel):
     )
     history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=10)
     symptom_interaction_follow_up: bool = False
+    conversation_interaction_reference_names: list[str] = Field(
+        default_factory=list,
+        max_length=2,
+    )
     session_reference: MedicationChatSessionReference = Field(
         default_factory=MedicationChatSessionReference,
     )
@@ -429,6 +435,10 @@ class MedicationChatResult(BaseModel):
         exclude=True,
     )
     evidence_coverage: MedicationEvidenceCoverage | None = Field(
+        default=None,
+        exclude=True,
+    )
+    evidence_reasoning: EvidenceReasoningOutput | None = Field(
         default=None,
         exclude=True,
     )

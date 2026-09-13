@@ -1,4 +1,4 @@
-import { ApiError, escapeHtml, get, patch, post, requireLogin, session, tableState } from "./api.js";
+import { ApiError, escapeHtml, get, patch, post, request, requireLogin, session, tableState } from "./api.js";
 
 const PAGE_SIZE = 20;
 const CODE_PATTERN = /^[A-Z0-9_]+$/;
@@ -18,6 +18,19 @@ export function sanitizeGroupCodeInput(value) {
 
 export function sanitizeDetailCodeInput(value) {
   return normalizeCodeInput(value).replace(/[^A-Z0-9_]/g, "").slice(0, 20);
+}
+
+export function guardCodeInput(event) {
+  if (
+    event.type === "keydown"
+    && (event.isComposing || event.key === "Process" || event.keyCode === 229)
+  ) {
+    event.preventDefault();
+    return;
+  }
+  if (event.type === "beforeinput" && event.data && /[^A-Za-z0-9_]/.test(event.data)) {
+    event.preventDefault();
+  }
 }
 
 export function sanitizeSortOrderInput(value) {
@@ -94,6 +107,17 @@ function statusBadge(active) {
   return `<span class="status-badge ${active ? "status-active" : "status-stopped"}">${active ? "사용" : "미사용"}</span>`;
 }
 
+export function renderGroupActions(group, isAdmin) {
+  if (!isAdmin) return "-";
+  const deleteState = group.can_delete
+    ? ""
+    : ' disabled aria-disabled="true" title="사용 중인 공통코드 그룹은 삭제할 수 없습니다."';
+  return `<span class="common-code-row-actions">`
+    + `<button type="button" class="ui-link-button" data-edit-group="${group.id}">수정</button>`
+    + `<button type="button" class="ui-link-button ui-link-button-danger" data-delete-group="${group.id}"${deleteState}>삭제</button>`
+    + "</span>";
+}
+
 function initializeCommonCodeManagement() {
   const groupSearch = document.querySelector("[data-group-search]");
   const groupList = document.querySelector("[data-group-list]");
@@ -121,11 +145,15 @@ function initializeCommonCodeManagement() {
 
   if (!isAdmin) document.querySelectorAll("[data-write-control]").forEach((node) => node.remove());
   document.querySelectorAll(".common-code-input").forEach((input) => {
+    input.addEventListener("keydown", guardCodeInput);
+    input.addEventListener("beforeinput", guardCodeInput);
     input.addEventListener("input", () => {
       input.value = sanitizeGroupCodeInput(input.value);
     });
   });
   document.querySelectorAll(".detail-code-input").forEach((input) => {
+    input.addEventListener("keydown", guardCodeInput);
+    input.addEventListener("beforeinput", guardCodeInput);
     input.addEventListener("input", () => {
       input.value = sanitizeDetailCodeInput(input.value);
     });
@@ -143,7 +171,7 @@ function initializeCommonCodeManagement() {
     groupList.innerHTML = items.map((group) => `<tr data-group-id="${group.id}" class="${selectedGroup?.id === group.id ? "is-selected" : ""}">
       <td>${escapeHtml(group.category)}</td><td><strong>${escapeHtml(group.group_code)}</strong></td>
       <td>${escapeHtml(group.group_name)}</td><td>${statusBadge(group.is_active)}</td>
-      <td>${isAdmin ? `<button type="button" class="ui-link-button" data-edit-group="${group.id}">수정</button>` : "-"}</td>
+      <td>${renderGroupActions(group, isAdmin)}</td>
     </tr>`).join("");
   };
 
@@ -251,6 +279,30 @@ function initializeCommonCodeManagement() {
     if (edit) {
       event.stopPropagation();
       openGroup(groupItems.find((item) => item.id === Number(edit.dataset.editGroup)));
+      return;
+    }
+    const remove = event.target.closest("[data-delete-group]");
+    if (remove) {
+      event.stopPropagation();
+      if (remove.disabled) return;
+      const group = groupItems.find((item) => item.id === Number(remove.dataset.deleteGroup));
+      if (!group || !window.confirm("코드그룹과 하위 상세코드가 모두 삭제됩니다. 삭제하시겠습니까?")) return;
+      void (async () => {
+        try {
+          await request(`/admin/common-code-groups/${group.id}`, { method: "DELETE" });
+          if (selectedGroup?.id === group.id) {
+            selectedGroup = null;
+            selectedGroupText.textContent = "왼쪽에서 코드 그룹을 선택해 주세요.";
+            tableState.empty(codeList, COLUMN_COUNT, "코드 그룹을 선택해 주세요.");
+            codePagination.replaceChildren();
+            if (codeCreate) codeCreate.disabled = true;
+          }
+          await loadGroups(groupPage);
+        } catch (error) {
+          window.alert(message(error, "코드 그룹을 삭제하지 못했습니다."));
+          await loadGroups(groupPage);
+        }
+      })();
       return;
     }
     const row = event.target.closest("[data-group-id]");
