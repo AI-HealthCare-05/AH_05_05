@@ -10,10 +10,11 @@ from tortoise import Tortoise
 from app.core import config
 from app.core.db.databases import TORTOISE_ORM
 from app.core.exceptions import OcrProviderConfigError
-from app.services.medication_guide_ocr_jobs import MedicationGuideOcrJobService, TemporaryOcrStorage
+from app.services.medication_guide_ocr_jobs import MedicationGuideOcrJobService
 from app.services.medication_ocr_v3.providers.clova_general import ClovaGeneralOcrProvider
 from app.services.medication_ocr_v3.providers.openai_grounded import OpenAIGroundedStructurer
 from app.services.medication_ocr_v3.service import MedicationOcrV3Service
+from app.services.ocr_volatile_storage import VolatileOcrStorage
 
 
 def _redis_settings() -> RedisSettings:
@@ -25,6 +26,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     redis_pool: Any | None = None
     provider: ClovaGeneralOcrProvider | None = None
     structurer: OpenAIGroundedStructurer | None = None
+    storage: VolatileOcrStorage | None = None
     tortoise_active = False
     try:
         if not Tortoise._inited:  # noqa: SLF001
@@ -43,7 +45,7 @@ async def startup(ctx: dict[str, Any]) -> None:
             structurer=structurer,
             preprocess_version=config.OCR_PREPROCESS_VERSION,
         )
-        storage = TemporaryOcrStorage(config.OCR_TEMP_DIR)
+        storage = VolatileOcrStorage(config.OCR_IMAGE_REDIS_URL, config.OCR_REVIEW_TTL_MINUTES * 60)
         ctx.update(
             {
                 "ocr_redis_pool": redis_pool,
@@ -60,6 +62,7 @@ async def startup(ctx: dict[str, Any]) -> None:
         )
     except Exception:
         await _close_resources(
+            storage=storage,
             structurer=structurer,
             provider=provider,
             redis_pool=redis_pool,
@@ -75,9 +78,10 @@ async def shutdown(ctx: dict[str, Any]) -> None:
     redis_pool = ctx.pop("ocr_redis_pool", None)
     close_tortoise = bool(ctx.pop("ocr_tortoise_active", False))
     ctx.pop("ocr_analyzer", None)
-    ctx.pop("ocr_storage", None)
+    storage = ctx.pop("ocr_storage", None)
     ctx.pop("ocr_job_service", None)
     await _close_resources(
+        storage=storage,
         structurer=structurer,
         provider=provider,
         redis_pool=redis_pool,
@@ -88,6 +92,7 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 async def _close_resources(
     *,
+    storage: Any | None,
     structurer: Any | None,
     provider: Any | None,
     redis_pool: Any | None,
@@ -95,7 +100,7 @@ async def _close_resources(
     raise_cleanup_error: bool,
 ) -> None:
     closers: list[Callable[[], Awaitable[None]]] = []
-    for resource in (structurer, provider, redis_pool):
+    for resource in (storage, structurer, provider, redis_pool):
         close = getattr(resource, "aclose", None)
         if callable(close):
             closers.append(close)
@@ -152,5 +157,7 @@ class WorkerSettings:
     redis_settings = _redis_settings()
     cron_jobs = [cron(cleanup_expired_ocr_jobs, minute=set(range(0, 60, 5)))]
     max_tries = 2
+    # Bound concurrent full-resolution image decoding and preprocessing memory.
+    max_jobs = 2
     # Preserve failure evidence beyond stale-job TTL and the next cleanup tick.
     keep_result = (config.OCR_REVIEW_TTL_MINUTES + 10) * 60

@@ -1,6 +1,7 @@
 import asyncio
 import re
 import time
+from collections.abc import Sequence
 
 from ai_worker.domain.interfaces import SupplementIngredientCatalog
 from ai_worker.domain.medication_expression_vocabulary import (
@@ -23,7 +24,7 @@ class DbMedicationExpressionCatalog:
     """질문 해석에 사용할 제품명·성분명·별칭을 DB에서 제공한다."""
 
     _INGREDIENT_SUFFIX = re.compile(r"\([^()]+\)\s*$")
-    _DOSAGE_FORM_BOUNDARY = re.compile(
+    PRODUCT_DOSAGE_FORM_BOUNDARY = re.compile(
         r"(?:구강붕해정|연질캡슐|경질캡슐|현탁액|서방정|장용정|"
         r"시럽|과립|캡슐|정|산|액)(?=\d|$)",
     )
@@ -33,9 +34,11 @@ class DbMedicationExpressionCatalog:
         *,
         cache_ttl_seconds: float = 300.0,
         supplement_catalog: SupplementIngredientCatalog | None = None,
+        product_names_only: bool = False,
     ) -> None:
         self._cache_ttl_seconds = cache_ttl_seconds
         self._supplement_catalog = supplement_catalog
+        self._product_names_only = product_names_only
         self._cached_entries: list[MedicationCatalogEntry] | None = None
         self._cached_expressions: list[str] | None = None
         self._cache_expires_at = 0.0
@@ -57,16 +60,17 @@ class DbMedicationExpressionCatalog:
         if self._cached_entries is not None and now < self._cache_expires_at:
             return self._cached_entries.copy()
 
-        results = await asyncio.gather(
-            MedicationProductGuide.all().values_list("product_name", flat=True),
-            InteractionEntity.all().prefetch_related("aliases"),
-            SupplementNutrient.all().values_list(
-                "name",
-                flat=True,
-            ),
-            self._list_additional_entries(),
-            return_exceptions=True,
-        )
+        results: Sequence[object]
+        if self._product_names_only:
+            results = [await MedicationProductGuide.all().values_list("product_name", flat=True), [], [], []]
+        else:
+            results = await asyncio.gather(
+                MedicationProductGuide.all().values_list("product_name", flat=True),
+                InteractionEntity.all().prefetch_related("aliases"),
+                SupplementNutrient.all().values_list("name", flat=True),
+                self._list_additional_entries(),
+                return_exceptions=True,
+            )
         if all(isinstance(result, BaseException) for result in results):
             raise RuntimeError("질문 해석 카탈로그 공급원을 모두 조회하지 못했습니다.")
         product_names = self._list_or_empty(results[0])
@@ -125,7 +129,8 @@ class DbMedicationExpressionCatalog:
             if str(name).strip()
         )
         entries.extend(additional_entries)
-        entries.extend(self._shared_supplement_entries(entries))
+        if not self._product_names_only:
+            entries.extend(self._shared_supplement_entries(entries))
         self._cached_entries = self._deduplicate_entries(entries)
         self._cache_expires_at = now + self._cache_ttl_seconds
         return self._cached_entries.copy()
@@ -198,7 +203,7 @@ class DbMedicationExpressionCatalog:
         if not full_name:
             return []
         name_without_ingredient = cls._INGREDIENT_SUFFIX.sub("", full_name).strip()
-        dosage_form = cls._DOSAGE_FORM_BOUNDARY.search(name_without_ingredient)
+        dosage_form = cls.PRODUCT_DOSAGE_FORM_BOUNDARY.search(name_without_ingredient)
         if dosage_form is None:
             return list(dict.fromkeys([full_name, name_without_ingredient]))
         family_name = name_without_ingredient[: dosage_form.start()].rstrip(" -")

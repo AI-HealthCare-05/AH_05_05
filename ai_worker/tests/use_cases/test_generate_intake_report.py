@@ -2,6 +2,7 @@ from datetime import date
 from types import SimpleNamespace
 
 from ai_worker.assemblers.intake_report_assembler import IntakeReportAssembler
+from ai_worker.reports.nutrients import ReportNutrientData
 from ai_worker.schemas.intake_report import (
     IntakeReportFallbackReason,
     IntakeReportGenerationOutcome,
@@ -160,7 +161,7 @@ async def test_real_report_keeps_retrieval_and_generation_with_calculated_nutrie
                 IntakeReportNutrientTotal(
                     nutrient_name="철",
                     daily_total="7 mg",
-                    calculation_status="LABEL_SCHEDULE",
+                    calculation_status="REGISTERED_SCHEDULE",
                     amount="7",
                     unit="mg",
                     reference_value="10",
@@ -170,8 +171,8 @@ async def test_real_report_keeps_retrieval_and_generation_with_calculated_nutrie
                 )
             ],
             profile_label="남자 · 30-49세",
-            basis_note="제품 안내량 기준 · 실제 복용량 아님",
-            product_labels={10: "제품 안내량 · 하루 1정"},
+            basis_note="등록한 복용 계획 기준 · 실제 복용 여부는 확인하지 않음",
+            product_labels={1: "등록한 계획 · 하루 1정"},
         )
 
     use_case = GenerateIntakeReportUseCase(
@@ -190,6 +191,54 @@ async def test_real_report_keeps_retrieval_and_generation_with_calculated_nutrie
     assert result.fallback_used is False
     assert result.nutrient_totals[0].amount == "7"
     assert "7 mg" in generator.draft.deterministic_markdown
+    assert "등록한 계획 · 하루 1정" in generator.draft.current_stack[0].registered_intake_info
+
+
+def test_nutrient_summary_is_attached_only_to_the_matching_supplement_and_serializes_as_camel_case() -> None:
+    """Would fail if a summary is attached by product name, changes medicine data, or is lost at the API boundary."""
+    from app.dtos.intake_reports import IntakeReportCurrentStackItemResponse
+
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[ActiveMedication(medication_id=90, care_episode_id=1, name="처방약")],
+        supplements=[
+            ActiveSupplement(
+                registration_id=10,
+                supplement_nutrient_id=1,
+                name="칼슘 제품",
+                dose_amount="1",
+                dose_unit="정",
+                start_date=date(2026, 9, 1),
+                scheduled_slots=["MORNING"],
+            )
+        ],
+    )
+    draft = IntakeReportAssembler().assemble(
+        context=context,
+        guide_lookups=[],
+        approved_rules=[],
+        knowledge_chunks=[],
+        rag_available=True,
+    )
+    enriched = GenerateIntakeReportUseCase._with_nutrients(
+        draft,
+        context,
+        ReportNutrientData(
+            totals=[],
+            profile_label="비교 기준 확인 필요",
+            basis_note="등록한 복용 계획 기준",
+            product_labels={},
+            product_ingredient_summaries={10: "칼슘 200mg · 비타민 D 10μg"},
+        ),
+    )
+
+    medication, supplement = enriched.current_stack
+    assert medication.ingredient_summary is None
+    assert medication.registered_intake_info == draft.current_stack[0].registered_intake_info
+    assert supplement.ingredient_summary == "칼슘 200mg · 비타민 D 10μg"
+    assert IntakeReportCurrentStackItemResponse.from_schema(supplement).model_dump(by_alias=True)[
+        "ingredientSummary"
+    ] == ("칼슘 200mg · 비타민 D 10μg")
 
 
 async def test_model_fallback_is_partial_and_visible_to_caller() -> None:
@@ -316,6 +365,51 @@ async def test_duplicate_registrations_keep_ids_and_ambiguous_guides_are_not_bou
     assert generator.draft.guide_item_bindings == {101: 17, 102: 17, 104: 17}
     assert [item.medication_guide_id for item in generator.draft.guide_evidence] == [17]
     assert [item.item_id for item in result.current_stack] == [101, 102, 103, 104]
+
+
+async def test_inferred_guide_keeps_registered_name_and_adds_server_owned_notice() -> None:
+    """Would fail if an inferred product guide replaces registration identity or lacks a visible provenance notice."""
+
+    class GuideRepository:
+        async def find_by_name(self, name):
+            assert name == "타이래놀"
+            return MedicationGuideLookup(
+                guide=MedicationGuideFact(
+                    medication_guide_id=17,
+                    item_seq="guide-17",
+                    product_name="타이레놀정",
+                    manufacturer_name="제조사",
+                    efficacy="통증 완화",
+                    usage_instructions="물과 함께 복용",
+                    pre_use_warning="",
+                    precautions="",
+                    drug_food_interactions="",
+                    adverse_reactions="",
+                    storage_instructions="",
+                ),
+                original_name="타이래놀",
+                is_inferred=True,
+            )
+
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[ActiveMedication(medication_id=101, care_episode_id=1, name="타이래놀")],
+    )
+    generator = FakeGenerator()
+
+    await GenerateIntakeReportUseCase(
+        context_provider=FakeContextProvider(context),
+        guide_repository=GuideRepository(),
+        interaction_rule_repository=FakeRuleRepository(),
+        knowledge_retriever=FakeRetriever(),
+        generator=generator,
+    ).execute(user_id=1)
+
+    notice = "‘타이래놀’을 ‘타이레놀정’으로 추정한 제품 안내입니다. 등록한 이름은 바꾸지 않았어요."
+    assert generator.draft.current_stack[0].product_name == "타이래놀"
+    assert generator.draft.guide_item_bindings == {101: 17}
+    assert generator.draft.inferred_guide_items == {101: notice}
+    assert notice in generator.draft.deterministic_markdown
 
 
 async def test_use_case_returns_partial_when_rag_is_unavailable() -> None:

@@ -16,13 +16,16 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import TYPE_CHECKING, Literal
 
+from ai_worker.reports.text_guidance_rules import load_text_guidance_rules, mentions_food_or_drink
 from ai_worker.reports.v11_lifestyle_guidance import build_lifestyle_guidance_cards
 from ai_worker.schemas.intake_report_cards import (
     CardDetail,
     CardSection,
     CardSource,
     IntakeReportCards,
+    IntakeReportCardSelection,
     IntakeReportCardsPlan,
+    IntakeReportEvidenceSelection,
     IntakeReportMedicationSelection,
     InteractionCard,
     LifestyleCard,
@@ -41,27 +44,13 @@ if TYPE_CHECKING:
 EvidenceCategory = Literal["efficacy", "caution", "contraindication", "detail"]
 
 _BLOCK_SEPARATOR_RE = re.compile(r"\s*(?:\r?\n+|[•●])\s*")
-_SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?。])(?!\d)\s*")
+_SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?。])(?![.\d])\s*")
 _WHITESPACE_RE = re.compile(r"\s+")
-_MAX_PROJECTION_TEXT_LENGTH = 4_000
+_MAX_FUZZY_ALIGNMENT_LENGTH = 4_000
 _MAX_PROJECTION_WHITESPACE = 2_000
 _MIN_PROJECTION_SIMILARITY = 0.97
 _MAX_PROJECTION_CHANGED_CHARS = 3
 _NUMERIC_TOKEN_PUNCTUATION = frozenset(".,:/%+-")
-_CONTRAINDICATION_MARKERS = (
-    "금기",
-    "복용하지 마",
-    "먹지 마",
-    "사용하지 마",
-    "투여하지 마",
-    "해서는 안",
-    "하면 안",
-    "피해야",
-    "금합니다",
-    "복용 금지",
-    "사용 금지",
-)
-_COMPACT_CONTRAINDICATION_MARKERS = tuple(_WHITESPACE_RE.sub("", marker) for marker in _CONTRAINDICATION_MARKERS)
 _PROMPT_INJECTION_MARKERS = (
     "ignore previous",
     "ignore all instructions",
@@ -147,6 +136,21 @@ class V11EvidenceCatalog:
                 {
                     "itemId": medication.item_id,
                     "productName": medication.product_name,
+                    "requiredSections": {
+                        category: {
+                            "evidenceIds": [fact.evidence_id for fact in medication.facts if fact.category == category],
+                            "sourceIds": _unique(
+                                [
+                                    source_id
+                                    for fact in medication.facts
+                                    if fact.category == category
+                                    for source_id in fact.source_ids
+                                ]
+                            ),
+                        }
+                        for category in ("efficacy", "caution", "contraindication")
+                    },
+                    "requiredDetailIds": [fact.evidence_id for fact in medication.facts if fact.category == "detail"],
                     "canonicalSections": {
                         category: " ".join(fact.text for fact in medication.facts if fact.category == category)
                         for category in ("efficacy", "caution", "contraindication")
@@ -280,16 +284,20 @@ def _unsafe_new_whitespace_boundary(  # noqa: C901 - protected token rules stay 
 def _project_near_match_whitespace(  # noqa: C901 - all bounded projection guards are co-located
     proposed: str,
     canonical: str,
+    *,
+    enforce_similarity: bool = True,
 ) -> str | None:
     """Project only safe whitespace boundaries onto canonical source characters."""
-    if max(len(proposed), len(canonical)) > _MAX_PROJECTION_TEXT_LENGTH:
-        return None
     proposed_compact, proposed_boundaries = _whitespace_boundaries(proposed)
     canonical_compact, canonical_boundaries = _whitespace_boundaries(canonical)
-    if len(proposed) - len(proposed_compact) > _MAX_PROJECTION_WHITESPACE:
+    if len(proposed) - len(proposed_compact) > max(_MAX_PROJECTION_WHITESPACE, len(canonical)):
         return None
     if proposed_compact == canonical_compact:
         return proposed
+    # Long exact-character text is handled linearly above. Keep expensive fuzzy
+    # alignment bounded; a mismatch is repaired from source chunks, never cut.
+    if max(len(proposed), len(canonical)) > _MAX_FUZZY_ALIGNMENT_LENGTH:
+        return None
     decoded_canonical = html.unescape(canonical_compact)
     decoded_proposed = html.unescape(proposed_compact)
     if abs(len(decoded_proposed) - len(decoded_canonical)) > _MAX_PROJECTION_CHANGED_CHARS:
@@ -302,7 +310,7 @@ def _project_near_match_whitespace(  # noqa: C901 - all bounded projection guard
         else SequenceMatcher(None, decoded_canonical, decoded_proposed, autojunk=False)
     )
     similarity = 1.0 if decoded_canonical == decoded_proposed else similarity_matcher.ratio()
-    if similarity < _MIN_PROJECTION_SIMILARITY:
+    if enforce_similarity and similarity < _MIN_PROJECTION_SIMILARITY:
         return None
     proposed_to_canonical: dict[int, int] = {}
     total_changed = 0
@@ -431,13 +439,13 @@ def _source_from_review(source: IntakeReportSource) -> CardSource:
     )
 
 
-def _missing_fact(*, item_id: int, category: str, index: int = 1) -> EvidenceFact:
+def _missing_fact(*, item_id: int, category: str, index: int = 1, partial: bool = False) -> EvidenceFact:
     return EvidenceFact(
         evidence_id=f"med:{item_id}:missing-{category}:{index}",
         owner_item_id=item_id,
         category=category,  # type: ignore[arg-type]
         label=_CATEGORY_LABELS[category],
-        text=_MISSING_TEXT[category],
+        text="제품 안내 일부를 확인할 수 없어 확인된 내용만 표시했습니다." if partial else _MISSING_TEXT[category],
         source_ids=(),
     )
 
@@ -493,7 +501,7 @@ def _medication_evidence(  # noqa: C901 - one pass preserves category/owner inva
                 )
             )
         if not efficacy_fragments or efficacy_rejected:
-            facts.append(_missing_fact(item_id=item.item_id, category="efficacy"))
+            facts.append(_missing_fact(item_id=item.item_id, category="efficacy", partial=bool(efficacy_fragments)))
 
         safety_fragments: list[tuple[str, str]] = []
         safety_rejected = False
@@ -511,7 +519,7 @@ def _medication_evidence(  # noqa: C901 - one pass preserves category/owner inva
             compact_text = _compact_text(text)
             category = (
                 "contraindication"
-                if any(marker in compact_text for marker in _COMPACT_CONTRAINDICATION_MARKERS)
+                if any(marker in compact_text for marker in load_text_guidance_rules().contraindication_phrases)
                 else "caution"
             )
             if (category, text) in seen_safety:
@@ -529,8 +537,9 @@ def _medication_evidence(  # noqa: C901 - one pass preserves category/owner inva
                 )
             )
         for category in ("caution", "contraindication"):
-            if not any(fact.category == category for fact in facts) or safety_rejected:
-                facts.append(_missing_fact(item_id=item.item_id, category=category))
+            has_facts = any(fact.category == category for fact in facts)
+            if not has_facts or safety_rejected:
+                facts.append(_missing_fact(item_id=item.item_id, category=category, partial=has_facts))
 
         if guide is not None:
             for field_name, label, raw_value in (
@@ -560,8 +569,17 @@ def _medication_evidence(  # noqa: C901 - one pass preserves category/owner inva
 def _related_item_ids(draft: IntakeReportDraft, names: list[str]) -> tuple[int, ...]:
     exact: dict[str, list[int]] = {}
     for item in draft.current_stack:
-        exact.setdefault(item.product_name, []).append(item.item_id)
-    return tuple(dict.fromkeys(item_id for name in names for item_id in exact.get(name, [])))
+        exact.setdefault(_compact_text(item.product_name).casefold(), []).append(item.item_id)
+    guides = {guide.medication_guide_id: guide for guide in draft.guide_evidence}
+    medication_ids = {item.item_id for item in draft.current_stack if item.item_type.value == "MEDICATION"}
+    for item_id, guide_id in draft.guide_item_bindings.items():
+        if (
+            item_id in medication_ids
+            and item_id not in draft.inferred_guide_items
+            and (guide := guides.get(guide_id)) is not None
+        ):
+            exact.setdefault(_compact_text(guide.product_name).casefold(), []).append(item_id)
+    return tuple(dict.fromkeys(item_id for name in names for item_id in exact.get(_compact_text(name).casefold(), [])))
 
 
 def _interaction_catalog(
@@ -593,6 +611,8 @@ def _interaction_catalog(
 
     guides = {guide.medication_guide_id: guide for guide in draft.guide_evidence}
     for item_id, medication in medications.items():
+        if item_id in draft.inferred_guide_items:
+            continue
         guide_id = draft.guide_item_bindings.get(item_id)
         guide = guides.get(guide_id) if guide_id is not None else None
         if guide is None:
@@ -625,19 +645,22 @@ def _lifestyle_catalog(
 ) -> list[CatalogLifestyle]:
     lifestyle: list[CatalogLifestyle] = []
     for medication in medications.values():
+        if medication.item_id in draft.inferred_guide_items:
+            continue
         driving_facts = [
             fact
             for fact in medication.facts
-            if fact.category == "caution" and any(marker in fact.text for marker in ("졸음", "어지러"))
+            if fact.source_ids
+            and any(marker in _compact_text(fact.text) for marker in load_text_guidance_rules().driving_mentions)
         ]
         if driving_facts:
             lifestyle.append(
                 CatalogLifestyle(
                     card_id=f"driving:{medication.item_id}",
                     category="운전",
-                    title=f"{medication.product_name} 복용 후 운전 주의",
+                    title=f"{medication.product_name}의 운전·기계 조작 안내",
                     summary=" ".join(fact.text for fact in driving_facts),
-                    action="졸리거나 어지러우면 운전하지 마세요.",
+                    action="제품 안내의 운전·기계 조작 관련 조건을 확인하세요.",
                     related_item_ids=(medication.item_id,),
                     source_ids=tuple(_unique([source_id for fact in driving_facts for source_id in fact.source_ids])),
                 )
@@ -645,16 +668,14 @@ def _lifestyle_catalog(
 
     guides = {guide.medication_guide_id: guide for guide in draft.guide_evidence}
     for medication in medications.values():
+        if medication.item_id in draft.inferred_guide_items:
+            continue
         guide_id = draft.guide_item_bindings.get(medication.item_id)
         guide = guides.get(guide_id) if guide_id is not None else None
         if guide is None:
             continue
         interaction_fragments, _ = _fragments(guide.drug_food_interactions)
-        scenario_fragments = [
-            fragment
-            for fragment in interaction_fragments
-            if any(marker in fragment for marker in ("술", "알코올", "주스", "자몽", "오렌지", "사과", "음식", "식사"))
-        ]
+        scenario_fragments = [fragment for fragment in interaction_fragments if mentions_food_or_drink(fragment)]
         if scenario_fragments:
             lifestyle.append(
                 CatalogLifestyle(
@@ -706,6 +727,61 @@ def _require_exact_ids(actual: list[str], expected: list[str], issue: str) -> No
 
 def _fact_index(catalog: V11EvidenceCatalog) -> dict[str, EvidenceFact]:
     return {fact.evidence_id: fact for medication in catalog.medications.values() for fact in medication.facts}
+
+
+def build_canonical_card_plan(catalog: V11EvidenceCatalog) -> IntakeReportCardsPlan:
+    """Project every required v11 selection and its source text from the catalog."""
+
+    medications: list[IntakeReportMedicationSelection] = []
+    for item_id, medication in sorted(catalog.medications.items()):
+        all_source_ids: list[str] = []
+        sections: dict[str, IntakeReportEvidenceSelection] = {}
+        for category in ("efficacy", "caution", "contraindication"):
+            facts = [fact for fact in medication.facts if fact.category == category]
+            source_ids = _unique([source_id for fact in facts for source_id in fact.source_ids])
+            all_source_ids.extend(source_ids)
+            sections[category] = IntakeReportEvidenceSelection(
+                evidence_ids=[fact.evidence_id for fact in facts],
+                source_ids=source_ids,
+                text=" ".join(fact.text for fact in facts),
+            )
+        details = [fact for fact in medication.facts if fact.category == "detail"]
+        all_source_ids.extend(source_id for fact in details for source_id in fact.source_ids)
+        medications.append(
+            IntakeReportMedicationSelection(
+                item_id=item_id,
+                efficacy=sections["efficacy"],
+                caution=sections["caution"],
+                contraindication=sections["contraindication"],
+                detail_ids=[fact.evidence_id for fact in details],
+                detail_texts=[fact.text for fact in details],
+                source_ids=_unique(all_source_ids),
+            )
+        )
+
+    interaction_ranks = {"WARNING": 0, "CHECK": 1, "INFORMATION": 2}
+    interactions = [
+        IntakeReportCardSelection(
+            card_id=card.card_id,
+            source_ids=list(card.source_ids),
+            summary_text=card.summary,
+        )
+        for card in sorted(
+            catalog.interactions,
+            key=lambda card: (interaction_ranks[card.action_level], card.card_id),
+        )
+    ]
+    lifestyle = [
+        IntakeReportCardSelection(
+            card_id=card.card_id,
+            source_ids=list(card.source_ids),
+            summary_text=card.summary,
+        )
+        for card in sorted(catalog.lifestyle, key=lambda card: (card.category, card.card_id))
+    ]
+    plan = IntakeReportCardsPlan(medications=medications, interactions=interactions, lifestyle=lifestyle)
+    _validate_plan_structure(plan, catalog)
+    return plan
 
 
 PlanTextKey = tuple[str, ...]
@@ -762,6 +838,8 @@ def _validate_medication_selection_structure(  # noqa: C901 - validates one fail
                 raise ValueError("EVIDENCE_CATEGORY: evidence belongs to another safety category")
         expected_ids = [fact.evidence_id for fact in medication.facts if fact.category == category]
         _require_exact_ids(section.evidence_ids, expected_ids, "EVIDENCE_COVERAGE")
+        if section.evidence_ids != expected_ids:
+            raise ValueError("EVIDENCE_ORDER: preserve canonical sentence and condition order")
         selected_facts = [facts_by_id[evidence_id] for evidence_id in section.evidence_ids]
         expected_sources = _unique([source_id for fact in selected_facts for source_id in fact.source_ids])
         _require_exact_ids(section.source_ids, expected_sources, "SOURCE_MISMATCH")
@@ -777,6 +855,8 @@ def _validate_medication_selection_structure(  # noqa: C901 - validates one fail
             raise ValueError("EVIDENCE_CATEGORY: core safety evidence cannot become a detail")
     expected_detail_ids = [fact.evidence_id for fact in medication.facts if fact.category == "detail"]
     _require_exact_ids(selection.detail_ids, expected_detail_ids, "EVIDENCE_COVERAGE")
+    if selection.detail_ids != expected_detail_ids:
+        raise ValueError("EVIDENCE_ORDER: preserve canonical detail order")
     if selection.detail_texts and len(selection.detail_texts) != len(selection.detail_ids):
         raise ValueError("DETAIL_TEXT_COVERAGE: detail text count differs from evidence count")
     all_selected_ids.extend(selection.detail_ids)
@@ -1068,7 +1148,7 @@ def _section(
     facts = [facts_by_id[evidence_id] for evidence_id in evidence_ids]
     return CardSection(
         text=(selection.text.strip() if selection.text is not None else " ".join(fact.text for fact in facts)),
-        source_ids=list(selection.source_ids),
+        source_ids=sorted(selection.source_ids),
     )
 
 
@@ -1109,13 +1189,14 @@ def render_cards(
     plan = validate_card_plan(plan, catalog)
     facts_by_id = _fact_index(catalog)
     medications: list[MedicationCard] = []
-    for selection in plan.medications:
+    for selection in sorted(plan.medications, key=lambda item: item.item_id):
         medication = catalog.medications[selection.item_id]
         detail_facts = [facts_by_id[evidence_id] for evidence_id in selection.detail_ids]
         medications.append(
             MedicationCard(
                 item_id=selection.item_id,
                 product_name=medication.product_name,
+                identity_notice=draft.inferred_guide_items.get(selection.item_id),
                 efficacy=_section(selection.efficacy, facts_by_id),
                 caution=_section(selection.caution, facts_by_id),
                 contraindication=_section(selection.contraindication, facts_by_id),
@@ -1123,15 +1204,16 @@ def render_cards(
                     CardDetail(
                         label=fact.label,
                         text=(selection.detail_texts[index].strip() if selection.detail_texts else fact.text),
-                        source_ids=list(fact.source_ids),
+                        source_ids=sorted(fact.source_ids),
                     )
                     for index, fact in enumerate(detail_facts)
                 ],
-                source_ids=list(selection.source_ids),
+                source_ids=sorted(selection.source_ids),
             )
         )
 
     interactions_by_id = {card.card_id: card for card in catalog.interactions}
+    interaction_ranks = {"WARNING": 0, "CHECK": 1, "INFORMATION": 2}
     interactions = [
         InteractionCard(
             id=(card := interactions_by_id[selection.card_id]).card_id,
@@ -1143,7 +1225,10 @@ def render_cards(
             evidence_level=card.evidence_level,
             action_level=card.action_level,
         )
-        for selection in plan.interactions
+        for selection in sorted(
+            plan.interactions,
+            key=lambda item: (interaction_ranks[interactions_by_id[item.card_id].action_level], item.card_id),
+        )
     ]
     lifestyle_by_id = {card.card_id: card for card in catalog.lifestyle}
     lifestyle = [
@@ -1156,14 +1241,14 @@ def render_cards(
             related_item_ids=list(card.related_item_ids),
             source_ids=list(card.source_ids),
         )
-        for selection in plan.lifestyle
+        for selection in sorted(plan.lifestyle, key=lambda item: (lifestyle_by_id[item.card_id].category, item.card_id))
     ]
     return IntakeReportCards(
         medications=medications,
         interactions=interactions,
         overlaps=_overlap_cards(draft.nutrient_totals),
         lifestyle=lifestyle,
-        sources=list(catalog.sources),
+        sources=sorted(catalog.sources, key=lambda source: source.id),
     )
 
 
@@ -1382,10 +1467,11 @@ def render_cards_markdown(  # noqa: C901 - section projection is deliberately li
         stack_by_id = {item.item_id: item for item in draft.current_stack if item.item_type.value == "MEDICATION"}
         for card in cards.medications:
             stack_item = stack_by_id[card.item_id]
+            lines.extend(("", f"### {_literal(card.product_name)}"))
+            if card.identity_notice:
+                lines.extend(("", _literal(card.identity_notice)))
             lines.extend(
                 (
-                    "",
-                    f"### {_literal(card.product_name)}",
                     "",
                     "**등록 복용 정보**",
                     _literal(stack_item.registered_intake_info),
@@ -1405,9 +1491,11 @@ def render_cards_markdown(  # noqa: C901 - section projection is deliberately li
 
     supplements = [item for item in draft.current_stack if item.item_type.value == "SUPPLEMENT"]
     if supplements:
-        lines.extend(("", "## 등록한 영양제", ""))
+        lines.extend(("", "## 등록한 영양제", "", "영양제 성분 · 등록한 하루량 기준", ""))
         lines.extend(
-            f"- {_literal(item.product_name)} — {_literal(item.registered_intake_info)}" for item in supplements
+            f"- {_literal(item.product_name)} — {_literal(item.registered_intake_info)}"
+            f" · {_literal(item.ingredient_summary or '성분·함량 확인 필요')}"
+            for item in supplements
         )
 
     lines.extend(("", "## 비교 기준과 출처", ""))

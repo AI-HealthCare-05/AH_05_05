@@ -10,6 +10,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from pydantic import SecretStr
 
 from app.core import config
+from app.core.email.intake_report_renderer import intake_report_plain_text
 from app.models.email_verifications import EmailVerification
 from app.models.enums import AccountStatus, EmailVerificationPurpose
 from app.models.users import User
@@ -19,6 +20,7 @@ INTAKE_REPORT_EMAIL_TOKEN_TTL_SECONDS = 60 * 60
 # Korean-only report roughly four times larger on the wire.
 MAX_INTAKE_REPORT_EMAIL_TOKEN_LENGTH = 900_000
 MAX_INTAKE_REPORT_MARKDOWN_LENGTH = 200_000
+MAX_INTAKE_REPORT_HTML_LENGTH = 400_000
 _PURPOSE = "intake-report-email-v1"
 
 
@@ -36,6 +38,7 @@ class IntakeReportEmailSnapshot:
     recipient_email: str
     report_id: str
     report_markdown: str
+    report_html: str | None = None
 
 
 class IntakeReportEmailService:
@@ -44,12 +47,14 @@ class IntakeReportEmailService:
     def __init__(self, *, encryption_key: str | SecretStr | None = None) -> None:
         self._encryption_key = encryption_key if encryption_key is not None else config.EMAIL_PAYLOAD_ENCRYPTION_KEY
 
-    def create_snapshot_token(self, *, user: User, report_markdown: str) -> str | None:
+    def create_snapshot_token(self, *, user: User, report_markdown: str, report_html: str | None = None) -> str | None:
         """Return None when email encryption is intentionally unavailable.
 
         Report generation must remain usable in environments that have not configured email.
         """
         if not report_markdown or len(report_markdown) > MAX_INTAKE_REPORT_MARKDOWN_LENGTH:
+            return None
+        if report_html is not None and (not report_html or len(report_html) > MAX_INTAKE_REPORT_HTML_LENGTH):
             return None
         try:
             fernet = self._fernet()
@@ -62,9 +67,15 @@ class IntakeReportEmailService:
             "reportId": str(uuid4()),
             "reportMarkdown": report_markdown,
         }
-        return fernet.encrypt(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).decode(
+        if report_html is not None:
+            # Store one representation, not duplicated full clinical content.
+            # The plain-text alternative is derived from this exact HTML later.
+            payload.pop("reportMarkdown")
+            payload["reportHtml"] = report_html
+        token = fernet.encrypt(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).decode(
             "ascii"
         )
+        return token if len(token) <= MAX_INTAKE_REPORT_EMAIL_TOKEN_LENGTH else None
 
     def consume_snapshot_token(self, *, token: str, user: User) -> IntakeReportEmailSnapshot:
         if len(token) > MAX_INTAKE_REPORT_EMAIL_TOKEN_LENGTH:
@@ -77,11 +88,19 @@ class IntakeReportEmailService:
             payload = json.loads(serialized)
             if not isinstance(payload, dict):
                 raise ValueError
+            report_html = payload.get("reportHtml")
+            if report_html is not None and (
+                not isinstance(report_html, str) or not report_html or len(report_html) > MAX_INTAKE_REPORT_HTML_LENGTH
+            ):
+                raise ValueError
             snapshot = IntakeReportEmailSnapshot(
                 user_id=int(payload["userId"]),
                 recipient_email=str(payload["email"]),
                 report_id=str(payload["reportId"]),
-                report_markdown=str(payload["reportMarkdown"]),
+                report_markdown=intake_report_plain_text(report_html)
+                if report_html is not None
+                else str(payload["reportMarkdown"]),
+                report_html=report_html,
             )
         except (InvalidToken, UnicodeEncodeError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
             raise IntakeReportEmailTokenError("보고서 발송 요청이 유효하지 않습니다.") from exc
@@ -92,6 +111,7 @@ class IntakeReportEmailService:
             or snapshot.recipient_email != self._normalized_email(user.email)
             or not snapshot.report_id
             or not snapshot.report_markdown
+            or len(snapshot.report_markdown) > MAX_INTAKE_REPORT_MARKDOWN_LENGTH
         ):
             raise IntakeReportEmailTokenError("보고서 발송 요청이 유효하지 않습니다.")
         return snapshot

@@ -1,11 +1,13 @@
 import asyncio
 import html
 import json
+from dataclasses import replace
 
 import pytest
 from pydantic import ValidationError
 
 from ai_worker.domain.errors import IntakeReportGenerationError
+from ai_worker.llm.generators import intake_report_cards_generator as generator_module
 from ai_worker.llm.generators.intake_report_cards_generator import (
     OpenAIIntakeReportCardsGenerator,
 )
@@ -19,7 +21,11 @@ from ai_worker.reports.v11_cards import (
     validate_card_plan,
 )
 from ai_worker.reports.v11_lifestyle_guidance import build_lifestyle_guidance_cards
-from ai_worker.reports.v11_spacing_repair import prepare_spacing_repair
+from ai_worker.reports.v11_spacing_repair import (
+    prepare_spacing_repair,
+    project_spacing_proposals,
+    source_spacing_pattern,
+)
 from ai_worker.schemas.intake_report import (
     IntakeReportChartData,
     IntakeReportCurrentStackItem,
@@ -59,6 +65,85 @@ def test_projection_discards_only_an_added_terminal_period() -> None:
     assert "".join(projected.split()) == canonical
     assert not projected.endswith(".")
     assert _project_near_match_whitespace("성인은 1일 1.0mg을 복용합니다.", "성인은1일10mg을복용합니다.") is None
+
+
+def test_long_exact_character_projection_has_no_whole_field_limit() -> None:
+    canonical = "등록한정보를확인하세요." * 600 + "최종안내10mg"
+    proposed = "등록한 정보를 확인하세요. " * 600 + "최종 안내10mg"
+    assert len(canonical) > 4000
+    assert _project_near_match_whitespace(proposed, canonical) == proposed
+    # A long changed source must never enter an unbounded fuzzy alignment.
+    assert _project_near_match_whitespace(proposed.replace("10mg", "20mg"), canonical) is None
+
+
+async def test_generator_preserves_entire_long_source_through_batched_repair_and_email() -> None:
+    source = "이약을복용하기전에반드시의사또는약사와상의하십시오" * 180 + "마지막안내입니다."
+    draft = _draft()
+    draft = draft.model_copy(
+        update={"guide_evidence": [guide.model_copy(update={"efficacy": source}) for guide in draft.guide_evidence]}
+    )
+
+    class SpacingClient:
+        calls = 0
+        active = 0
+        max_active = 0
+
+        async def ainvoke(self, messages):
+            self.calls += 1
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            await asyncio.sleep(0.01)
+            self.active -= 1
+            fields = json.loads(messages[1].content)["fields"]
+            assert sum(len(chunk["text"]) for field in fields for chunk in field["chunks"]) <= 800
+            repairs = []
+            for field in fields:
+                chunks = []
+                for chunk in field["chunks"]:
+                    selected = []
+                    for position in chunk["allowedSpaceAfter"]:
+                        if position - (selected[-1] if selected else 0) >= 6:
+                            selected.append(position)
+                    chunks.append({"index": chunk["index"], "spaceAfter": selected})
+                repairs.append({"key": field["key"], "chunks": chunks})
+            return {"repairs": repairs}
+
+    client = SpacingClient()
+    result = await OpenAIIntakeReportCardsGenerator(model="offline", spacing_client=client).generate(draft=draft)
+    assert client.calls > 1
+    assert client.max_active <= 3
+    assert "".join(result.cards.medications[0].efficacy.text.split()) == source
+    assert "마지막안내입니다." in "".join(result.report_markdown.split())
+
+
+async def test_failed_long_batch_cancels_sibling_requests() -> None:
+    source = "이약을복용하기전에반드시의사또는약사와상의하십시오" * 180 + "."
+    draft = _draft()
+    guide = draft.guide_evidence[0].model_copy(update={"efficacy": source})
+    catalog = build_evidence_catalog(draft.model_copy(update={"guide_evidence": [guide]}))
+
+    class FailingClient:
+        calls = 0
+
+        async def ainvoke(self, messages):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("offline failure")
+            await asyncio.Event().wait()
+
+    before = asyncio.all_tasks()
+    try:
+        with pytest.raises(IntakeReportGenerationError):
+            await OpenAIIntakeReportCardsGenerator(
+                model="offline", spacing_client=FailingClient()
+            )._generate_valid_plan(catalog)
+        await asyncio.sleep(0)
+        assert not (asyncio.all_tasks() - before)
+    finally:
+        pending = asyncio.all_tasks() - before
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
 
 
 def test_projection_preserves_canonical_entity_when_proposal_decodes_it() -> None:
@@ -106,6 +191,13 @@ def test_model_payload_canonical_sections_join_all_caution_fragments_in_catalog_
     for category in ("efficacy", "caution", "contraindication"):
         facts = [fact for fact in catalog.medications[101].facts if fact.category == category]
         assert medication_payload["canonicalSections"][category] == " ".join(fact.text for fact in facts)
+        assert medication_payload["requiredSections"][category] == {
+            "evidenceIds": [fact.evidence_id for fact in facts],
+            "sourceIds": list(dict.fromkeys(source_id for fact in facts for source_id in fact.source_ids)),
+        }
+    assert medication_payload["requiredDetailIds"] == [
+        fact.evidence_id for fact in catalog.medications[101].facts if fact.category == "detail"
+    ]
     assert len([fact for fact in catalog.medications[101].facts if fact.category == "caution"]) >= 3
 
 
@@ -129,6 +221,329 @@ def test_spacing_repair_skips_valid_plan() -> None:
     assert prepare_spacing_repair(plan, catalog) is None
 
 
+_DENSE_SOURCE = "이약을복용하기전에반드시의사또는약사와상의하십시오."
+_SPACED_SOURCE = "이 약을 복용하기 전에 반드시 의사 또는 약사와 상의하십시오."
+_SPACE_POSITIONS = [1, 3, 7, 9, 12, 14, 16, 19]
+
+
+def _dense_draft(draft=None):
+    draft = draft or _draft()
+    return draft.model_copy(
+        update={
+            "guide_evidence": [guide.model_copy(update={"efficacy": _DENSE_SOURCE}) for guide in draft.guide_evidence]
+        }
+    )
+
+
+def _natural_position_response(messages):
+    fields = json.loads(messages[1].content)["fields"]
+    response = _boundary_response(fields)
+    for field, repair in zip(fields, response["repairs"], strict=True):
+        for chunk, selected in zip(field["chunks"], repair["chunks"], strict=True):
+            assert chunk["text"] == _DENSE_SOURCE
+            selected["spaceAfter"] = list(_SPACE_POSITIONS)
+    return response
+
+
+def _boundary_response(fields):
+    return {
+        "repairs": [
+            {
+                "key": field["key"],
+                "chunks": [{"index": index, "spaceAfter": []} for index, _ in enumerate(field["chunks"])],
+            }
+            for field in fields
+        ]
+    }
+
+
+def test_spacing_positions_reconstruct_dense_source_without_model_text() -> None:
+    canonical = "이약을복용하기전에반드시의사또는약사와상의하십시오."
+    catalog, _, mutated, index = _spacing_repair_case(canonical)
+    request = prepare_spacing_repair(mutated, catalog)
+    response = _boundary_response(request.payload())
+    response["repairs"][0]["chunks"][0]["spaceAfter"] = [1, 3, 7, 9, 12, 14, 16, 19]
+    repaired = request.apply(response)
+    assert repaired.medications[0].detail_texts[index] == "이 약을 복용하기 전에 반드시 의사 또는 약사와 상의하십시오."
+    validate_card_plan(repaired, catalog)
+
+
+@pytest.mark.parametrize("positions", [[0], [-1], [9999], [True], [1.5], ["1"], [1, 1]])
+def test_spacing_positions_reject_invalid_offsets(positions) -> None:
+    catalog, _, mutated, _ = _spacing_repair_case("이약을복용하기전에반드시의사또는약사와상의하십시오.")
+    request = prepare_spacing_repair(mutated, catalog)
+    response = _boundary_response(request.payload())
+    response["repairs"][0]["chunks"][0]["spaceAfter"] = positions
+    with pytest.raises(ValueError):
+        request.apply(response)
+
+
+def test_spacing_positions_reject_text_output_instead_of_projecting_changed_characters() -> None:
+    catalog, _, mutated, _ = _spacing_repair_case("50mg 복용 금지, &gamma;-GTP 안내")
+    request = prepare_spacing_repair(mutated, catalog)
+    response = _boundary_response(request.payload())
+    response["repairs"][0]["chunks"][0]["text"] = "500mg 복용 허용, γ-GTP 안내"
+    with pytest.raises(ValueError):
+        request.apply(response)
+
+
+@pytest.mark.parametrize("prefix", ["", "가" * 99])
+@pytest.mark.parametrize("token", ["금지", "금기", "하지", "마십시오", "마세요", "아니"])
+def test_spacing_positions_cannot_split_safety_words_even_across_chunks(prefix, token) -> None:
+    canonical = prefix + token + " 안내를 확인하세요."
+    catalog, _, mutated, _ = _spacing_repair_case(canonical)
+    request = prepare_spacing_repair(mutated, catalog)
+    field = request.payload()[0]
+    boundary = len(prefix) + 1
+    offset = 0
+    for chunk in field["chunks"]:
+        if offset < boundary <= offset + len(chunk["text"]):
+            assert boundary - offset not in chunk["allowedSpaceAfter"]
+        offset += len(chunk["text"])
+
+
+async def test_generator_uses_only_positions_and_never_requests_a_free_text_plan() -> None:
+    catalog, _, _, index = _spacing_repair_case("이약을복용하기전에반드시의사또는약사와상의하십시오.")
+
+    class PositionsClient:
+        calls = 0
+
+        async def ainvoke(self, messages):
+            self.calls += 1
+            payload = json.loads(messages[1].content)
+            assert set(payload) == {"fields"}
+            response = _boundary_response(payload["fields"])
+            response["repairs"][0]["chunks"][0]["spaceAfter"] = [1, 3, 7, 9, 12, 14, 16, 19]
+            return response
+
+    client = PositionsClient()
+    result = await OpenAIIntakeReportCardsGenerator(model="offline-test", spacing_client=client)._generate_valid_plan(
+        catalog
+    )
+    assert result.medications[0].detail_texts[index] == "이 약을 복용하기 전에 반드시 의사 또는 약사와 상의하십시오."
+    assert client.calls == 1
+    validate_card_plan(result, catalog)
+
+
+async def test_model_schema_fixes_every_field_and_chunk_identity_on_the_server() -> None:
+    catalog, _, mutated, _ = _spacing_repair_case("확인된 원문 안내, " * 9 + "상의하십시오")
+    request = prepare_spacing_repair(mutated, catalog)
+
+    class Model:
+        def with_structured_output(self, schema, **kwargs):
+            assert kwargs == {"method": "json_schema", "strict": True}
+            model_schema = schema.model_json_schema()
+            assert model_schema["required"] == ["f0"]
+            assert model_schema["additionalProperties"] is False
+            assert "pattern" in model_schema["properties"]["f0"]
+            with pytest.raises(ValidationError):
+                schema.model_validate({"f0": canonical.replace("확인된", "수정된")})
+            for invalid in ({}, {"f0": canonical, "foreign": "text"}, {"f0": [True]}):
+                with pytest.raises(ValidationError):
+                    schema.model_validate(invalid)
+            self.schema = schema
+            return self
+
+        def with_config(self, **kwargs):
+            return self
+
+        async def ainvoke(self, messages):
+            assert json.loads(messages[1].content) == {"f0": canonical}
+            if len(messages) == 4:
+                assert json.loads(messages[2].content) == {"f0": canonical}
+                assert "SPACING_REPAIR_INVALID" in messages[3].content
+            return self.schema.model_validate({"f0": canonical})
+
+    canonical = "".join(chunk["text"] for chunk in request.payload()[0]["chunks"])
+    client = generator_module._SchemaBoundSpacingClient(Model())
+    response = await client.ainvoke(generator_module._spacing_messages(request, ""))
+    assert response == _boundary_response(request.payload())
+    retry = await client.ainvoke(generator_module._spacing_messages(request, "SPACING_REPAIR_INVALID", response))
+    assert retry == response
+
+
+@pytest.mark.parametrize("repeat", [1, 5])
+def test_spacing_positions_reject_per_syllable_output_across_chunks(repeat) -> None:
+    canonical = "이약은계절성알레르기증상을완화하는데도움을줄수있습니다" * repeat + "."
+    catalog, _, mutated, _ = _spacing_repair_case(canonical)
+    request = prepare_spacing_repair(mutated, catalog)
+    response = _boundary_response(request.payload())
+    for field, repair in zip(request.payload(), response["repairs"], strict=True):
+        for chunk, selected in zip(field["chunks"], repair["chunks"], strict=True):
+            selected["spaceAfter"] = chunk["allowedSpaceAfter"]
+    with pytest.raises(ValueError, match="SPACING_REPAIR_EXCESSIVE"):
+        request.apply(response)
+
+
+async def test_model_proposal_is_projected_to_positions_without_rewriting_source() -> None:
+    catalog, _, mutated, index = _spacing_repair_case(_DENSE_SOURCE)
+    request = prepare_spacing_repair(mutated, catalog)
+
+    class Model:
+        def with_structured_output(self, schema, **kwargs):
+            self.schema = schema
+            return self
+
+        def with_config(self, **kwargs):
+            return self
+
+        async def ainvoke(self, messages):
+            return self.schema.model_validate({"f0": _SPACED_SOURCE})
+
+    response = await generator_module._SchemaBoundSpacingClient(Model()).ainvoke(
+        generator_module._spacing_messages(request, "")
+    )
+    assert response["repairs"][0]["chunks"][0]["spaceAfter"] == _SPACE_POSITIONS
+    assert request.apply(response).medications[0].detail_texts[index] == _SPACED_SOURCE
+
+
+@pytest.mark.parametrize("changed", ["50mg 복용 금지", "500mg 복용 금지", "50mg 복용 허용", "50mg 복용 금지."])
+async def test_model_proposal_does_not_accept_changed_characters_or_entities(changed) -> None:
+    catalog, _, mutated, _ = _spacing_repair_case("50mg 복용 금지 &gamma;-GTP 안내")
+    request = prepare_spacing_repair(mutated, catalog)
+
+    class Model:
+        def with_structured_output(self, schema, **kwargs):
+            self.schema = schema
+            return self
+
+        def with_config(self, **kwargs):
+            return self
+
+        async def ainvoke(self, messages):
+            with pytest.raises(ValidationError):
+                self.schema.model_validate({"f0": changed})
+            # Even a client bypassing its schema must not bypass server projection.
+            return self.schema.model_construct(f0=changed)
+
+    with pytest.raises(ValueError, match="SPACING_PROPOSAL_MUTATION"):
+        await generator_module._SchemaBoundSpacingClient(Model()).ainvoke(
+            generator_module._spacing_messages(request, "")
+        )
+
+
+def test_source_spacing_pattern_preserves_literals_existing_spaces_and_safety_tokens() -> None:
+    from pydantic import TypeAdapter, constr
+
+    source = "50mg  복용금지 &gamma;-GTP (뚦) 약을복용하세요."
+    adapter = TypeAdapter(constr(pattern=source_spacing_pattern(source)))
+    assert adapter.validate_python("50mg  복용 금지 &gamma;-GTP (뚦) 약을 복용하세요.")
+    for changed in (
+        source.replace("50mg", "500mg"),
+        source.replace("50mg", "50 mg"),
+        source.replace("금지", "금 지"),
+        source.replace("&gamma;", "γ"),
+        source.replace("뚦", "뚫"),
+        source.replace("  ", " "),
+        source + "추가",
+    ):
+        with pytest.raises(ValidationError):
+            adapter.validate_python(changed)
+
+
+def test_strict_projection_preserves_source_spacing_and_protected_tokens() -> None:
+    source = "50mg  복용금지 &gamma;-GTP 안내문장을반드시확인하십시오."
+    catalog, _, mutated, index = _spacing_repair_case(source)
+    request = prepare_spacing_repair(mutated, catalog)
+    response = project_spacing_proposals(
+        request.payload(),
+        {
+            "f0": "50 mg 복용 금 지 & gamma;-GTP 안내 문장을 반드시 확인하십시오.",
+        },
+    )
+    repaired = request.apply(response)
+    # Catalog construction already normalizes source whitespace, before projection.
+    assert repaired.medications[0].detail_texts[index] == "50mg 복용 금지 &gamma;-GTP 안내 문장을 반드시 확인하십시오."
+
+
+def test_whitespace_proposals_preserve_boundaries_across_internal_chunks() -> None:
+    source = _DENSE_SOURCE.rstrip(".") * 6 + "."
+    catalog, _, mutated, index = _spacing_repair_case(source)
+    request = prepare_spacing_repair(mutated, catalog)
+    assert len(request.payload()[0]["chunks"]) > 1
+    expected = " ".join([_SPACED_SOURCE.rstrip(".")] * 6) + "."
+    response = project_spacing_proposals(request.payload(), {"f0": expected})
+    assert request.apply(response).medications[0].detail_texts[index] == expected
+
+
+def test_short_natural_words_are_not_mistaken_for_syllable_splitting() -> None:
+    source = "이약은한번더복용해도괜찮다고단정할수없습니다."
+    expected = "이 약은 한 번 더 복용해도 괜찮다고 단정할 수 없습니다."
+    catalog, _, mutated, index = _spacing_repair_case(source)
+    request = prepare_spacing_repair(mutated, catalog)
+    response = project_spacing_proposals(request.payload(), {"f0": expected})
+    assert request.apply(response).medications[0].detail_texts[index] == expected
+
+
+def test_spacing_rejects_local_syllable_splitting_even_below_global_density_limit() -> None:
+    source = "아세트아미노펜은계절성알레르기증상을완화합니다."
+    catalog, _, mutated, _ = _spacing_repair_case(source)
+    request = prepare_spacing_repair(mutated, catalog)
+    response = project_spacing_proposals(
+        request.payload(),
+        {
+            "f0": "아 세 트 아 미 노 펜은 계절성 알레르기 증상을 완화합니다.",
+        },
+    )
+    with pytest.raises(ValueError, match="SPACING_REPAIR_EXCESSIVE"):
+        request.apply(response)
+
+
+async def test_schema_bound_client_recovers_from_syllable_splitting() -> None:
+    class Model:
+        calls = 0
+
+        def with_structured_output(self, schema, **kwargs):
+            self.schema = schema
+            return self
+
+        def with_config(self, **kwargs):
+            return self
+
+        async def ainvoke(self, messages):
+            self.calls += 1
+            originals = json.loads(messages[1].content)
+            if self.calls == 1:
+                return self.schema.model_validate({key: " ".join(text[:-1]) + "." for key, text in originals.items()})
+            assert "SPACING_REPAIR_EXCESSIVE" in messages[-1].content
+            assert set(json.loads(messages[2].content)) == set(originals)
+            return self.schema.model_validate(dict.fromkeys(originals, _SPACED_SOURCE))
+
+    model = Model()
+    catalog = build_evidence_catalog(_dense_draft())
+    plan = await OpenAIIntakeReportCardsGenerator(
+        model="offline",
+        spacing_client=generator_module._SchemaBoundSpacingClient(model),
+    )._generate_valid_plan(catalog)
+    assert model.calls == 2
+    assert plan.medications[0].efficacy.text == _SPACED_SOURCE
+
+
+async def test_excessive_spacing_retries_and_never_reaches_report_markdown() -> None:
+    class Client:
+        calls = 0
+
+        async def ainvoke(self, messages):
+            self.calls += 1
+            fields = json.loads(messages[1].content)["fields"]
+            if self.calls == 1:
+                response = _boundary_response(fields)
+                for field, repair in zip(fields, response["repairs"], strict=True):
+                    for chunk, selected in zip(field["chunks"], repair["chunks"], strict=True):
+                        selected["spaceAfter"] = chunk["allowedSpaceAfter"]
+                return response
+            assert "SPACING_REPAIR_EXCESSIVE" in messages[-1].content
+            return _natural_position_response(messages)
+
+    client = Client()
+    catalog = build_evidence_catalog(_dense_draft())
+    plan = await OpenAIIntakeReportCardsGenerator(model="offline", spacing_client=client)._generate_valid_plan(catalog)
+    assert client.calls == 2
+    markdown = render_cards_markdown(render_cards(plan, catalog, _dense_draft()), _dense_draft())
+    assert _SPACED_SOURCE in markdown
+    assert "이 약 을 복 용" not in markdown
+
+
 def test_spacing_repair_targets_only_invalid_detail_and_preserves_entire_plan() -> None:
     canonical = ", ".join(f"서로 다른 추가 안내 {index} 항목을 확인하세요" for index in range(12))
     catalog, valid, mutated, index = _spacing_repair_case(canonical)
@@ -138,9 +553,9 @@ def test_spacing_repair_targets_only_invalid_detail_and_preserves_entire_plan() 
     assert len(payload) == 1
     chunks = payload[0]["chunks"]
     assert len(chunks) >= 2
-    assert all(len(chunk) <= 100 for chunk in chunks)
-    assert "".join(chunks) == valid.medications[0].detail_texts[index]
-    repaired = request.apply({"repairs": payload})
+    assert all(len(chunk["text"]) <= 100 for chunk in chunks)
+    assert "".join(chunk["text"] for chunk in chunks) == valid.medications[0].detail_texts[index]
+    repaired = request.apply(_boundary_response(payload))
     assert repaired == valid
     validate_card_plan(repaired, catalog)
 
@@ -151,7 +566,7 @@ def test_spacing_repair_rejects_corrupt_chunk_or_key_coverage(corruption: str) -
     catalog, _, mutated, _ = _spacing_repair_case(canonical)
     request = prepare_spacing_repair(mutated, catalog)
     assert request is not None
-    payload = request.payload()
+    payload = _boundary_response(request.payload())["repairs"]
     assert len(payload[0]["chunks"]) >= 2
     if corruption == "missing":
         payload[0]["chunks"].pop()
@@ -171,20 +586,19 @@ def test_spacing_repair_rejects_numeric_and_safety_mutation(before: str, after: 
     request = prepare_spacing_repair(mutated, catalog)
     assert request is not None
     payload = request.payload()
-    assert any(before in chunk for chunk in payload[0]["chunks"])
-    payload[0]["chunks"] = [chunk.replace(before, after) for chunk in payload[0]["chunks"]]
+    assert any(before in chunk["text"] for chunk in payload[0]["chunks"])
+    payload[0]["chunks"] = [chunk["text"].replace(before, after) for chunk in payload[0]["chunks"]]
     with pytest.raises(ValueError):
         request.apply({"repairs": payload})
 
 
-def test_spacing_repair_keeps_canonical_entity_and_uses_existing_whole_field_projection_budget() -> None:
+def test_spacing_repair_keeps_canonical_entities_without_any_text_projection() -> None:
     canonical = "&gamma;-GTP 상승, 간 기능 검사 수치와 추가 안내를 확인하고 복용 전 의사 또는 약사와 상의하십시오"
     catalog, valid, mutated, _ = _spacing_repair_case(canonical)
     request = prepare_spacing_repair(mutated, catalog)
     assert request is not None
     payload = request.payload()
-    payload[0]["chunks"] = [chunk.replace("&gamma;", "γ").replace("상의", "상담") for chunk in payload[0]["chunks"]]
-    repaired = request.apply({"repairs": payload})
+    repaired = request.apply(_boundary_response(payload))
     assert repaired == valid
     validate_card_plan(repaired, catalog)
 
@@ -195,10 +609,46 @@ def test_spacing_repair_splits_dense_hangul_but_not_protected_ascii() -> None:
     assert request is not None
     chunks = request.payload()[0]["chunks"]
     assert len(chunks) >= 2
-    assert all(len(chunk) <= 100 for chunk in chunks)
-    assert "".join(chunks) == valid.medications[0].detail_texts[index]
+    assert all(len(chunk["text"]) <= 100 for chunk in chunks)
+    assert "".join(chunk["text"] for chunk in chunks) == valid.medications[0].detail_texts[index]
+    assert len(chunks[0]["text"]) in chunks[0]["allowedSpaceAfter"]
     catalog, _, mutated, _ = _spacing_repair_case("A" * 130)
     assert prepare_spacing_repair(mutated, catalog) is None
+
+
+def test_spacing_repair_preserves_short_tail_without_model_rewriting_it() -> None:
+    canonical = "확인된 원문 안내, " * 9 + "상의하십시오"
+    catalog, valid, mutated, _ = _spacing_repair_case(canonical)
+    request = prepare_spacing_repair(mutated, catalog)
+    payload = request.payload()
+    assert len(payload[0]["chunks"]) == 2
+    assert len(payload[0]["chunks"][-1]["text"]) < 18
+    repaired = request.apply(_boundary_response(payload))
+    assert repaired == valid
+    validate_card_plan(repaired, catalog)
+
+
+async def test_spacing_retry_receives_rejected_response_and_precise_failure() -> None:
+    calls = 0
+
+    class SpacingClient:
+        async def ainvoke(self, messages):
+            nonlocal calls
+            calls += 1
+            response = _natural_position_response(messages)
+            if calls == 1:
+                response["repairs"][0]["chunks"][0]["spaceAfter"] = [9999]
+                return response
+            assert len(messages) == 4
+            assert json.loads(messages[2].content)["repairs"][0]["chunks"][0]["spaceAfter"] == [9999]
+            assert "SPACING_REPAIR_INVALID" in messages[3].content
+            return response
+
+    plan = await OpenAIIntakeReportCardsGenerator(
+        model="offline-test", spacing_client=SpacingClient()
+    )._generate_valid_plan(build_evidence_catalog(_dense_draft()))
+    assert plan.medications[0].efficacy.text == _SPACED_SOURCE
+    assert calls == 2
 
 
 @pytest.mark.asyncio
@@ -206,45 +656,33 @@ def test_spacing_repair_splits_dense_hangul_but_not_protected_ascii() -> None:
 async def test_generator_repairs_mutation_only_in_scoped_client_with_shared_attempt_budget(
     spacing_succeeds: bool,
 ) -> None:
-    catalog, valid, mutated, _ = _spacing_repair_case("원문 안내를 확인하세요, 50mg 복용 금지")
-    calls = {"plan": 0, "spacing": 0}
-
-    class PlanClient:
-        async def ainvoke(self, messages):
-            calls["plan"] += 1
-            return mutated
+    calls = 0
 
     class SpacingClient:
         async def ainvoke(self, messages):
-            calls["spacing"] += 1
-            payload = json.loads(messages[1].content)
-            assert set(payload) == {"fields"}
-            assert len(payload["fields"]) == 1
-            assert "".join(payload["fields"][0]["chunks"]) == "원문 안내를 확인하세요, 50mg 복용 금지"
+            nonlocal calls
+            calls += 1
+            assert set(json.loads(messages[1].content)) == {"fields"}
+            response = _natural_position_response(messages)
             if not spacing_succeeds:
-                payload["fields"][0]["chunks"] = ["변경된 원문"]
-            return {"repairs": payload["fields"]}
+                response["repairs"][0]["chunks"][0]["spaceAfter"] = [9999]
+            return response
 
-    generator = OpenAIIntakeReportCardsGenerator(model="test", client=PlanClient(), spacing_client=SpacingClient())
+    generator = OpenAIIntakeReportCardsGenerator(model="test", spacing_client=SpacingClient())
+    catalog = build_evidence_catalog(_dense_draft())
     if spacing_succeeds:
-        assert await generator._generate_valid_plan(catalog) == valid
-        assert calls == {"plan": 1, "spacing": 1}
+        result = await generator._generate_valid_plan(catalog)
+        assert result.medications[0].efficacy.text == _SPACED_SOURCE
+        assert calls == 1
     else:
         with pytest.raises(IntakeReportGenerationError):
             await generator._generate_valid_plan(catalog)
-        assert calls == {"plan": 1, "spacing": 2}
+        assert calls == 3
 
 
 @pytest.mark.asyncio
 async def test_spacing_repair_is_cancelled_by_existing_generation_deadline() -> None:
     cancelled = asyncio.Event()
-
-    class PlanClient:
-        async def ainvoke(self, messages):
-            plan = _plan_response_from_messages(messages)
-            if plan["medications"]:
-                plan["medications"][0]["efficacy"]["text"] = "변경된 원문"
-            return plan
 
     class SpacingClient:
         async def ainvoke(self, messages):
@@ -254,13 +692,10 @@ async def test_spacing_repair_is_cancelled_by_existing_generation_deadline() -> 
                 cancelled.set()
 
     generator = OpenAIIntakeReportCardsGenerator(
-        model="test",
-        client=PlanClient(),
-        spacing_client=SpacingClient(),
-        generation_timeout_seconds=0.03,
+        model="test", spacing_client=SpacingClient(), generation_timeout_seconds=0.03
     )
     with pytest.raises(IntakeReportGenerationError) as error:
-        await generator.generate(draft=_draft())
+        await generator.generate(draft=_dense_draft())
     assert error.value.reason_code == "TIMEOUT"
     assert cancelled.is_set()
 
@@ -385,55 +820,6 @@ def _valid_plan(draft: IntakeReportDraft) -> tuple[object, IntakeReportCardsPlan
     )
 
 
-def _plan_response_from_messages(messages) -> dict[str, object]:
-    payload = json.loads(messages[1].content)["evidenceCatalog"]
-    medications = []
-    for medication in payload["medications"]:
-        evidence = medication["evidence"]
-        sections = {}
-        all_source_ids: list[str] = []
-        for category in ("efficacy", "caution", "contraindication"):
-            facts = [fact for fact in evidence if fact["category"] == category]
-            source_ids = list(dict.fromkeys(source_id for fact in facts for source_id in fact["sourceIds"]))
-            all_source_ids.extend(source_ids)
-            sections[category] = {
-                "evidenceIds": [fact["evidenceId"] for fact in facts],
-                "sourceIds": source_ids,
-                "text": " ".join(fact["text"] for fact in facts),
-            }
-        details = [fact for fact in evidence if fact["category"] == "detail"]
-        for fact in details:
-            all_source_ids.extend(fact["sourceIds"])
-        medications.append(
-            {
-                "itemId": medication["itemId"],
-                **sections,
-                "detailIds": [fact["evidenceId"] for fact in details],
-                "detailTexts": [fact["text"] for fact in details],
-                "sourceIds": list(dict.fromkeys(all_source_ids)),
-            }
-        )
-    return {
-        "medications": medications,
-        "interactions": [
-            {
-                "cardId": card["cardId"],
-                "sourceIds": card["sourceIds"],
-                "summaryText": card["summary"],
-            }
-            for card in payload["interactions"]
-        ],
-        "lifestyle": [
-            {
-                "cardId": card["cardId"],
-                "sourceIds": card["sourceIds"],
-                "summaryText": card["summary"],
-            }
-            for card in payload["lifestyle"]
-        ],
-    }
-
-
 def _many_medication_draft(count: int) -> IntakeReportDraft:
     draft = _draft()
     items = []
@@ -484,6 +870,7 @@ def test_public_schema_serializes_exact_camel_case_contract() -> None:
     assert payload["medications"][0] == {
         "itemId": 91,
         "productName": "동적 제품",
+        "identityNotice": None,
         "efficacy": {"text": "효능", "sourceIds": ["guide:5"]},
         "caution": {"text": "주의", "sourceIds": ["guide:5"]},
         "contraindication": {"text": "금기", "sourceIds": ["guide:5"]},
@@ -588,10 +975,92 @@ def test_malformed_prefix_is_unverified_but_following_consultation_sentence_is_s
 
 
 def test_lifestyle_uses_supported_scenario_clause_not_full_dosage_blob() -> None:
-    catalog = build_evidence_catalog(_draft())
+    draft = _draft()
+    guide = draft.guide_evidence[0].model_copy(update={"precautions": "졸음이 올 수 있으므로 운전에 주의하세요."})
+    catalog = build_evidence_catalog(draft.model_copy(update={"guide_evidence": [guide]}))
 
     assert all(card.category != "복용시간·습관" for card in catalog.lifestyle)
     assert any(card.category == "운전" and "졸음" in card.summary for card in catalog.lifestyle)
+
+
+def test_symptom_alone_does_not_invent_a_driving_instruction() -> None:
+    catalog = build_evidence_catalog(_draft())
+    assert not any(card.card_id.startswith("driving:") for card in catalog.lifestyle)
+    assert any("졸음" in fact.text for fact in catalog.medications[101].facts)
+
+
+@pytest.mark.parametrize("text", ["금기사항을 확인하세요.", "이 경우는 금기가 아닙니다."])
+def test_mentioning_contraindications_does_not_assert_a_prohibition(text) -> None:
+    draft = _draft()
+    guide = draft.guide_evidence[0].model_copy(update={"pre_use_warning": text})
+    catalog = build_evidence_catalog(draft.model_copy(update={"guide_evidence": [guide]}))
+    assert text in [fact.text for fact in catalog.medications[101].facts if fact.category == "caution"]
+
+
+def test_partial_source_does_not_claim_all_available_information_is_missing() -> None:
+    draft = _draft()
+    guide = draft.guide_evidence[0].model_copy(update={"efficacy": "통증을 완화합니다. 추가 설명은..."})
+    facts = build_evidence_catalog(draft.model_copy(update={"guide_evidence": [guide]})).medications[101].facts
+    efficacy = [fact.text for fact in facts if fact.category == "efficacy"]
+    assert "통증을 완화합니다." in efficacy
+    assert any("일부" in text for text in efficacy)
+    assert "제공된 제품 안내에서 효능 정보를 확인할 수 없습니다." not in efficacy
+
+
+def test_related_ids_use_confirmed_guide_identity_not_raw_name_equality() -> None:
+    from ai_worker.reports.v11_cards import _related_item_ids
+
+    draft = _draft()
+    guide = draft.guide_evidence[0].model_copy(update={"product_name": "확인된 정식제품"})
+    draft = draft.model_copy(update={"guide_evidence": [guide]})
+    assert _related_item_ids(draft, ["확인된정식제품"]) == (101,)
+    assert _related_item_ids(draft, ["확인된정식재품"]) == ()
+
+
+def test_inferred_guide_stays_in_labeled_medication_card_without_global_guide_effects() -> None:
+    """Would fail if inference aliases a review item or turns guide text into interaction/lifestyle safety cards."""
+    from ai_worker.reports.v11_cards import _related_item_ids
+
+    review = IntakeReportReviewCard(
+        card_type=IntakeReportReviewCardType.INTERACTION,
+        title="검수된 조합 주의",
+        summary="검수된 규칙의 주의입니다.",
+        related_items=["정식 첫 약", "둘째 약"],
+        check_item="등록한 제품명을 확인하세요.",
+        evidence_level=IntakeReportEvidenceLevel.APPROVED_RULE,
+    )
+    base_draft = _draft(review_cards=[review])
+    draft = base_draft.model_copy(
+        update={
+            "guide_evidence": [
+                _guide(
+                    guide_id=11,
+                    product_name="정식 첫 약",
+                    interactions="술과 함께 복용하기 전 전문가에게 확인하세요",
+                ),
+                base_draft.guide_evidence[1],
+            ],
+            "inferred_guide_items": {
+                101: "‘첫 약’을 ‘정식 첫 약’으로 추정한 제품 안내입니다. 등록한 이름은 바꾸지 않았어요."
+            },
+        }
+    )
+
+    catalog, plan = _valid_plan(draft)
+    cards = render_cards(validate_card_plan(plan, catalog), catalog, draft)
+
+    assert _related_item_ids(draft, ["정식 첫 약"]) == ()
+    assert "guide-interaction:101" not in [card.id for card in cards.interactions]
+    assert "food-drink:101" not in [card.id for card in cards.lifestyle]
+    assert "driving:101" not in [card.id for card in cards.lifestyle]
+    assert cards.medications[0].product_name == "첫 약"
+    assert cards.medications[0].identity_notice == (
+        "‘첫 약’을 ‘정식 첫 약’으로 추정한 제품 안내입니다. 등록한 이름은 바꾸지 않았어요."
+    )
+    assert "### 첫 약\n\n‘첫 약’을 ‘정식 첫 약’으로 추정한 제품 안내입니다." in render_cards_markdown(cards, draft)
+    approved = next(card for card in cards.interactions if card.evidence_level == "APPROVED_RULE")
+    assert approved.action_level == "WARNING"
+    assert approved.related_item_ids == [202]
 
 
 def test_plan_allows_only_whitespace_changes_to_selected_text() -> None:
@@ -1074,13 +1543,15 @@ def test_grouping_does_not_mutate_original_card_objects_or_their_order() -> None
     assert first_markdown == second_markdown
 
 
-def test_markdown_filters_stack_by_medication_type_when_item_ids_collide() -> None:
+@pytest.mark.parametrize("ingredient_summary", ["칼슘 200mg · 비타민 D 10μg", None])
+def test_markdown_filters_stack_by_medication_type_when_item_ids_collide(ingredient_summary: str | None) -> None:
     draft = _draft()
     colliding_supplement = IntakeReportCurrentStackItem(
         item_type=IntakeReportItemType.SUPPLEMENT,
         item_id=101,
         product_name="충돌 영양제",
         registered_intake_info="하루 9정",
+        ingredient_summary=ingredient_summary,
         evidence_level=IntakeReportEvidenceLevel.REGISTERED_INTAKE,
     )
     draft = draft.model_copy(update={"current_stack": [*draft.current_stack, colliding_supplement]})
@@ -1093,6 +1564,10 @@ def test_markdown_filters_stack_by_medication_type_when_item_ids_collide() -> No
     ]
     assert "1정 · 1일 1회" in first_medication
     assert "하루 9정" not in first_medication
+    supplement_section = markdown[markdown.index("## 등록한 영양제") : markdown.index("## 비교 기준과 출처")]
+    assert "영양제 성분 · 등록한 하루량 기준" in supplement_section
+    assert (ingredient_summary or "성분·함량 확인 필요") in supplement_section
+    assert "칼슘 200mg" not in first_medication
 
 
 def test_markdown_escapes_untrusted_markdown_links_but_keeps_catalog_source_link() -> None:
@@ -1168,16 +1643,88 @@ async def test_generator_returns_cards_and_their_deterministic_markdown() -> Non
 
     class ValidClient:
         async def ainvoke(self, messages):
-            return _plan_response_from_messages(messages)
+            raise AssertionError("already spaced canonical evidence must not call the model")
 
     outcome = await OpenAIIntakeReportCardsGenerator(
         model="offline-test",
-        client=ValidClient(),
+        spacing_client=ValidClient(),
     ).generate(draft=draft)
 
     assert outcome.cards is not None
     assert outcome.report_markdown == render_cards_markdown(outcome.cards, draft)
     assert outcome.fallback_used is False
+
+
+async def test_generator_defaults_to_evidence_only_even_with_a_display_refiner() -> None:
+    class ValidClient:
+        async def ainvoke(self, messages):
+            raise AssertionError("already spaced canonical evidence must not call the model")
+
+    class UnrequestedRefiner:
+        async def refine(self, cards):
+            raise AssertionError("default evidence-only reports must not rewrite clinical prose")
+
+    outcome = await OpenAIIntakeReportCardsGenerator(
+        model="offline-test", spacing_client=ValidClient(), plain_language_refiner=UnrequestedRefiner()
+    ).generate(draft=_draft())
+    assert "통증을 완화합니다" in outcome.cards.medications[0].efficacy.text
+    assert outcome.cards.original_texts == []
+
+
+def test_rendered_report_order_does_not_depend_on_model_order() -> None:
+    draft = _draft()
+    catalog, plan = _valid_plan(draft)
+    # Same-severity cards are a genuine tie: the model's order must not win.
+    first_interaction = catalog.interactions[0]
+    cards = tuple(
+        replace(first_interaction, card_id=card_id, action_level="CHECK") for card_id in ("stable-b", "stable-a")
+    )
+    catalog = replace(catalog, interactions=cards)
+    plan = plan.model_copy(
+        update={
+            "interactions": [
+                IntakeReportCardSelection(card_id=card.card_id, source_ids=list(card.source_ids)) for card in cards
+            ]
+        }
+    )
+    reversed_plan = plan.model_copy(
+        update={
+            "medications": list(reversed(plan.medications)),
+            "interactions": list(reversed(plan.interactions)),
+            "lifestyle": list(reversed(plan.lifestyle)),
+        }
+    )
+    first = render_cards(plan, catalog, draft)
+    second = render_cards(reversed_plan, catalog, draft)
+    assert [card.item_id for card in second.medications] == [101, 202]
+    assert [card.id for card in second.interactions] == ["stable-a", "stable-b"]
+    assert first == second
+    assert render_cards_markdown(first, draft) == render_cards_markdown(second, draft)
+
+
+@pytest.mark.parametrize("category", ["efficacy", "caution", "contraindication", "detail"])
+def test_evidence_sentences_cannot_be_reordered_even_when_all_words_are_preserved(category: str) -> None:
+    draft = _draft()
+    guide = draft.guide_evidence[0].model_copy(
+        update={
+            "pre_use_warning": "복용 전 의사와 상담하세요.|위궤양이 있는 사람은 복용하지 마세요.|간질환이 있는 사람은 사용하지 마세요.",
+        }
+    )
+    catalog, plan = _valid_plan(draft.model_copy(update={"guide_evidence": [guide, draft.guide_evidence[1]]}))
+    payload = plan.model_dump(mode="python")
+    facts = {fact.evidence_id: fact for fact in catalog.medications[101].facts}
+    medication = payload["medications"][0]
+    if category == "detail":
+        assert len(medication["detail_ids"]) > 1
+        medication["detail_ids"].reverse()
+        medication["detail_texts"].reverse()
+    else:
+        section = medication[category]
+        assert len(section["evidence_ids"]) > 1
+        section["evidence_ids"].reverse()
+        section["text"] = " ".join(facts[key].text for key in section["evidence_ids"])
+    with pytest.raises(ValueError, match="EVIDENCE_ORDER"):
+        validate_card_plan(payload, catalog)
 
 
 async def test_generator_uses_approved_display_copy_in_cards_and_email_without_losing_original() -> None:
@@ -1186,7 +1733,7 @@ async def test_generator_uses_approved_display_copy_in_cards_and_email_without_l
 
     class ValidClient:
         async def ainvoke(self, messages):
-            return _plan_response_from_messages(messages)
+            raise AssertionError("already spaced canonical evidence must not call the model")
 
     class ApprovedDisplayRefiner:
         async def refine(self, cards):
@@ -1208,8 +1755,9 @@ async def test_generator_uses_approved_display_copy_in_cards_and_email_without_l
 
     outcome = await OpenAIIntakeReportCardsGenerator(
         model="offline-test",
-        client=ValidClient(),
+        spacing_client=ValidClient(),
         plain_language_refiner=ApprovedDisplayRefiner(),
+        enable_plain_language=True,
     ).generate(draft=draft)
 
     assert outcome.cards.medications[0].efficacy.text == plain
@@ -1221,7 +1769,7 @@ async def test_generator_uses_approved_display_copy_in_cards_and_email_without_l
 async def test_display_refinement_uses_only_remaining_generation_budget() -> None:
     class ValidClient:
         async def ainvoke(self, messages):
-            return _plan_response_from_messages(messages)
+            raise AssertionError("already spaced canonical evidence must not call the model")
 
     class SlowDisplayRefiner:
         async def refine(self, cards):
@@ -1230,8 +1778,9 @@ async def test_display_refinement_uses_only_remaining_generation_budget() -> Non
 
     outcome = await OpenAIIntakeReportCardsGenerator(
         model="offline-test",
-        client=ValidClient(),
+        spacing_client=ValidClient(),
         plain_language_refiner=SlowDisplayRefiner(),
+        enable_plain_language=True,
         generation_timeout_seconds=0.05,
     ).generate(draft=_draft())
 
@@ -1243,43 +1792,42 @@ async def test_generator_batches_one_medication_per_request_with_at_most_three_c
     class ConcurrentClient:
         active = 0
         max_active = 0
-        medication_counts: list[int] = []
+        calls = 0
 
         async def ainvoke(self, messages):
-            payload = json.loads(messages[1].content)["evidenceCatalog"]
-            self.medication_counts.append(len(payload["medications"]))
+            fields = json.loads(messages[1].content)["fields"]
+            assert len(fields) == 1
+            self.calls += 1
             self.active += 1
             self.max_active = max(self.max_active, self.active)
             try:
                 await asyncio.sleep(0.01)
-                return _plan_response_from_messages(messages)
+                return _natural_position_response(messages)
             finally:
                 self.active -= 1
 
     client = ConcurrentClient()
-    outcome = await OpenAIIntakeReportCardsGenerator(
-        model="offline-test",
-        client=client,
-    ).generate(draft=_many_medication_draft(5))
-
-    assert outcome.cards is not None and len(outcome.cards.medications) == 5
+    outcome = await OpenAIIntakeReportCardsGenerator(model="offline-test", spacing_client=client).generate(
+        draft=_dense_draft(_many_medication_draft(5))
+    )
+    assert len(outcome.cards.medications) == 5
+    assert all(card.efficacy.text == _SPACED_SOURCE for card in outcome.cards.medications)
     assert client.max_active == 3
-    assert sorted(client.medication_counts) == [0, 1, 1, 1, 1, 1]
+    assert client.calls == 5
 
 
 async def test_generator_cancels_sibling_batches_after_one_request_fails() -> None:
     class FailingConcurrentClient:
         active = 0
-        max_active = 0
+        calls = 0
         cancelled = 0
 
         async def ainvoke(self, messages):
-            payload = json.loads(messages[1].content)["evidenceCatalog"]
+            self.calls += 1
+            is_first = self.calls == 1
             self.active += 1
-            self.max_active = max(self.max_active, self.active)
             try:
-                item_ids = [item["itemId"] for item in payload["medications"]]
-                if item_ids == [1001]:
+                if is_first:
                     await asyncio.sleep(0.01)
                     raise RuntimeError("bounded failure")
                 await asyncio.Event().wait()
@@ -1290,198 +1838,103 @@ async def test_generator_cancels_sibling_batches_after_one_request_fails() -> No
                 self.active -= 1
 
     client = FailingConcurrentClient()
-    generator = OpenAIIntakeReportCardsGenerator(
-        model="offline-test",
-        client=client,
-        max_repair_attempts=0,
-    )
-
+    generator = OpenAIIntakeReportCardsGenerator(model="offline-test", spacing_client=client, max_repair_attempts=0)
     with pytest.raises(IntakeReportGenerationError) as captured:
-        await generator.generate(draft=_many_medication_draft(5))
-
+        await generator.generate(draft=_dense_draft(_many_medication_draft(5)))
     assert captured.value.reason_code == "CLIENT_ERROR"
-    assert client.max_active <= 3
     assert client.active == 0
     assert client.cancelled >= 2
 
 
-async def test_generator_rejects_invalid_ai_plan_without_deterministic_fallback() -> None:
+async def test_generator_rejects_invalid_positions_without_returning_unspaced_report() -> None:
     class InvalidClient:
         calls = 0
 
-        async def ainvoke(self, _messages):
+        async def ainvoke(self, messages):
             self.calls += 1
+            return {"repairs": []}
+
+    client = InvalidClient()
+    generator = OpenAIIntakeReportCardsGenerator(model="offline-test", spacing_client=client, max_repair_attempts=1)
+    with pytest.raises(IntakeReportGenerationError) as captured:
+        await generator._generate_valid_plan(build_evidence_catalog(_dense_draft()))
+    assert captured.value.reason_code == "VALIDATION_FAILED"
+    assert captured.value.issue_codes == ("SPACING_REPAIR_COVERAGE",)
+    assert client.calls == 2
+
+
+async def test_generator_rejects_free_text_plan_and_requests_position_schema() -> None:
+    class InvalidClient:
+        calls = []
+
+        async def ainvoke(self, messages):
+            self.calls.append(messages)
             return {"medications": [], "interactions": [], "lifestyle": []}
 
     client = InvalidClient()
-    generator = OpenAIIntakeReportCardsGenerator(
-        model="offline-test",
-        client=client,
-        max_repair_attempts=1,
-    )
-
+    generator = OpenAIIntakeReportCardsGenerator(model="offline-test", spacing_client=client, max_repair_attempts=1)
     with pytest.raises(IntakeReportGenerationError) as captured:
-        await generator.generate(draft=_draft())
+        await generator._generate_valid_plan(build_evidence_catalog(_dense_draft()))
+    assert captured.value.issue_codes == ("SPACING_REPAIR_SCHEMA",)
+    assert "SPACING_REPAIR_SCHEMA" in client.calls[1][-1].content
 
-    assert captured.value.reason_code == "VALIDATION_FAILED"
-    assert 2 <= client.calls <= 6
 
+async def test_generator_logs_only_safe_error_codes_not_clinical_text(caplog, monkeypatch) -> None:
+    # Other suites configure a non-propagating parent logger; attach the capture
+    # handler directly and let monkeypatch restore the original handler list.
+    monkeypatch.setattr(generator_module.logger, "handlers", [*generator_module.logger.handlers, caplog.handler])
+    caplog.set_level(30, logger=generator_module.logger.name)
 
-async def test_generator_structural_repair_message_requests_schema_and_id_correction() -> None:
-    class StructurallyInvalidClient:
-        calls: list[object] = []
-
+    class InvalidClient:
         async def ainvoke(self, messages):
-            self.calls.append(list(messages))
-            return {"medications": [], "interactions": [], "lifestyle": []}
+            return {"repairs": [], "text": "복용 횟수를 늘리세요"}
 
-    client = StructurallyInvalidClient()
     generator = OpenAIIntakeReportCardsGenerator(
-        model="offline-test",
-        client=client,
-        max_repair_attempts=1,
+        model="offline-test", spacing_client=InvalidClient(), max_repair_attempts=1
     )
-
     with pytest.raises(IntakeReportGenerationError):
-        await generator._generate_valid_plan(build_evidence_catalog(_draft()))
+        await generator._generate_valid_plan(build_evidence_catalog(_dense_draft()))
+    assert "SPACING_REPAIR_SCHEMA" in caplog.text
+    assert "복용 횟수를 늘리세요" not in caplog.text
+    assert _DENSE_SOURCE not in caplog.text
 
-    repair_message = client.calls[1][-1].content
-    assert "누락·중복·잘못된 ID 또는 필드" in repair_message
-    assert "공백만 추가하거나 제거" not in repair_message
 
+async def test_generator_requests_every_dense_field_without_exposing_structure_selection() -> None:
+    draft = _dense_draft()
+    guide = draft.guide_evidence[0].model_copy(update={"adverse_reactions": _DENSE_SOURCE})
+    draft = draft.model_copy(update={"guide_evidence": [guide, draft.guide_evidence[1]]})
 
-async def test_generator_repair_message_includes_safe_field_locator_without_clinical_text() -> None:
-    draft = _draft()
-    _, plan = _valid_plan(draft)
-    invalid = plan.model_dump(mode="json", by_alias=True)
-    invalid["medications"][0]["caution"]["text"] = "복용 횟수를 늘리세요"
-
-    class LocatedInvalidClient:
-        calls: list[object] = []
-
+    class PositionsClient:
         async def ainvoke(self, messages):
-            self.calls.append(list(messages))
-            return invalid
+            fields = json.loads(messages[1].content)["fields"]
+            assert len(fields) == 3
+            assert {field["key"].split("/")[2] for field in fields} == {"efficacy", "detail_texts"}
+            return _natural_position_response(messages)
 
-    client = LocatedInvalidClient()
-    generator = OpenAIIntakeReportCardsGenerator(
-        model="offline-test",
-        client=client,
-        max_repair_attempts=1,
-    )
-
-    with pytest.raises(IntakeReportGenerationError) as captured:
-        await generator._generate_valid_plan(build_evidence_catalog(draft))
-
-    repair_message = client.calls[1][-1].content
-    assert captured.value.issue_codes == ("TEXT_MUTATION",)
-    assert "itemId=101" in repair_message
-    assert "category=caution" in repair_message
-    assert "evidenceIds=" in repair_message
-    assert "restoreEvidenceIds=" in repair_message
-    assert "원문으로 복구" in repair_message
-    assert "복용 횟수를 늘리세요" not in repair_message
-
-
-async def test_generator_repair_message_lists_every_dense_text_field_locator() -> None:
-    draft = _draft()
-    dense_guide = _guide(
-        guide_id=11,
-        product_name="첫 약",
-        efficacy="이약은알레르기비염증상완화에사용합니다.",
-        pre_use_warning=(
-            "이약을복용하기전에신부전환자는의사또는약사와상의하십시오.|이약에과민증환자는이약을복용하지마십시오."
-        ),
-        precautions="",
-    )
-    draft = draft.model_copy(update={"guide_evidence": [dense_guide, draft.guide_evidence[1]]})
-    _, dense_plan = _valid_plan(draft)
-
-    class DenseClient:
-        calls: list[object] = []
-
-        async def ainvoke(self, messages):
-            self.calls.append(list(messages))
-            return dense_plan
-
-    client = DenseClient()
-    generator = OpenAIIntakeReportCardsGenerator(
-        model="offline-test",
-        client=client,
-        max_repair_attempts=1,
-    )
-
-    with pytest.raises(IntakeReportGenerationError):
-        await generator._generate_valid_plan(build_evidence_catalog(draft))
-
-    repair_message = client.calls[1][-1].content
-    assert "itemId=101 category=efficacy" in repair_message
-    assert "itemId=101 category=caution" in repair_message
-    assert "itemId=101 category=contraindication" in repair_message
-    assert "공백만 추가하거나 제거" in repair_message
-    assert "글자, 숫자, 문장부호, HTML 엔티티는 변경하지 마세요" in repair_message
-    assert "알레르기 비염" not in repair_message
-    assert "신부전 환자" not in repair_message
-
-
-async def test_generator_retains_each_previously_valid_text_across_later_regressions() -> None:
-    draft = _draft()
-    dense_guide = _guide(
-        guide_id=11,
-        product_name="첫 약",
-        efficacy="이약은알레르기비염증상완화에사용합니다.",
-        pre_use_warning=(
-            "이약을복용하기전에신부전환자는의사또는약사와상의하십시오.|이약에과민증환자는이약을복용하지마십시오."
-        ),
-        precautions="",
-    )
-    draft = draft.model_copy(update={"guide_evidence": [dense_guide, draft.guide_evidence[1]]})
-    _, dense_plan = _valid_plan(draft)
-    responses = []
-    for efficacy, caution, contraindication in (
-        (
-            "이 약은 알레르기 비염 증상 완화에 사용합니다.",
-            "이약을복용하기전에신부전환자는의사또는약사와상의하십시오.",
-            "이약에과민증환자는이약을복용하지마십시오.",
-        ),
-        (
-            "이약은알레르기비염증상완화에사용합니다.",
-            "이 약을 복용하기 전에 신부전 환자는 의사 또는 약사와 상의하십시오.",
-            "이약에과민증환자는이약을복용하지마십시오.",
-        ),
-        (
-            "이약은알레르기비염증상완화에사용합니다.",
-            "이약을복용하기전에신부전환자는의사또는약사와상의하십시오.",
-            "이 약에 과민증 환자는 이 약을 복용하지 마십시오.",
-        ),
-    ):
-        response = dense_plan.model_dump(mode="json", by_alias=True)
-        medication = response["medications"][0]
-        medication["efficacy"]["text"] = efficacy
-        medication["caution"]["text"] = caution
-        medication["contraindication"]["text"] = contraindication
-        responses.append(response)
-
-    class RegressingClient:
-        calls = 0
-
-        async def ainvoke(self, _messages):
-            response = responses[self.calls]
-            self.calls += 1
-            return response
-
-    client = RegressingClient()
     plan = await OpenAIIntakeReportCardsGenerator(
-        model="offline-test",
-        client=client,
-        max_repair_attempts=2,
+        model="offline-test", spacing_client=PositionsClient()
     )._generate_valid_plan(build_evidence_catalog(draft))
+    assert plan.medications[0].efficacy.text == _SPACED_SOURCE
+    assert _SPACED_SOURCE in plan.medications[0].detail_texts
 
-    medication = plan.medications[0]
-    assert client.calls == 3
-    assert medication.efficacy.text == "이 약은 알레르기 비염 증상 완화에 사용합니다."
-    assert medication.caution.text == ("이 약을 복용하기 전에 신부전 환자는 의사 또는 약사와 상의하십시오.")
-    assert medication.contraindication.text == "이 약에 과민증 환자는 이 약을 복용하지 마십시오."
+
+async def test_generator_never_sends_already_valid_fields_for_rewriting() -> None:
+    draft = _draft()
+    guide = draft.guide_evidence[0].model_copy(update={"adverse_reactions": _DENSE_SOURCE})
+    draft = draft.model_copy(update={"guide_evidence": [guide, draft.guide_evidence[1]]})
+
+    class PositionsClient:
+        async def ainvoke(self, messages):
+            fields = json.loads(messages[1].content)["fields"]
+            assert len(fields) == 1
+            assert "/detail_texts/" in fields[0]["key"]
+            return _natural_position_response(messages)
+
+    outcome = await OpenAIIntakeReportCardsGenerator(model="offline-test", spacing_client=PositionsClient()).generate(
+        draft=draft
+    )
+    assert outcome.cards.medications[0].efficacy.text == "통증을 완화합니다. 열을 낮춥니다."
+    assert any(detail.text == _SPACED_SOURCE for detail in outcome.cards.medications[0].details)
 
 
 async def test_generator_keeps_90_second_global_deadline_and_raises_on_timeout() -> None:
@@ -1494,24 +1947,24 @@ async def test_generator_keeps_90_second_global_deadline_and_raises_on_timeout()
             raise AssertionError("global timeout should cancel the in-flight request")
 
     client = SlowClient()
-    defaults = OpenAIIntakeReportCardsGenerator(model="offline-test", client=client)
+    defaults = OpenAIIntakeReportCardsGenerator(model="offline-test", spacing_client=client)
     assert defaults.request_timeout_seconds == 75.0
     assert defaults.generation_timeout_seconds == 90.0
 
     generator = OpenAIIntakeReportCardsGenerator(
         model="offline-test",
-        client=client,
+        spacing_client=client,
         generation_timeout_seconds=0.001,
     )
     with pytest.raises(IntakeReportGenerationError) as captured:
-        await generator.generate(draft=_draft())
+        await generator.generate(draft=_dense_draft())
 
     assert captured.value.reason_code == "TIMEOUT"
     assert 1 <= client.calls <= 3
 
 
 def test_v11_generator_declares_that_it_does_not_use_rag_knowledge_evidence() -> None:
-    generator = OpenAIIntakeReportCardsGenerator(model="offline-test", client=object())
+    generator = OpenAIIntakeReportCardsGenerator(model="offline-test", spacing_client=object())
 
     assert generator.uses_knowledge_evidence is False
 
@@ -1591,73 +2044,35 @@ def test_near_match_projection_rejects_non_hangul_changes_and_sentence_omission(
     assert _project_near_match_whitespace(proposed, canonical) is None
 
 
-async def test_generator_projects_near_match_spacing_before_strict_final_validation() -> None:
-    draft = _draft()
-    canonical_caution = (
-        "이약을복용하기전에신부전환자,고령자,심혈관질환환자또는경험자,"
-        "임부또는임신하고있을가능성이있는여성및수유부는의사또는약사와상의하십시오."
+async def test_generator_does_not_accept_near_match_text_as_position_response() -> None:
+    class RewritingClient:
+        async def ainvoke(self, messages):
+            fields = json.loads(messages[1].content)["fields"]
+            return {
+                "repairs": [
+                    {"key": field["key"], "chunks": [_SPACED_SOURCE.replace("상의", "상담")]} for field in fields
+                ]
+            }
+
+    generator = OpenAIIntakeReportCardsGenerator(
+        model="offline-test", spacing_client=RewritingClient(), max_repair_attempts=0
     )
-    dense_guide = _guide(
-        guide_id=11,
-        product_name="첫 약",
-        efficacy="통증을 완화합니다.",
-        pre_use_warning=canonical_caution,
-        precautions="",
-    )
-    draft = draft.model_copy(update={"guide_evidence": [dense_guide, draft.guide_evidence[1]]})
-    _, plan = _valid_plan(draft)
-    response = plan.model_dump(mode="json", by_alias=True)
-    response["medications"][0]["caution"]["text"] = (
-        "이 약을 복용하기 전에 신부전 환자, 고령자, 심혈관 질환 환자 또는 경험자, "
-        "임부 또는 임신하고 있을 가능성이 있는 여성 및 수유부는 의사 또는 약사와 상담하십시오."
-    )
-
-    class NearMatchClient:
-        async def ainvoke(self, _messages):
-            return response
-
-    validated = await OpenAIIntakeReportCardsGenerator(
-        model="offline-test",
-        client=NearMatchClient(),
-        max_repair_attempts=0,
-    )._generate_valid_plan(build_evidence_catalog(draft))
-
-    caution = validated.medications[0].caution.text
-    assert "".join(caution.split()) == canonical_caution
-    assert "약사와 상의하십시오" in caution
-    assert "상담" not in caution
-
-
-async def test_generator_near_match_projection_does_not_bypass_dense_spacing_guard() -> None:
-    draft = _draft()
-    canonical_caution = (
-        "이약을복용하기전에신부전환자,고령자,심혈관질환환자또는경험자,"
-        "임부또는임신하고있을가능성이있는여성및수유부는의사또는약사와상의하십시오."
-    )
-    dense_guide = _guide(
-        guide_id=11,
-        product_name="첫 약",
-        efficacy="통증을 완화합니다.",
-        pre_use_warning=canonical_caution,
-        precautions="",
-    )
-    draft = draft.model_copy(update={"guide_evidence": [dense_guide, draft.guide_evidence[1]]})
-    _, plan = _valid_plan(draft)
-    response = plan.model_dump(mode="json", by_alias=True)
-    response["medications"][0]["caution"]["text"] = canonical_caution.replace("상의", "상담")
-
-    class DenseNearMatchClient:
-        async def ainvoke(self, _messages):
-            return response
-
     with pytest.raises(IntakeReportGenerationError) as captured:
-        await OpenAIIntakeReportCardsGenerator(
-            model="offline-test",
-            client=DenseNearMatchClient(),
-            max_repair_attempts=0,
-        )._generate_valid_plan(build_evidence_catalog(draft))
+        await generator._generate_valid_plan(build_evidence_catalog(_dense_draft()))
+    assert captured.value.issue_codes == ("SPACING_REPAIR_SCHEMA",)
 
-    assert captured.value.issue_codes == ("TEXT_SPACING_REQUIRED",)
+
+async def test_generator_empty_positions_do_not_bypass_dense_spacing_guard() -> None:
+    class NoOpClient:
+        async def ainvoke(self, messages):
+            return _boundary_response(json.loads(messages[1].content)["fields"])
+
+    generator = OpenAIIntakeReportCardsGenerator(
+        model="offline-test", spacing_client=NoOpClient(), max_repair_attempts=0
+    )
+    with pytest.raises(IntakeReportGenerationError) as captured:
+        await generator._generate_valid_plan(build_evidence_catalog(_dense_draft()))
+    assert captured.value.issue_codes == ("SPACING_REPAIR_INVALID",)
 
 
 @pytest.mark.parametrize(
@@ -1747,10 +2162,10 @@ def test_calcium_food_card_emitted_below_reference_with_fortified_tofu_caveat_an
     assert "두부" in card.summary
     assert "강화" in card.summary or "응고" in card.summary
     assert "모든 두부가 아니라" in card.summary  # never claims every tofu product contains calcium
-    assert "실제 식사나 복용량이 아닙니다" in card.action
-    assert "진단하거나" in card.action  # only disclaims diagnosis, never asserts deficiency
-    assert "부족합니다" not in card.action
-    assert "섭취량을 늘리도록 권하지" in card.action
+    assert card.action == (
+        "식품은 참고 예시이며, 영양소 부족을 뜻하지 않아요. "
+        "알레르기·식이 제한과 복용약의 음식 주의사항을 함께 고려해 주세요."
+    )
     assert [source.id for source in sources] == ["source:ods-calcium"]
     assert card.source_ids == ["source:ods-calcium"]
 
@@ -1848,12 +2263,17 @@ def test_vitamin_d_food_card_accepts_all_microgram_spellings(unit: str) -> None:
     assert "모두" not in cards[0].summary or "강화된 것은 아니에요" in cards[0].summary
 
 
-def test_partial_label_schedule_food_card_still_emits_with_disclaimer_and_no_deficiency_claim() -> None:
+@pytest.mark.parametrize(
+    "calculation_status", ["PARTIAL_LABEL_SCHEDULE", "REGISTERED_SCHEDULE", "PARTIAL_REGISTERED_SCHEDULE"]
+)
+def test_partial_label_schedule_food_card_still_emits_with_disclaimer_and_no_deficiency_claim(
+    calculation_status,
+) -> None:
     total = _nutrient_total(
         nutrient_name="비타민 C",
         amount="10",
         reference_value="80",
-        calculation_status="PARTIAL_LABEL_SCHEDULE",
+        calculation_status=calculation_status,
         included_product_names=["비타민C 제품"],
         unknown_product_names=["함량 미상 제품"],
     )
@@ -1863,9 +2283,10 @@ def test_partial_label_schedule_food_card_still_emits_with_disclaimer_and_no_def
 
     assert len(cards) == 1
     action = cards[0].action
-    assert "실제 식사나 복용량이 아닙니다" in action
-    assert "확인할 수 없는 제품은 포함하지 않았" in action
-    assert "진단" in action and "섭취량을 늘리도록 권하지" in action
+    assert (
+        action
+        == "식품은 참고 예시이며, 영양소 부족을 뜻하지 않아요. 알레르기·식이 제한과 복용약의 음식 주의사항을 함께 고려해 주세요."
+    )
 
 
 def test_food_action_states_missing_guards_for_age_allergy_diet_and_med_food_warnings() -> None:
@@ -1875,12 +2296,10 @@ def test_food_action_states_missing_guards_for_age_allergy_diet_and_med_food_war
     cards, _sources = build_lifestyle_guidance_cards(draft)
 
     action = cards[0].action
-    assert "실제 섭취" not in action or "실제 식사나 복용량이 아닙니다" in action
-    assert "나이" in action
-    assert "알레르기" in action
-    assert "식이" in action
-    assert "약" in action and ("음식" in action or "복용" in action)
-    assert "늘리라는 뜻은 아니" in action or "섭취량을 늘리도록 권하지" in action
+    assert (
+        action
+        == "식품은 참고 예시이며, 영양소 부족을 뜻하지 않아요. 알레르기·식이 제한과 복용약의 음식 주의사항을 함께 고려해 주세요."
+    )
 
 
 def test_vitamin_d_timing_card_matches_unique_supplement_and_states_fat_meal_fact() -> None:
@@ -1900,9 +2319,9 @@ def test_vitamin_d_timing_card_matches_unique_supplement_and_states_fat_meal_fac
     assert timing.related_item_ids == [501]
     assert "지방" in timing.summary
     assert "식사" in timing.summary or "간식" in timing.summary
-    assert "제품 라벨" in timing.action
-    assert "약사" in timing.action
-    assert "알람" in timing.action
+    assert "지방" in timing.action and "식사" in timing.action
+    assert "추천" in timing.action
+    assert all(word not in timing.action for word in ("알람", "바꾸지", "지시", "상의하세요"))
     assert timing.source_ids == ["source:ods-vitamind-food"]
     assert any(source.id == "source:ods-vitamind-food" for source in sources)
 
@@ -1921,8 +2340,11 @@ def test_calcium_timing_card_presents_conditional_form_comparison_without_assign
 
     timing = next(card for card in cards if card.id == "timing:calcium")
     assert "탄산칼슘" in timing.summary and "구연산칼슘" in timing.summary
-    assert "직접 확인" in timing.action
-    assert "약사" in timing.action
+    assert "제품 라벨" in timing.action
+    assert "탄산칼슘은 식사와 함께" in timing.action
+    assert "구연산칼슘은 식사 여부와 관계없이" in timing.action
+    assert "추천" in timing.action
+    assert all(word not in timing.action for word in ("알람", "바꾸지", "확인하세요", "상의하세요"))
     assert "제품은 탄산칼슘입니다" not in timing.action  # never assigns a form from the product name
     assert "제품은 구연산칼슘입니다" not in timing.action
     assert timing.related_item_ids == [601]

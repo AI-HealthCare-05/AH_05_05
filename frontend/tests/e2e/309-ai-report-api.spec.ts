@@ -144,7 +144,7 @@ test('ai-report-v2 renders the generated Markdown as the report body and keeps o
       { itemType: 'MEDICATION', itemId: 1, productName: '낯선 약 알파 200mg', ingredientName: '성분 알파', registeredIntakeInfo: '하루 1정', scheduledSlots: ['MORNING'], evidenceLevel: 'REGISTERED_INTAKE' },
       { itemType: 'MEDICATION', itemId: 2, productName: '처방약 베타 100mg', ingredientName: '성분 베타', registeredIntakeInfo: '하루 1정', scheduledSlots: ['LUNCH'], evidenceLevel: 'REGISTERED_INTAKE' },
       { itemType: 'MEDICATION', itemId: 3, productName: '처방약 감마', ingredientName: null, registeredIntakeInfo: '필요 시 1정', scheduledSlots: [], evidenceLevel: 'REGISTERED_INTAKE' },
-      { itemType: 'SUPPLEMENT', itemId: 4, productName: '영양제 철분', ingredientName: null, registeredIntakeInfo: '하루 1정', scheduledSlots: ['LUNCH'], evidenceLevel: 'REGISTERED_INTAKE' },
+      { itemType: 'SUPPLEMENT', itemId: 4, productName: '영양제 철분', ingredientName: null, ingredientSummary: '철 30mg · 비타민 C 100mg', registeredIntakeInfo: '하루 1정', scheduledSlots: ['LUNCH'], evidenceLevel: 'REGISTERED_INTAKE' },
     ],
     reviewCards: [],
     nutrientTotals: [
@@ -170,7 +170,8 @@ test('ai-report-v2 renders the generated Markdown as the report body and keeps o
       await expect(page.getByRole('table', { name: '현재 복용 목록' }).getByText(productName, { exact: true })).toBeVisible();
     }
     await expect(page.getByRole('heading', { name: '등록한 복용 정보' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: '영양소 합계' })).toBeVisible();
+    await expect(page.getByRole('table', { name: '현재 복용 목록' }).getByText('철 30mg · 비타민 C 100mg', { exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '영양제 성분 합계' })).toBeVisible();
     await expect(page.getByText('250%', { exact: true })).toBeVisible();
     await expect(page.getByText(/권장섭취량 12mg 기준/)).toBeVisible();
     await expect(page.getByText(/충분섭취량 10μg 기준/)).toBeVisible();
