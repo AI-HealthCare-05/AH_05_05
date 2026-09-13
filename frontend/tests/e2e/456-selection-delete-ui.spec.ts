@@ -116,7 +116,10 @@ async function prepareMedication(page: Page) {
   await page.route('**/api/v1/medications', route => fulfillJson(route, [MEDICATION_OVERVIEW]));
 }
 
-async function prepareSupplements(page: Page) {
+async function prepareSupplements(
+  page: Page,
+  deleteResponder: (route: Route) => Promise<void> = route => route.fulfill({ status: 204, body: '' }),
+) {
   await page.route('**/api/v1/users/me', route => fulfillJson(route, {
     name: '선택 테스트',
     maskedName: '선*테',
@@ -133,7 +136,7 @@ async function prepareSupplements(page: Page) {
   }));
   await page.route('**/api/v1/med/user-suppl-nutr/*', async route => {
     if (route.request().method() === 'DELETE') {
-      await route.fulfill({ status: 204, body: '' });
+      await deleteResponder(route);
       return;
     }
     await fulfillJson(route, { code: 'FIXTURE_MISSING', message: 'unexpected request' }, 503);
@@ -241,4 +244,46 @@ test('영양제 변경 성공은 열린 챌린지 화면의 진행률을 다시 
   await expect.poll(() => page.evaluate(
     () => (window as typeof window & { challengeRefreshes?: number }).challengeRefreshes ?? 0,
   )).toBe(1);
+});
+
+test('영양제 삭제 중에는 취소할 수 없고 부분 실패 대상은 선택 목록에 남는다', async ({ page }) => {
+  let releaseFirstDelete!: () => void;
+  let notifyFirstDelete!: () => void;
+  const firstDeleteReleased = new Promise<void>(resolve => {
+    releaseFirstDelete = resolve;
+  });
+  const firstDeleteStarted = new Promise<void>(resolve => {
+    notifyFirstDelete = resolve;
+  });
+  let deleteAttempts = 0;
+  await prepareSupplements(page, async route => {
+    deleteAttempts += 1;
+    if (deleteAttempts === 1) {
+      notifyFirstDelete();
+      await firstDeleteReleased;
+      await route.fulfill({ status: 204, body: '' });
+      return;
+    }
+    await fulfillJson(route, { code: 'STOP_FAILED', message: '잠시 후 다시 시도해주세요.' }, 500);
+  });
+
+  await page.goto('/supplements');
+  await page.getByRole('button', { name: '선택', exact: true }).click();
+  await page.getByRole('checkbox', { name: '아침 비타민 선택', exact: true }).check();
+  await page.getByRole('checkbox', { name: '저녁 오메가 선택', exact: true }).check();
+  await page.getByRole('button', { name: '삭제 2개', exact: true }).click();
+  await firstDeleteStarted;
+
+  const cancel = page.getByRole('button', { name: '취소', exact: true });
+  await expect(cancel).toBeDisabled();
+  await cancel.evaluate((button: HTMLButtonElement) => button.click());
+  await expect(page.getByRole('checkbox')).toHaveCount(2);
+
+  releaseFirstDelete();
+  const confirmError = page.getByRole('button', { name: '확인', exact: true });
+  await expect(confirmError).toBeVisible();
+  await confirmError.click();
+  await expect(page.getByRole('checkbox', { name: '아침 비타민 선택', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('checkbox', { name: '저녁 오메가 선택', exact: true })).toBeChecked();
+  await expect(cancel).toBeEnabled();
 });

@@ -34,7 +34,12 @@ export function SelectionActions({
     >
       {selectionMode ? (
         <>
-          <Button fullWidth={false} variant="secondary" onClick={onCancel}>
+          <Button
+            fullWidth={false}
+            variant="secondary"
+            disabled={deletePending}
+            onClick={onCancel}
+          >
             취소
           </Button>
           {selectedCount > 0 && (
