@@ -65,7 +65,7 @@ for (const width of [375, 390, 1280]) {
     await expect(custom).not.toContainText('참여 중 걷기');
     await expect(official.getByRole('button').nth(1)).toHaveAccessibleName(`${catalog[1].name} 자세히 보기`);
     await expect(custom.getByRole('button').nth(1)).toHaveAccessibleName('처방 일정 지키기 대상 선택');
-    await expect(official).toContainText('2026년 9월 1일 ~ 2026년 9월 30일');
+    await expect(official).toContainText('2026.09.01 ~ 2026.09.30');
     expect(await page.locator('main').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`browse-expanded-${width}.png`), animations: 'disabled' });
     await official.getByRole('button', { name: '공식 챌린지 접기', exact: true }).click();

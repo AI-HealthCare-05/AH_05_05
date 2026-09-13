@@ -301,11 +301,12 @@ for (const width of [375, 390, 1280]) {
     await expectSameRow(select);
     await page.screenshot({ path: testInfo.outputPath(`medication-toolbar-${width}.png`), fullPage: true });
     await select.click();
-    await expect(page.getByRole('heading', { name: '삭제할 처방을 선택하세요' })).toBeVisible();
-    const remove = page.getByRole('button', { name: '삭제', exact: true });
-    await expect(remove).toBeDisabled();
-    await expectSameRow(remove);
+    await expect(page.getByRole('heading', { name: '복약' })).toBeVisible();
+    await expect(add).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /삭제 \d+개/ })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '취소', exact: true })).toBeVisible();
     await page.getByRole('checkbox', { name: /2026년 9월 10일 처방 선택/ }).check();
+    const remove = page.getByRole('button', { name: '삭제 1개', exact: true });
     await expect(remove).toBeEnabled();
     await expect(page.getByRole('button', { name: '취소', exact: true })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`medication-selection-${width}.png`), fullPage: true });

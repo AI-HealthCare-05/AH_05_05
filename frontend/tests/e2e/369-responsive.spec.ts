@@ -97,7 +97,7 @@ for (const route of ['/home', '/dev/medications', '/dev/supplements', '/dev/chat
     await page.goto(route);
     await expect(page.locator('main')).toBeVisible();
     await expect(page.locator('[role="status"][aria-label*="불러오는 중"]')).toHaveCount(0);
-    if (route === '/dev/supplements') await expect(page.getByRole('heading', { name: /먹고 있는 영양제/ })).toBeVisible();
+    if (route === '/dev/supplements') await expect(page.getByRole('heading', { name: /영양제 \d+개/ })).toBeVisible();
     for (const width of widths) {
       await page.setViewportSize({ width, height: 900 });
       await expectNoOverflow(page);

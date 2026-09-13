@@ -74,6 +74,29 @@ async function enclosed(article: Locator) {
     .replaceAll('rgba(0, 0, 0, 0)', '').replace(/0px|[\s,]/g, '') === '').toBe(true);
 }
 test.beforeEach(() => test.skip(!IS_REAL_API, REAL_API_ONLY_REASON));
+for (const width of [320, 390]) {
+  test(`펼친 처방은 요약만 숨기고 접으면 복원한다 (${width}px)`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: 900 });
+    const { group, writes } = await setup(page);
+    const first = group.getByRole('article').first();
+    const second = group.getByRole('article').nth(1);
+    const summary = first.getByText('아세트아미노펜정500mg 외 3개', { exact: true });
+    await expect(summary).toBeVisible();
+    await first.getByRole('button', { name: /처방 펼치기$/ }).click();
+    await expect(summary).toBeHidden();
+    await expect(first.getByRole('heading', { name: names[0], exact: true })).toBeVisible();
+    await expect(first.getByRole('listitem')).toHaveCount(4);
+    await expect(second.getByText('암브록솔시럽 외 1개', { exact: true })).toBeVisible();
+    await expect(first.locator('[data-episode-row]')).toHaveAttribute('aria-pressed', 'false');
+    expect(writes).toEqual([]);
+    await enclosed(first);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.locator('[data-home-dose-card]').screenshot({ path: info.outputPath(`456-home-expanded-summary-${width}.png`) });
+    await first.getByRole('button', { name: /처방 접기$/ }).click();
+    await expect(summary).toBeVisible();
+    await expect(first.getByRole('listitem')).toHaveCount(0);
+  });
+}
 for (const width of [320, 390, 1280]) {
   test(`처방 전체를 감싸는 경계와 두 열린 처방 간격 (${width}px)`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: 1000 });

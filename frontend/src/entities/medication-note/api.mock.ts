@@ -171,6 +171,11 @@ export function mockListMedicationNoteEpisodes(
       ...(options.includeWithoutNotes ? { noteCount: 1 } : {}),
       ...(options.includeWithoutNotes ? { medications: note.availableMedications } : {}),
       ...(options.includeWithoutNotes ? { firstDoseAt: null } : {}),
+      ...(options.includeWithoutNotes ? {
+        canCreateNote: note.careEpisodeStatus === 'ACTIVE' &&
+          mockMedicationOverviews().some((overview) =>
+            overview.recordId === note.careEpisodeId && !overview.isFinished && overview.medications.length > 0),
+      } : {}),
     });
   }
   if (options.includeWithoutNotes) {
@@ -179,8 +184,10 @@ export function mockListMedicationNoteEpisodes(
       const existing = byEpisodeId.get(overview.recordId);
       if (existing) {
         existing.firstDoseAt = firstDoseAt;
+        existing.canCreateNote = !overview.isFinished && overview.medications.length > 0;
         continue;
       }
+      if (overview.isFinished || overview.medications.length === 0) continue;
       byEpisodeId.set(overview.recordId, {
         careEpisodeId: overview.recordId,
         alias: overview.alias ?? null,
@@ -190,6 +197,7 @@ export function mockListMedicationNoteEpisodes(
         representativeMedicationName: overview.medications[0]?.name ?? null,
         medicationCount: overview.medications.length,
         noteCount: 0,
+        canCreateNote: true,
         medications: overview.medications.map((medication) => ({
           id: medication.medicationId,
           name: medication.name,
@@ -215,6 +223,10 @@ export function mockCreateMedicationNote(payload: CreateMedicationNotePayload): 
   if (consumeCreateFailure()) throw new Error('잠시 후 다시 시도해주세요.');
   const now = new Date().toISOString();
   const metadata = episodeMetadata(payload.careEpisodeId);
+  const overview = mockMedicationOverviews().find((item) => item.recordId === payload.careEpisodeId);
+  if (!overview || overview.isFinished || overview.medications.length === 0) {
+    throw new Error('복약 기록을 찾을 수 없습니다.');
+  }
   const medication = payload.medicationId === undefined || payload.medicationId === null
     ? null
     : metadata.medications.find((item) => item.id === payload.medicationId) ?? null;

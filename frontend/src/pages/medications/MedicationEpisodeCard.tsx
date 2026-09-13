@@ -2,7 +2,7 @@ import { ChevronDown, Clock3, Pencil } from 'lucide-react';
 import type { MedicationOverview, MedicationOverviewItem } from '@/entities/medication';
 import { formatDateLabel, formatDatePeriod } from '@/shared/lib/dateLabel';
 import { SLOT_ORDER, mealSlotLabel, type MealSlot } from '@/shared/model/mealSlot';
-import { Checkbox } from '@/shared/ui';
+import { SelectionCheckbox } from '@/shared/ui';
 
 interface MedicationEpisodeCardProps {
   overview: MedicationOverview;
@@ -46,7 +46,7 @@ export function MedicationEpisodeCard({
       <div className="flex min-w-0 items-stretch">
         {selectionMode && (
           <label className="flex min-h-touch shrink-0 cursor-pointer items-center pl-4">
-            <Checkbox
+            <SelectionCheckbox
               checked={selected}
               aria-label={`${dateLabel} 처방 선택`}
               onCheckedChange={onToggleSelected}

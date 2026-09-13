@@ -1,6 +1,6 @@
 import base64
 import binascii
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import date, datetime, time, timedelta
 from typing import cast
 
@@ -50,6 +50,20 @@ DEFAULT_MEAL_TIMES = {
     MealSlot.EVENING: time(19, 0),
     MealSlot.BEDTIME: time(22, 0),
 }
+
+
+def can_create_medication_note(
+    episode: CareEpisode,
+    medications: Sequence[Medication],
+    today: date,
+) -> bool:
+    start_date = episode.medication_start_date
+    return (
+        episode.status == CareEpisodeStatus.ACTIVE
+        and start_date is not None
+        and bool(medications)
+        and start_date <= today <= medication_end_date(episode, medications)
+    )
 
 
 class MedicationService:
@@ -209,6 +223,13 @@ class MedicationService:
         request: CreateMedicationNoteRequest,
     ) -> MedicationNoteResponse:
         episode = await self._get_owned_episode(request.care_episode_id, user)
+        medications = list(await Medication.filter(care_episode_id=episode.id))
+        if not can_create_medication_note(
+            episode,
+            medications,
+            self._mutation_time_provider().date(),
+        ):
+            raise MedicationRecordNotFoundError()
         if request.medication_id is not None:
             await self._get_episode_medication(episode.id, request.medication_id)
         note = await MedicationNote.create(
@@ -284,29 +305,27 @@ class MedicationService:
             .values("id", "alias", "medication_start_date", "medication_start_slot", "status")
         )
         episode_ids = [row["id"] for row in rows]
-        medication_rows = (
-            await Medication.filter(care_episode_id__in=episode_ids)
-            .order_by("care_episode_id", "id")
-            .values("id", "care_episode_id", "name", "strength")
-            if episode_ids
-            else []
+        episode_models = (
+            await CareEpisode.filter(id__in=episode_ids).prefetch_related("medications") if episode_ids else []
         )
         representative_medication_names: dict[int, str] = {}
         medication_counts: dict[int, int] = {}
         medications_by_episode: dict[int, list[MedicationNoteMedicationResponse]] = {}
-        for medication_row in medication_rows:
-            episode_id = medication_row["care_episode_id"]
-            representative_medication_names.setdefault(episode_id, medication_row["name"])
-            medication_counts[episode_id] = medication_counts.get(episode_id, 0) + 1
-            medications_by_episode.setdefault(episode_id, []).append(
-                MedicationNoteMedicationResponse(
-                    id=medication_row["id"],
-                    name=medication_row["name"],
-                    dose=medication_row["strength"],
+        episode_model_by_id = {episode.id: episode for episode in episode_models}
+        for episode in episode_models:
+            for medication in sorted(episode.medications, key=lambda item: item.id):  # type: ignore[attr-defined]
+                representative_medication_names.setdefault(episode.id, medication.name)
+                medication_counts[episode.id] = medication_counts.get(episode.id, 0) + 1
+                medications_by_episode.setdefault(episode.id, []).append(
+                    MedicationNoteMedicationResponse(
+                        id=medication.id,
+                        name=medication.name,
+                        dose=medication.strength,
+                    )
                 )
-            )
 
         note_counts: dict[int, int] = {}
+        can_create_note_by_episode: dict[int, bool] = {}
         if include_without_notes and episode_ids:
             note_rows = await MedicationNote.filter(
                 user_id=user.id,
@@ -315,7 +334,16 @@ class MedicationService:
             for note_row in note_rows:
                 episode_id = note_row["care_episode_id"]
                 note_counts[episode_id] = note_counts.get(episode_id, 0) + 1
-            rows = [row for row in rows if medication_counts.get(row["id"], 0) > 0 or note_counts.get(row["id"], 0) > 0]
+            today = self._mutation_time_provider().date()
+            can_create_note_by_episode = {
+                row["id"]: can_create_medication_note(
+                    episode_model_by_id[row["id"]],
+                    list(episode_model_by_id[row["id"]].medications),  # type: ignore[attr-defined]
+                    today,
+                )
+                for row in rows
+            }
+            rows = [row for row in rows if note_counts.get(row["id"], 0) > 0 or can_create_note_by_episode[row["id"]]]
 
         first_dose_at_by_episode: dict[int, datetime | None] = {}
         if include_without_notes:
@@ -341,6 +369,7 @@ class MedicationService:
                 **({"note_count": note_counts.get(row["id"], 0)} if include_without_notes else {}),
                 **({"medications": medications_by_episode.get(row["id"], [])} if include_without_notes else {}),
                 **({"first_dose_at": first_dose_at_by_episode[row["id"]]} if include_without_notes else {}),
+                **({"can_create_note": can_create_note_by_episode[row["id"]]} if include_without_notes else {}),
             )
             for row in rows
         ]

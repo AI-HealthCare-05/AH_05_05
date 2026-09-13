@@ -92,7 +92,7 @@ async def list_nutrient_standards(
     summary="건강기능식품 영양성분 검색",
 )
 async def search_supplement_nutrients(
-    _user: Annotated[User, Depends(get_request_user)],
+    user: Annotated[User, Depends(get_request_user)],
     service: Annotated[SupplementNutrientService, Depends(get_supplement_nutrient_service)],
     name: Annotated[str, Query(min_length=1, max_length=100)],
     sort: Annotated[SupplementSort, Query(description="검색 결과 정렬 기준")] = "name",
@@ -106,6 +106,7 @@ async def search_supplement_nutrients(
     """제품명 앞뒤 부분 검색으로 건강기능식품 기준정보를 페이지 단위로 조회한다."""
     products, total = await service.search(
         name,
+        user_id=user.id,
         sort=sort,
         direction=direction,
         offset=offset,
@@ -160,7 +161,7 @@ async def list_supplement_reviews(
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=50)] = 10,
 ) -> SupplementReviewListResponse:
-    """탈퇴·신고 숨김 대상을 제외한 공개 후기를 최신순으로 조회한다."""
+    """탈퇴·누적 숨김 및 현재 사용자가 신고한 후기를 제외해 최신순으로 조회한다."""
     return await service.list(user, supplement_nutrient_id, offset=offset, limit=limit)
 
 

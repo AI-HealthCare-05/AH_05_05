@@ -200,10 +200,17 @@ class CustomChallengeLifecycleService:
             for source_id, dose_date, slot in rows
             if source_id in source_to_target
         }
+        detached_supplement_targets = {
+            target.id
+            for target in targets
+            if participation.challenge_type is CustomChallengeType.SUPPLEMENT
+            and target.supplement_registration_id is None
+        }
         return {
             occurrence.id
             for occurrence in occurrences
             if (occurrence.target_id, occurrence.scheduled_date, _meal_slot(occurrence.slot)) in completed_keys
+            or (occurrence.target_id in detached_supplement_targets and occurrence.is_completed)
         }
 
     @staticmethod

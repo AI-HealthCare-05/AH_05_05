@@ -18,25 +18,45 @@
   gap: 6px;
   padding: 10px 12px;
   border-radius: var(--radius-input);
-  background: color-mix(in srgb, var(--color-primary-bg) 35%, var(--color-card));
   scroll-snap-align: start;
   animation: rx-today-reveal 180ms ease-out;
 }
+.rx-today-challenge-item--official { background: var(--color-primary-bg); }
+.rx-today-challenge-item--custom { background: var(--color-warning-bg); }
 .rx-today-challenge-detail { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 6px; }
 .rx-today-challenge-detail:focus-visible,
 .rx-today-challenge-checkin:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
 .rx-today-challenge-state { display: flex; min-height: 44px; align-items: center; justify-content: center; gap: 4px; font-size: 13px; font-weight: 700; }
+.rx-today-challenge-navigation {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
 .rx-today-challenge-arrow {
+  position: absolute;
+  top: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 44px;
   height: 44px;
-  border-radius: 50%;
-  background: var(--color-card);
-  color: var(--color-primary);
-  box-shadow: var(--shadow-card);
+  transform: translateY(-50%);
+  pointer-events: auto;
+  color: var(--color-primary-strong);
 }
-.rx-today-challenge-arrow:disabled { opacity: 0.35; cursor: default; }
+.rx-today-challenge-arrow--previous { left: -22px; }
+.rx-today-challenge-arrow--next { right: -22px; }
+.rx-today-challenge-arrow-circle {
+  display: flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 68%);
+  box-shadow: 0 3px 9px rgb(0 44 104 / 9%);
+}
+.rx-today-challenge-arrow:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -6px; border-radius: 50%; }
+.rx-today-challenge-arrow:disabled { opacity: 0.32; cursor: default; pointer-events: none; }
 @keyframes rx-today-reveal { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .rx-today-challenge-item { animation: none; } }

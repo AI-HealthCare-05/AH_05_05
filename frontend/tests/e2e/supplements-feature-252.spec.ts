@@ -108,19 +108,19 @@ test('일괄 중단 부분 실패는 성공 행을 재시도하지 않고 실패
   await page.goto('/supplements');
   const list = page.getByRole('region', { name: '먹고 있는 영양제' });
   await expect(list.getByRole('button', { name: /성공한 영양제/ })).toBeVisible();
-  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await page.getByRole('button', { name: '선택', exact: true }).click();
   await page.getByRole('checkbox', { name: '성공한 영양제 선택' }).check();
   await page.getByRole('checkbox', { name: '실패한 영양제 선택' }).check();
-  await page.getByRole('button', { name: '선택한 2개 삭제' }).click();
+  await page.getByRole('button', { name: '삭제 2개' }).click();
 
   await page.getByRole('button', { name: '확인' }).click();
   await expect(list.getByText('성공한 영양제', { exact: true })).toHaveCount(0);
   await expect(list.getByText('실패한 영양제', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '선택한 1개 삭제' })).toBeVisible();
-  await page.getByRole('button', { name: '선택한 1개 삭제' }).click();
+  await expect(page.getByRole('button', { name: '삭제 1개' })).toBeVisible();
+  await page.getByRole('button', { name: '삭제 1개' }).click();
 
   await expect.poll(() => deletedIds).toEqual([9201, 9202, 9202]);
-  await expect(page.getByRole('button', { name: '완료' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '취소' })).toHaveCount(0);
   await expect(page.getByText('실패한 영양제', { exact: true })).toHaveCount(0);
 });
 

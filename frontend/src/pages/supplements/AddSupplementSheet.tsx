@@ -261,7 +261,7 @@ export function AddSupplementSheet({
     <div className="flex shrink-0 items-start gap-2 rounded-card bg-primary-bg p-3 text-sm text-muted-foreground">
       <Info aria-hidden className="mt-0.5 size-5 shrink-0 text-primary-strong" />
       <p>
-        <strong className="font-bold text-foreground">{total}개가 찾아졌어요.</strong>{' '}
+        <strong className="font-bold text-foreground">{total}개를 찾았어요.</strong>{' '}
         {USE_MOCK
           ? '통 앞면의 브랜드를 함께 넣으면 빨리 찾아요 — 예: 센트룸 종합비타민'
           : '제품명 일부를 더 입력하면 결과를 좁힐 수 있어요.'}
