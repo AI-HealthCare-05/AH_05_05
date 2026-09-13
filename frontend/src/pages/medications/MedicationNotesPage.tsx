@@ -66,7 +66,7 @@ function episodeMedicationSummary(episode: MedicationNoteEpisode): string {
 }
 
 function medicineLabel(note: MedicationNote): string {
-  if (note.medicationId === null) return '처방 전체';
+  if (note.medicationId === null) return '';
   return note.medication?.name ?? '삭제된 약';
 }
 
@@ -485,7 +485,7 @@ export function MedicationNotesPage() {
                 ) : notes.map((note) => selectionMode ? (
                   <div key={note.id} className="flex min-h-28 w-full items-start gap-3 rounded-card bg-muted-bg p-4">
                     <SelectionCheckbox
-                      aria-label={`${medicineLabel(note)} ${note.body} 선택`}
+                      aria-label={`${medicineLabel(note)} ${note.body} 선택`.trim()}
                       checked={selectedNoteIds.has(note.id)}
                       onCheckedChange={() => toggleSelected(note.id)}
                       disabled={deletePending}
@@ -493,14 +493,14 @@ export function MedicationNotesPage() {
                     />
                     <button
                       type="button"
-                      aria-label={`${medicineLabel(note)} ${note.body} 선택 전환`}
+                      aria-label={`${medicineLabel(note)} ${note.body} 선택 전환`.trim()}
                       onClick={() => toggleSelected(note.id)}
                       disabled={deletePending}
                       className="flex min-w-0 flex-1 flex-col gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <span className="flex w-full flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
-                        <span>{medicineLabel(note)}</span>
-                        <span className="tnum">{noteDateLabel(note.dosedAt)}</span>
+                        {note.medicationId !== null && <span>{medicineLabel(note)}</span>}
+                        <span className="ml-auto tnum">{noteDateLabel(note.dosedAt)}</span>
                       </span>
                       <span className="whitespace-pre-wrap [overflow-wrap:anywhere] text-base text-foreground">{note.body}</span>
                     </button>
@@ -509,13 +509,13 @@ export function MedicationNotesPage() {
                   <button
                     key={note.id}
                     type="button"
-                    aria-label={`${medicineLabel(note)} ${note.body}`}
+                    aria-label={`${medicineLabel(note)} ${note.body}`.trim()}
                     onClick={() => navigate(`/medications/notes/${note.id}`, { state: formEntry(id) })}
                     className="flex min-h-28 w-full flex-col gap-2 rounded-card bg-muted-bg p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <span className="flex w-full flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
-                      <span>{medicineLabel(note)}</span>
-                      <span className="tnum">{noteDateLabel(note.dosedAt)}</span>
+                      {note.medicationId !== null && <span>{medicineLabel(note)}</span>}
+                      <span className="ml-auto tnum">{noteDateLabel(note.dosedAt)}</span>
                     </span>
                     <span className="whitespace-pre-wrap [overflow-wrap:anywhere] text-base text-foreground">{note.body}</span>
                   </button>

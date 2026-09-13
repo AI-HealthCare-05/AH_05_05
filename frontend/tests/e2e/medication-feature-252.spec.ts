@@ -640,7 +640,7 @@ test('복약 메모 저장·삭제 중 중복 클릭을 하나의 요청으로 �
   await expect(page.getByText('건강상태 기록 1개', { exact: true })).toBeVisible();
   await expect(page.getByText('중복 저장 방지 메모', { exact: true })).toHaveCount(1);
 
-  await page.getByRole('button', { name: /처방 전체 중복 저장 방지 메모/ }).click();
+  await page.getByRole('button', { name: '중복 저장 방지 메모', exact: true }).click();
   const deleteButton = page.getByRole('button', { name: '메모 삭제', exact: true });
   await deleteButton.click();
   const confirmDeleteButton = page.getByRole('dialog').getByRole('button', { name: /^삭제/ });

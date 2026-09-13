@@ -129,6 +129,8 @@ test('작성 목록은 현재 복용 기간만 열고 지난·삭제 처방의 �
   await expect(page.getByRole('button', { name: '선택', exact: true })).toHaveCount(1);
   await page.getByRole('button', { name: /지난 처방.*펼치기/ }).click();
   await expect(page.getByText('보존된 건강상태 6001')).toBeVisible();
+  await expect(page.getByText('처방 전체', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('9월 1일 08:00', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '이 처방에 새 메모' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /삭제한 처방.*펼치기/ })).toBeVisible();
 });
@@ -201,6 +203,7 @@ test('선택 모드는 처방을 바꾸어도 유지하고 여러 처방의 메�
   await page.getByRole('tab', { name: '작성한 메모' }).click();
   await page.getByRole('button', { name: /지난 처방.*펼치기/ }).click();
   await page.getByRole('banner').getByRole('button', { name: '선택', exact: true }).click();
+  await expect(page.getByText('처방 전체', { exact: true })).toHaveCount(0);
   await page.getByRole('checkbox', { name: /보존된 건강상태 6001 선택/ }).check();
   await page.getByRole('button', { name: /삭제한 처방.*펼치기/ }).click();
   await expect(page.getByRole('banner').getByRole('button', { name: '삭제 1개', exact: true })).toBeVisible();

@@ -115,7 +115,7 @@ for (const width of [320, 390]) {
     await expectVerticalOrder(withNotesHeader, '2026년 9월 9일', '작성한메모처방약');
     await withNotesHeader.click();
     await expect(page.getByRole('button', { name: /작성한 메모 처방.*접기/ })).toHaveAttribute('aria-expanded', 'true');
-    await page.getByRole('button', { name: '처방 전체 레이아웃 이후에도 열리는 메모' }).click();
+    await page.getByRole('button', { name: '레이아웃 이후에도 열리는 메모', exact: true }).click();
     await expect(page).toHaveURL(`/medications/notes/${note.id}`);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 
