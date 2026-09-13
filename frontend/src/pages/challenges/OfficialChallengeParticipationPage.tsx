@@ -155,20 +155,26 @@ export function OfficialChallengeParticipationPage() {
 
   if (notFound) {
     return (
-      <main className="flex flex-col gap-4 px-page-x py-5">
-        <h1 className="text-xl font-bold">참여 기록을 찾을 수 없어요</h1>
-        <Button variant="secondary" onClick={() => navigate('/challenges')}>챌린지로 돌아가기</Button>
-      </main>
+      <>
+        <Header title="챌린지" onBack={() => navigate('/challenges')} />
+        <main className="flex flex-col gap-4 px-page-x py-5">
+          <h1 className="text-xl font-bold">참여 기록을 찾을 수 없어요</h1>
+          <Button variant="secondary" onClick={() => navigate('/challenges')}>챌린지로 돌아가기</Button>
+        </main>
+      </>
     );
   }
 
   if (loadError) {
     return (
-      <main className="flex flex-col gap-4 px-page-x py-5">
-        <h1 className="text-xl font-bold">참여 기록을 불러오지 못했어요</h1>
-        <p role="alert" className="text-sm text-muted-foreground">{loadError}</p>
-        <Button variant="secondary" onClick={() => setReloadKey(key => key + 1)}>다시 불러오기</Button>
-      </main>
+      <>
+        <Header title="챌린지" onBack={() => navigate('/challenges')} />
+        <main className="flex flex-col gap-4 px-page-x py-5">
+          <h1 className="text-xl font-bold">참여 기록을 불러오지 못했어요</h1>
+          <p role="alert" className="text-sm text-muted-foreground">{loadError}</p>
+          <Button variant="secondary" onClick={() => setReloadKey(key => key + 1)}>다시 불러오기</Button>
+        </main>
+      </>
     );
   }
 

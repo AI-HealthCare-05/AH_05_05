@@ -323,7 +323,7 @@ export function SupplementsPage({
                   </h2>
                 )}
                 {supplements.length > 0 && (
-                  <div className="ml-auto flex shrink-0 items-center gap-1">
+                  <div className="ml-auto flex flex-wrap items-center gap-2">
                     {!listEditOpen && (
                       <Button
                         fullWidth={false}
@@ -334,13 +334,13 @@ export function SupplementsPage({
                         영양제 추가
                       </Button>
                     )}
-                    <button
-                      type="button"
-                      className="flex min-h-touch min-w-touch items-center justify-center rounded-button px-1 text-sm font-bold text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    <Button
+                      fullWidth={false}
+                      variant="secondary"
                       onClick={toggleListEdit}
                     >
                       {listEditOpen ? '완료' : '삭제'}
-                    </button>
+                    </Button>
                   </div>
                 )}
               </div>

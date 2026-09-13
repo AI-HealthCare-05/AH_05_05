@@ -422,13 +422,13 @@ export function MedicationsPage({
             삭제
           </Button>
         ) : (
-          <button
-            type="button"
-            className="min-h-touch px-2 text-sm font-bold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          <Button
+            fullWidth={false}
+            variant="secondary"
             onClick={() => setSelectionMode(true)}
           >
             선택
-          </button>
+          </Button>
         )}
       </div>
     );
