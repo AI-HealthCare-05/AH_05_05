@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import pytest
+from pydantic import SecretStr
+
 from ai_worker.core.config import Config
 from ai_worker.schemas.knowledge import KnowledgeVectorDistance
 from scripts import evaluate_medication_search_baseline as module
@@ -92,6 +95,25 @@ def test_evaluation_vector_store_uses_runtime_dot_distance() -> None:
     )
 
     assert vector_store._distance == KnowledgeVectorDistance.DOT
+
+
+def test_evaluation_embedding_provider_omits_legacy_normalization_option(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    received: dict[str, object] = {}
+
+    class FakeEmbeddingProvider:
+        def __init__(self, **kwargs: object) -> None:
+            received.update(kwargs)
+
+    monkeypatch.setattr(module, "OpenAIEmbeddingProvider", FakeEmbeddingProvider)
+
+    module.build_evaluation_embedding_provider(
+        settings=Config(_env_file=None),
+        api_key=SecretStr("test-key"),
+    )
+
+    assert "normalize_vectors" not in received
 
 
 def test_evaluation_expression_catalog_uses_runtime_qdrant_release() -> None:

@@ -428,7 +428,6 @@ def build_indexer(
         api_key=require_api_key(settings),
         timeout_seconds=settings.OPENAI_TIMEOUT_SECONDS,
         max_retries=settings.OPENAI_MAX_RETRIES,
-        normalize_vectors=(args.distance == KnowledgeVectorDistance.DOT),
     )
     vector_store = QdrantKnowledgeStore(
         client=qdrant_client,
