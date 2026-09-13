@@ -376,7 +376,7 @@ export function MedicationsPage({
     setDeletePending(false);
   }
 
-  const headerTitle = selectionMode ? '삭제할 처방을 선택하세요' : '복약';
+  const headerTitle = '복약';
   const periodLabel = medicationPeriodLabel(range, new Date());
   const activeOverviews = overviews?.filter((overview) => !overview.isFinished) ?? [];
   const finishedOverviews = overviews?.filter((overview) => overview.isFinished) ?? [];

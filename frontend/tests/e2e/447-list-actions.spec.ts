@@ -125,7 +125,7 @@ for (const width of [320, 390, 1280]) {
     if (width <= 390) await capture(page, `task-3-medications-normal-${width}.png`);
 
     await select.click();
-    await expect(page.getByRole('heading', { name: '삭제할 처방을 선택하세요', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '복약', exact: true })).toBeVisible();
     const remove = page.getByRole('button', { name: '삭제', exact: true });
     await expect(remove).toBeDisabled();
     await expect(remove).toHaveAttribute('data-variant', 'danger');
