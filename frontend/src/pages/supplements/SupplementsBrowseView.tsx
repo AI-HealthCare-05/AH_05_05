@@ -11,6 +11,7 @@ import {
 } from '@/entities/supplement';
 import { SupplementRankingCard } from '@/pages/home/SupplementRankingCard';
 import { Button, Card, StatusBadge } from '@/shared/ui';
+import { ContinuousTabs } from '@/shared/ui/ContinuousTabs';
 
 const SORT_OPTIONS: { key: SupplementSortKey; label: string }[] = [
   { key: 'name', label: '이름순' },
@@ -233,53 +234,33 @@ export function SupplementsBrowseView({
 
       {results && results.items.length > 0 ? (
         <div className="flex flex-col gap-2">
-          <div className="grid grid-cols-4 gap-2" role="group" aria-label="검색 결과 정렬">
-            {SORT_OPTIONS.map((option) => {
-              const selected = sort === option.key;
-              return (
-                <button
-                  key={option.key}
-                  type="button"
-                  aria-pressed={selected}
-                  className={`min-h-touch rounded-pill px-2 text-sm font-bold ${
-                    selected ? 'bg-primary text-card' : 'bg-muted-bg text-muted-foreground'
-                  }`}
-                  onClick={() => {
-                    if (selected) return;
-                    const nextDirection = DEFAULT_SORT_DIRECTIONS[option.key];
-                    invalidateSearchRequests(searchRequestKey(query, option.key, nextDirection));
-                    setSort(option.key);
-                    setDirection(nextDirection);
-                  }}
-                >
-                  {option.label}
-                  {selected ? (direction === 'asc' ? ' ▲' : ' ▼') : null}
-                </button>
-              );
-            })}
-          </div>
-          <div className="grid grid-cols-2 gap-2" role="group" aria-label="정렬 방향">
-            {DIRECTION_OPTIONS.map((option) => {
-              const selected = direction === option.key;
-              return (
-                <button
-                  key={option.key}
-                  type="button"
-                  aria-pressed={selected}
-                  className={`min-h-touch rounded-pill px-3 text-sm font-bold ${
-                    selected ? 'bg-primary text-card' : 'bg-muted-bg text-muted-foreground'
-                  }`}
-                  onClick={() => {
-                    if (selected) return;
-                    invalidateSearchRequests(searchRequestKey(query, sort, option.key));
-                    setDirection(option.key);
-                  }}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
+          <ContinuousTabs
+            role="group"
+            label="검색 결과 정렬"
+            value={sort}
+            items={SORT_OPTIONS.map((option) => ({
+              value: option.key,
+              label: `${option.label}${sort === option.key ? (direction === 'asc' ? ' ▲' : ' ▼') : ''}`,
+            }))}
+            onChange={(nextSort) => {
+              if (sort === nextSort) return;
+              const nextDirection = DEFAULT_SORT_DIRECTIONS[nextSort];
+              invalidateSearchRequests(searchRequestKey(query, nextSort, nextDirection));
+              setSort(nextSort);
+              setDirection(nextDirection);
+            }}
+          />
+          <ContinuousTabs
+            role="group"
+            label="정렬 방향"
+            value={direction}
+            items={DIRECTION_OPTIONS.map((option) => ({ value: option.key, label: option.label }))}
+            onChange={(nextDirection) => {
+              if (direction === nextDirection) return;
+              invalidateSearchRequests(searchRequestKey(query, sort, nextDirection));
+              setDirection(nextDirection);
+            }}
+          />
         </div>
       ) : null}
 
