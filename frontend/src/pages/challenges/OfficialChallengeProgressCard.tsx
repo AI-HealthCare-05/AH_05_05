@@ -62,7 +62,7 @@ export function OfficialChallengeProgressCard({
         <>
           <div className="flex items-center justify-between gap-2 text-caption text-muted-foreground">
             <span>{koreanChallengeDate(participation.started_at)} ~ {koreanChallengeDate(inclusiveChallengeEndDate(participation.end_at))}</span>
-            <span className="font-bold text-primary">{rate}% 달성</span>
+            <span className="shrink-0 whitespace-nowrap font-bold text-primary">{rate}% 달성</span>
           </div>
           <div role="progressbar" aria-label={`${participation.challenge_name} 진행률`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={rate} className="h-2 overflow-hidden rounded-pill bg-border">
             <div className="h-full rounded-pill bg-primary transition-[width] motion-reduce:transition-none" style={{ width: `${rate}%` }} />

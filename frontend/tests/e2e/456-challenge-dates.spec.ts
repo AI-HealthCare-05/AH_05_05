@@ -175,6 +175,11 @@ test('My and participation details use full dates without changing end-date poli
     expect(periodBox!.x).toBeGreaterThanOrEqual(cardBox!.x);
     expect(periodBox!.x + periodBox!.width).toBeLessThanOrEqual(rateBox!.x);
     expect(rateBox!.x + rateBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width);
+    const rateLines = await rate.evaluate(element => {
+      const style = getComputedStyle(element);
+      return element.getBoundingClientRect().height / Number.parseFloat(style.lineHeight);
+    });
+    expect(rateLines).toBeLessThanOrEqual(1.05);
     const screenshotDirectory = process.env.UI456_SCREENSHOT_DIR;
     if (screenshotDirectory) {
       mkdirSync(screenshotDirectory, { recursive: true });
