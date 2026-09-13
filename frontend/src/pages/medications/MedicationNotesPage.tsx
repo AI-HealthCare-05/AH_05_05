@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Plus } from 'lucide-react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
+import { toast } from 'sonner';
 import {
+  deleteMedicationNote,
   listMedicationNoteEpisodes,
   listMedicationNotes,
   type MedicationNote,
@@ -9,13 +11,22 @@ import {
   type MedicationNotePage,
 } from '@/entities/medication-note';
 import { useSession } from '@/app/SessionContext';
+import { getAuthGeneration } from '@/shared/api/client';
 import { formatDateLabel } from '@/shared/lib/dateLabel';
 import { navigateBackOrReplace, trustedBackTarget } from '@/shared/lib/navigation';
 import {
   BottomTabbar,
   Button,
   Card,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   Header,
+  SelectionActions,
+  SelectionCheckbox,
   Tabs,
   TabsContent,
   TabsList,
@@ -80,9 +91,17 @@ export function MedicationNotesPage() {
   const [noteEpisodesError, setNoteEpisodesError] = useState<string | null>(null);
   const [metadataRetryKey, setMetadataRetryKey] = useState(0);
   const [episodePages, setEpisodePages] = useState<Record<number, EpisodePageState>>({});
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedNoteIds, setSelectedNoteIds] = useState<Set<number>>(new Set());
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletePending, setDeletePending] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteTargets, setDeleteTargets] = useState<number[]>([]);
   const metadataGenerationRef = useRef(0);
   const appliedUrlSelectionRef = useRef<string | null>(null);
   const episodeRequestGenerationRef = useRef(new Map<number, number>());
+  const deleteGenerationRef = useRef(0);
+  const deletePendingRef = useRef(false);
   const principalKeyRef = useRef(principalKey);
   principalKeyRef.current = principalKey;
 
@@ -100,6 +119,14 @@ export function MedicationNotesPage() {
     setNoteEpisodes(null);
     setNoteEpisodesError(null);
     setEpisodePages({});
+    setSelectionMode(false);
+    setSelectedNoteIds(new Set());
+    setDeleteOpen(false);
+    setDeletePending(false);
+    setDeleteError(null);
+    setDeleteTargets([]);
+    deletePendingRef.current = false;
+    deleteGenerationRef.current += 1;
     appliedUrlSelectionRef.current = null;
     episodeRequestGenerationRef.current.clear();
 
@@ -117,6 +144,8 @@ export function MedicationNotesPage() {
     return () => {
       if (metadataGenerationRef.current === generation) metadataGenerationRef.current += 1;
       episodeRequestGenerationRef.current.clear();
+      deleteGenerationRef.current += 1;
+      deletePendingRef.current = false;
     };
   }, [metadataRetryKey, principalKey]);
 
@@ -190,7 +219,8 @@ export function MedicationNotesPage() {
     [noteEpisodes],
   );
   const episodesWithoutNotes = useMemo(
-    () => noteEpisodes?.filter((episode) => !episodesWithNotesIds.has(episode.careEpisodeId)) ?? [],
+    () => noteEpisodes?.filter((episode) =>
+      !episodesWithNotesIds.has(episode.careEpisodeId) && episode.canCreateNote !== false) ?? [],
     [noteEpisodes, episodesWithNotesIds],
   );
   const episodesWithNotes = useMemo(
@@ -218,8 +248,128 @@ export function MedicationNotesPage() {
     const next = value as NotesTab;
     setTab(next);
     setExpandedEpisodeId(null);
+    if (selectionMode) leaveSelectionMode();
     if (next === 'withoutNotes' && episodeIdParam !== null) {
       setSearchParams({}, { replace: true, state: location.state });
+    }
+  }
+
+  function leaveSelectionMode() {
+    if (deletePendingRef.current) return;
+    setSelectionMode(false);
+    setSelectedNoteIds(new Set());
+    setDeleteOpen(false);
+    setDeleteError(null);
+    setDeleteTargets([]);
+  }
+
+  function toggleSelected(noteId: number) {
+    if (deletePendingRef.current) return;
+    setSelectedNoteIds((current) => {
+      const next = new Set(current);
+      if (next.has(noteId)) next.delete(noteId);
+      else next.add(noteId);
+      return next;
+    });
+  }
+
+  function openDeleteConfirmation() {
+    const loadedIds = new Set(
+      Object.values(episodePages).flatMap((state) => state.page?.items.map((note) => note.id) ?? []),
+    );
+    const targets = [...selectedNoteIds].filter((noteId) => loadedIds.has(noteId));
+    if (targets.length === 0) return;
+    setDeleteTargets(targets);
+    setDeleteError(null);
+    setDeleteOpen(true);
+  }
+
+  async function deleteSelectedNotes(noteIds: number[]) {
+    if (deletePendingRef.current || noteIds.length === 0) return;
+    const generation = deleteGenerationRef.current + 1;
+    deleteGenerationRef.current = generation;
+    const mutationPrincipal = principalKey;
+    const authGeneration = getAuthGeneration();
+    const mutationIsCurrent = () =>
+      deleteGenerationRef.current === generation &&
+      principalKeyRef.current === mutationPrincipal &&
+      getAuthGeneration() === authGeneration;
+    const episodeByNoteId = new Map<number, number>();
+    for (const [episodeId, state] of Object.entries(episodePages)) {
+      for (const note of state.page?.items ?? []) episodeByNoteId.set(note.id, Number(episodeId));
+    }
+    deletePendingRef.current = true;
+    setDeletePending(true);
+    setDeleteError(null);
+    const succeeded: number[] = [];
+    const failed: number[] = [];
+
+    try {
+      for (const noteId of noteIds) {
+        if (!mutationIsCurrent()) return;
+        try {
+          await deleteMedicationNote(noteId);
+          if (!mutationIsCurrent()) return;
+          succeeded.push(noteId);
+        } catch {
+          if (!mutationIsCurrent()) return;
+          failed.push(noteId);
+        }
+      }
+      if (!mutationIsCurrent()) return;
+
+      if (succeeded.length > 0) {
+        const succeededIds = new Set(succeeded);
+        const succeededByEpisode = new Map<number, number>();
+        for (const noteId of succeeded) {
+          const episodeId = episodeByNoteId.get(noteId);
+          if (episodeId !== undefined) {
+            succeededByEpisode.set(episodeId, (succeededByEpisode.get(episodeId) ?? 0) + 1);
+          }
+        }
+        setEpisodePages((current) => Object.fromEntries(
+          Object.entries(current).map(([episodeId, state]) => {
+            const removedCount = succeededByEpisode.get(Number(episodeId)) ?? 0;
+            return [episodeId, state.page ? {
+              ...state,
+              page: {
+                ...state.page,
+                items: state.page.items.filter((note) => !succeededIds.has(note.id)),
+                total: Math.max(0, state.page.total - removedCount),
+              },
+            } : state];
+          }),
+        ));
+        setNoteEpisodes((current) => current?.map((episode) => ({
+          ...episode,
+          noteCount: Math.max(
+            0,
+            (episode.noteCount ?? 0) - (succeededByEpisode.get(episode.careEpisodeId) ?? 0),
+          ),
+        })) ?? null);
+      }
+
+      if (failed.length === 0) {
+        setDeleteOpen(false);
+        setSelectionMode(false);
+        setSelectedNoteIds(new Set());
+        setDeleteTargets([]);
+        toast.success(`${succeeded.length}개를 삭제했어요`);
+      } else if (succeeded.length > 0) {
+        setDeleteOpen(false);
+        setSelectedNoteIds(new Set(failed));
+        setDeleteTargets(failed);
+        toast.warning(`${succeeded.length}개를 삭제했어요. ${failed.length}개는 실패했어요`);
+      } else {
+        setSelectedNoteIds(new Set(failed));
+        setDeleteTargets(failed);
+        setDeleteError('선택한 복약 메모를 삭제하지 못했어요. 다시 시도해주세요.');
+      }
+    } finally {
+      if (mutationIsCurrent()) {
+        deletePendingRef.current = false;
+        setDeletePending(false);
+      }
     }
   }
 
@@ -325,7 +475,30 @@ export function MedicationNotesPage() {
                 </h3>
                 {notes.length === 0 ? (
                   <Card className="p-4">이 처방의 건강상태 기록이 아직 없어요.</Card>
-                ) : notes.map((note) => (
+                ) : notes.map((note) => selectionMode ? (
+                  <div key={note.id} className="flex min-h-28 w-full items-start gap-3 rounded-card bg-muted-bg p-4">
+                    <SelectionCheckbox
+                      aria-label={`${medicineLabel(note)} ${note.body} 선택`}
+                      checked={selectedNoteIds.has(note.id)}
+                      onCheckedChange={() => toggleSelected(note.id)}
+                      disabled={deletePending}
+                      className="mt-0.5 shrink-0"
+                    />
+                    <button
+                      type="button"
+                      aria-label={`${medicineLabel(note)} ${note.body} 선택 전환`}
+                      onClick={() => toggleSelected(note.id)}
+                      disabled={deletePending}
+                      className="flex min-w-0 flex-1 flex-col gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <span className="flex w-full flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+                        <span>{medicineLabel(note)}</span>
+                        <span className="tnum">{noteDateLabel(note.dosedAt)}</span>
+                      </span>
+                      <span className="whitespace-pre-wrap [overflow-wrap:anywhere] text-base text-foreground">{note.body}</span>
+                    </button>
+                  </div>
+                ) : (
                   <button
                     key={note.id}
                     type="button"
@@ -351,7 +524,9 @@ export function MedicationNotesPage() {
                     {state.loadingMore ? '불러오는 중...' : '더 보기'}
                   </Button>
                 )}
-                <Button variant="secondary" onClick={() => openNewNote(id)}>이 처방에 새 메모</Button>
+                {!selectionMode && episode.canCreateNote !== false && (
+                  <Button variant="secondary" onClick={() => openNewNote(id)}>이 처방에 새 메모</Button>
+                )}
               </>
             )}
           </div>
@@ -365,7 +540,7 @@ export function MedicationNotesPage() {
       <Header
         title="복약 메모"
         onBack={returnToMedications}
-        right={(
+        right={!selectionMode ? (
           <button
             type="button"
             aria-label="새 메모 작성"
@@ -375,7 +550,7 @@ export function MedicationNotesPage() {
             <Plus aria-hidden className="size-4" />
             새 메모
           </button>
-        )}
+        ) : undefined}
       />
       <main className="flex flex-1 flex-col gap-4 overflow-y-auto px-page-x py-5">
         <p className="text-sm text-muted-foreground">
@@ -429,7 +604,19 @@ export function MedicationNotesPage() {
             ) : episodesWithNotes.length === 0 ? (
               <Card className="p-5">작성한 건강상태 기록이 아직 없어요.</Card>
             ) : (
-              <div className="flex flex-col gap-3">{episodesWithNotes.map(renderWithNotesEpisode)}</div>
+              <div className="flex flex-col gap-3">
+                <SelectionActions
+                  selectionMode={selectionMode}
+                  selectedCount={selectedNoteIds.size}
+                  onStart={() => setSelectionMode(true)}
+                  onCancel={leaveSelectionMode}
+                  onDelete={openDeleteConfirmation}
+                  deletePending={deletePending}
+                  aria-label="복약 메모 선택"
+                  className="ml-auto"
+                />
+                {episodesWithNotes.map(renderWithNotesEpisode)}
+              </div>
             )}
           </TabsContent>
         </Tabs>
@@ -439,6 +626,34 @@ export function MedicationNotesPage() {
         onChange={(key) => key === 'medication' ? returnToMedications() : navigate(TAB_ROUTES[key])}
         className="border-t border-border"
       />
+      <Dialog
+        open={deleteOpen}
+        onOpenChange={(open) => {
+          if (deletePending) return;
+          setDeleteOpen(open);
+          if (!open) setDeleteError(null);
+        }}
+      >
+        <DialogContent variant="sheet">
+          <DialogHeader>
+            <DialogTitle>선택한 복약 메모를 삭제할까요?</DialogTitle>
+            <DialogDescription>{deleteTargets.length}개의 메모가 삭제되며 다시 볼 수 없어요.</DialogDescription>
+          </DialogHeader>
+          {deleteError && <p role="alert" className="text-sm text-danger-strong">{deleteError}</p>}
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setDeleteOpen(false)} disabled={deletePending}>
+              취소
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => void deleteSelectedNotes(deleteTargets)}
+              disabled={deletePending}
+            >
+              {deletePending ? '삭제 중...' : deleteError ? '다시 시도' : '삭제하기'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

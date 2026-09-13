@@ -195,26 +195,21 @@ export function MedicationNoteFormPage() {
         }
         const overviewEpisodes = overviewResult.status === 'fulfilled'
           ? overviewResult.value
-              .filter((overview) => overview.medications.length > 0)
+              .filter((overview) => overview.medications.length > 0 && !overview.isFinished)
               .map(episodeFromOverview)
           : [];
         const inventoryEpisodes = inventoryResult.status === 'fulfilled'
           ? inventoryResult.value
-              .filter((episode) => (episode.medications?.length ?? 0) > 0)
+              .filter((episode) => episode.canCreateNote !== false && (episode.medications?.length ?? 0) > 0)
               .map(episodeFromInventory)
           : [];
         const overviewById = new Map(overviewEpisodes.map((episode) => [episode.id, episode]));
-        const availableEpisodes = [
-          ...inventoryEpisodes.map((episode) => {
+        const availableEpisodes = inventoryEpisodes.map((episode) => {
             const overview = overviewById.get(episode.id);
             return overview
               ? { ...overview, firstDoseAt: overview.firstDoseAt ?? episode.firstDoseAt }
               : episode;
-          }),
-          ...overviewEpisodes.filter(
-            (episode) => !inventoryEpisodes.some((inventory) => inventory.id === episode.id),
-          ),
-        ];
+          });
         const inventoryFailure = !loadedNote && inventoryResult.status === 'rejected'
           ? inventoryResult.reason instanceof Error
             ? inventoryResult.reason.message
@@ -222,6 +217,13 @@ export function MedicationNoteFormPage() {
           : null;
         if (!loadedNote && initialEpisodeId !== undefined &&
           !availableEpisodes.some((episode) => episode.id === initialEpisodeId)) {
+          const inventoryEpisode = inventoryResult.status === 'fulfilled'
+            ? inventoryResult.value.find((episode) => episode.careEpisodeId === initialEpisodeId)
+            : undefined;
+          if (inventoryEpisode?.canCreateNote === false) {
+            setInitialLoadError('현재 복용 기간이 아닌 처방에는 새 메모를 작성할 수 없어요.');
+            return;
+          }
           try {
             const referenceNote = referenceNoteId === undefined
               ? (await listMedicationNotes({ episodeId: initialEpisodeId, limit: 1 })).items[0]
