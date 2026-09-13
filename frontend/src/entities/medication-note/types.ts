@@ -39,6 +39,8 @@ export interface MedicationNoteEpisode {
   medicationCount?: number;
   /** includeWithoutNotes=true일 때만 내려오는 사용자 소유 메모 수 */
   noteCount?: number;
+  /** 현재 복용 기간 안에서 새 메모를 작성할 수 있는 처방인지 여부 */
+  canCreateNote?: boolean;
   /** includeWithoutNotes=true일 때만 내려오는 작성 대상 약 목록 */
   medications?: MedicationNoteMedication[];
 }

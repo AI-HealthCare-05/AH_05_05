@@ -168,8 +168,6 @@ export function OfficialChallengeDetailPage() {
     <>
     <Header title={item.name} onBack={goBack} className="h-auto! min-h-header py-2 [&_button]:shrink-0 [&_h1]:overflow-visible [&_h1]:whitespace-normal [&_h1]:break-words [&_h1]:[overflow-wrap:anywhere]" />
     <main className="flex flex-col gap-4 px-page-x py-5">
-      <span className="self-start rounded-pill bg-primary-bg px-2 py-1 text-micro font-bold text-primary">공식</span>
-
       <section className="flex flex-col gap-2 rounded-card bg-primary-bg p-5" aria-labelledby="official-highlight-title">
         {item.reward_badge ? (
           <span className="flex size-14 overflow-hidden rounded-pill bg-card grayscale">
@@ -182,9 +180,9 @@ export function OfficialChallengeDetailPage() {
 
       <section className="flex flex-col gap-3 rounded-card bg-card p-5 shadow-card" aria-labelledby="participation-guide-title">
         <h2 id="participation-guide-title" className="text-base font-bold">참여 안내</h2>
-        <dl className="grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
           <dt className="text-muted-foreground">모집기간</dt>
-          <dd className="break-keep">{koreanChallengeDate(item.recruit_start_at)} ~ {koreanChallengeDate(item.recruit_end_at)}</dd>
+          <dd className="whitespace-nowrap tabular-nums">{koreanChallengeDate(item.recruit_start_at)} ~ {koreanChallengeDate(item.recruit_end_at)}</dd>
           <dt className="text-muted-foreground">수행 기간</dt>
           <dd>참여 당일부터 {item.duration_days}일</dd>
           <dt className="text-muted-foreground">목표</dt>

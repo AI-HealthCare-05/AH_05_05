@@ -642,9 +642,11 @@ class CustomChallengeService:
             .order_by("id")
         )
         for participation in participations:
+            targets_query = CustomChallengeTarget.filter(participation_id=participation.id)
+            if challenge_type is CustomChallengeType.SUPPLEMENT:
+                targets_query = targets_query.filter(supplement_registration_id__isnull=False)
             existing_ids = tuple(
-                await CustomChallengeTarget.filter(participation_id=participation.id)
-                .using_db(connection)
+                await targets_query.using_db(connection)
                 .order_by("source_id_snapshot")
                 .values_list("source_id_snapshot", flat=True)
             )
@@ -711,6 +713,8 @@ class CustomChallengeService:
                 target.source_id_snapshot,
             ): target.participation_id
             for target in targets
+            if target.participation.challenge_type is not CustomChallengeType.SUPPLEMENT
+            or target.supplement_registration_id is not None
         }
 
     async def _meal_times(self, user_id: int) -> dict[MealSlot, time]:
@@ -824,6 +828,10 @@ class CustomChallengeService:
                     id=target.id,
                     source_id=target.source_id_snapshot,
                     name=target.target_name_snapshot,
+                    is_excluded=(
+                        participation.challenge_type is CustomChallengeType.SUPPLEMENT
+                        and target.supplement_registration_id is None
+                    ),
                 )
                 for target in targets
             ],
@@ -869,10 +877,17 @@ class CustomChallengeService:
             for source_id, dose_date, slot in rows
             if source_id in source_to_target
         }
+        detached_supplement_targets = {
+            target.id
+            for target in targets
+            if participation.challenge_type is CustomChallengeType.SUPPLEMENT
+            and target.supplement_registration_id is None
+        }
         return {
             occurrence.id
             for occurrence in occurrences
             if (occurrence.target_id, occurrence.scheduled_date, _meal_slot(occurrence.slot)) in completed_keys
+            or (occurrence.target_id in detached_supplement_targets and occurrence.is_completed)
         }
 
     @staticmethod

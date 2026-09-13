@@ -132,7 +132,7 @@ test('occupied supplement is disabled while a distinct registration remains sele
   await expect(page.getByRole('link', { name: '영양제 챌린지 대상 선택' })).toContainText('참여 가능한 대상 1개');
   await page.goto('/challenges/tailored/supplement?templateId=41');
   await expect(page.getByRole('checkbox', { name: '참여 중 비타민 선택' })).toBeDisabled();
-  await expect(page.getByRole('link', { name: /이미 참여 중인 영양제 보기/ })).toHaveAttribute('href', '/challenges/custom-participations/701');
+  await expect(page.getByRole('link', { name: /이미 참여 중인 챌린지 보기/ })).toHaveAttribute('href', '/challenges/custom-participations/701');
   await page.getByRole('checkbox', { name: '새 영양제 선택' }).check();
   await expect(page.getByRole('button', { name: '선택한 영양제로 참여하기' })).toBeEnabled();
 });
@@ -310,7 +310,7 @@ test('browse labels each type and keeps full recruitment dates', async ({ page }
   await page.getByRole('button', { name: '맞춤 챌린지 펼치기', exact: true }).click();
   const officialEntry = page.getByRole('button', { name: '매일 걷기 자세히 보기' });
   await expect(officialEntry.getByText('공식', { exact: true })).toBeVisible();
-  await expect(officialEntry).toContainText('2026년 9월 1일 ~ 2026년 9월 30일');
+  await expect(officialEntry).toContainText('2026.09.01 ~ 2026.09.30');
   await expect(page.getByRole('button', { name: '영양제 챌린지 대상 선택' }).getByText('맞춤', { exact: true })).toBeVisible();
 });
 

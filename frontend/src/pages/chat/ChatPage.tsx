@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useChatSession } from '@/app/ChatSessionContext';
@@ -10,7 +10,6 @@ import {
   Card,
   ErrorDialog,
   Header,
-  Input,
   type TabKey,
 } from '@/shared/ui';
 import {
@@ -114,8 +113,37 @@ export function ChatPage({
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const composerIsComposingRef = useRef(false);
   const handledSessionRevisionRef = useRef(sessionRevision);
   const suppressNextSessionRefreshRef = useRef(false);
+
+  const resizeComposer = useCallback(() => {
+    const textarea = composerRef.current;
+    if (!textarea) return;
+
+    textarea.style.height = 'auto';
+    const style = window.getComputedStyle(textarea);
+    const lineHeight = Number.parseFloat(style.lineHeight);
+    const paddingHeight =
+      Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom);
+    const borderHeight =
+      Number.parseFloat(style.borderTopWidth) + Number.parseFloat(style.borderBottomWidth);
+    const maxHeight = lineHeight * 5 + paddingHeight + borderHeight;
+    const contentHeight = textarea.scrollHeight + borderHeight;
+
+    textarea.style.height = `${Math.min(contentHeight, maxHeight)}px`;
+    textarea.style.overflowY = contentHeight > maxHeight ? 'auto' : 'hidden';
+  }, []);
+
+  useLayoutEffect(() => {
+    resizeComposer();
+  }, [draft, resizeComposer]);
+
+  useEffect(() => {
+    window.addEventListener('resize', resizeComposer);
+    return () => window.removeEventListener('resize', resizeComposer);
+  }, [resizeComposer]);
 
   useEffect(() => {
     let cancelled = false;
@@ -566,27 +594,41 @@ export function ChatPage({
       {/* 입력 영역 — BottomTabbar 위에 붙습니다. */}
       <div className="chat-composer shrink-0 border-t border-border bg-card px-page-x py-3">
         <div className="flex items-start gap-2">
-        <Input
-          aria-label="질문 입력"
-          value={draft}
-          disabled={composerDisabled}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
+          <textarea
+            ref={composerRef}
+            aria-label="질문 입력"
+            rows={1}
+            value={draft}
+            disabled={composerDisabled}
+            onChange={(event) => setDraft(event.target.value)}
+            onCompositionStart={() => {
+              composerIsComposingRef.current = true;
+            }}
+            onCompositionEnd={() => {
+              composerIsComposingRef.current = false;
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' || event.shiftKey) return;
+              if (
+                composerIsComposingRef.current
+                || event.nativeEvent.isComposing
+                || event.nativeEvent.keyCode === 229
+              ) return;
+
+              event.preventDefault();
               handleSend();
-            }
-          }}
-          placeholder={composerDisabled ? '답변을 기다리는 중이에요' : '궁금한 것을 입력하세요'}
-        />
-        <Button
-          fullWidth={false}
-          className="shrink-0 px-5"
-          disabled={composerDisabled || draft.trim().length === 0}
-          onClick={handleSend}
-        >
-          보내기
-        </Button>
+            }}
+            placeholder={composerDisabled ? '답변을 기다리는 중이에요' : '궁금한 것을 입력하세요'}
+            className="rx-input h-control min-h-control min-w-0 flex-1 resize-none break-words rounded-input border border-input bg-card px-3.5 py-3 text-[length:var(--text-control)] text-foreground placeholder:text-tertiary-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted-bg disabled:text-disabled-foreground"
+          />
+          <Button
+            fullWidth={false}
+            className="shrink-0 px-5"
+            disabled={composerDisabled || draft.trim().length === 0}
+            onClick={handleSend}
+          >
+            보내기
+          </Button>
         </div>
       </div>
 

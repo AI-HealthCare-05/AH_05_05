@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { expect, test, type Page, type Route } from 'playwright/test';
 
 import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
@@ -8,6 +9,9 @@ const OCR_URL = `/api/v1/ocr/jobs/${DOCUMENT_ID}`;
 const ONE_PIXEL_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL8+QAAAABJRU5ErkJggg==',
   'base64',
+);
+const MEDICATION_CAPTURE_GUIDE_PNG = readFileSync(
+  new URL('../../public/images/medication-capture-guide.png', import.meta.url),
 );
 
 test.beforeEach(() => {
@@ -1280,20 +1284,84 @@ test('복약안내문 촬영 안내와 입력은 JPG/PNG 한 장만 받는다', 
   await expect(gallery).not.toHaveAttribute('multiple');
 });
 
-test('선택한 약봉투 사진을 누르면 전체 화면 원본을 열고 닫을 수 있다', async ({ page }) => {
-  await authenticate(page);
-  await page.goto('/document-upload');
-  await selectGalleryPng(page);
+for (const width of [320, 390]) {
+  test(`선택한 약봉투 원본을 100~300%로 확대하고 이동한 뒤 다시 열면 초기화한다 (${width}px)`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 844 });
+    await authenticate(page);
+    await page.goto('/document-upload');
+    await page.getByLabel('갤러리에서 약봉투 선택').setInputFiles({
+      name: 'medication-capture-guide.png',
+      mimeType: 'image/png',
+      buffer: MEDICATION_CAPTURE_GUIDE_PNG,
+    });
 
-  await page.getByRole('button', { name: '선택한 약봉투 크게 보기' }).click();
+    const trigger = page.getByRole('button', { name: '선택한 약봉투 크게 보기' });
+    const selectedPreview = page.getByRole('img', { name: '선택한 약봉투 미리보기' });
+    const selectedSrc = await selectedPreview.getAttribute('src');
+    expect(selectedSrc).toMatch(/^blob:/);
+    await trigger.click();
 
-  const viewer = page.getByRole('dialog');
-  await expect(viewer).toBeVisible();
-  await expect(viewer.getByRole('img', { name: '확대한 약봉투 원본' })).toBeVisible();
+    const viewer = page.getByRole('dialog', { name: '선택한 약봉투 크게 보기' });
+    const image = viewer.getByRole('img', { name: '확대한 약봉투 원본' });
+    const scrollArea = viewer.getByRole('region', { name: '확대한 약봉투 이동 영역' });
+    const zoomIn = viewer.getByRole('button', { name: '확대', exact: true });
+    const zoomOut = viewer.getByRole('button', { name: '축소', exact: true });
+    const zoomStatus = viewer.getByRole('status', { name: '확대 비율' });
+    const close = viewer.getByRole('button', { name: '닫기', exact: true });
+    await expect(image).toBeVisible();
+    await expect(image).toHaveAttribute('src', selectedSrc ?? '');
+    await expect(zoomStatus).toHaveText('100%');
+    await expect(zoomOut).toBeDisabled();
+    const baselineBox = await image.boundingBox();
+    expect(baselineBox).not.toBeNull();
 
-  await page.keyboard.press('Escape');
-  await expect(viewer).toHaveCount(0);
-});
+    await zoomIn.click();
+    await expect(zoomStatus).toHaveText('150%');
+    await zoomIn.click();
+    await expect(zoomStatus).toHaveText('200%');
+    await zoomIn.click();
+    await expect(zoomStatus).toHaveText('300%');
+    await expect(zoomIn).toBeDisabled();
+    const zoomedBox = await image.boundingBox();
+    expect(zoomedBox).not.toBeNull();
+    expect(zoomedBox!.width / baselineBox!.width).toBeGreaterThanOrEqual(2.99);
+    expect(zoomedBox!.width / baselineBox!.width).toBeLessThanOrEqual(3.01);
+
+    await scrollArea.evaluate((element) => element.scrollTo({
+      left: element.scrollWidth,
+      top: element.scrollHeight,
+    }));
+    await expect.poll(() => scrollArea.evaluate((element) => ({
+      atRight: Math.abs(element.scrollLeft - (element.scrollWidth - element.clientWidth)) <= 1,
+      atBottom: Math.abs(element.scrollTop - (element.scrollHeight - element.clientHeight)) <= 1,
+    }))).toEqual({ atRight: true, atBottom: true });
+
+    for (const control of [zoomOut, zoomIn, close]) {
+      const box = await control.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.width).toBeGreaterThanOrEqual(44);
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+    }
+    expect(await viewer.evaluate((element) => element.scrollWidth <= innerWidth)).toBe(true);
+    await image.click();
+    await expect(viewer).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`document-upload-preview-zoom-${width}.png`) });
+
+    await close.click();
+    await expect(viewer).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await trigger.click();
+    await expect(zoomStatus).toHaveText('100%');
+    await expect(zoomOut).toBeDisabled();
+    await expect.poll(() => scrollArea.evaluate((element) => ({
+      left: element.scrollLeft,
+      top: element.scrollTop,
+    }))).toEqual({ left: 0, top: 0 });
+    await page.keyboard.press('Escape');
+    await expect(viewer).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  });
+}
 
 test('조제일은 서울 오늘로부터 31일 뒤까지 수정하고 저장할 수 있다', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
@@ -2279,7 +2347,7 @@ test('복약 선택 삭제는 오류를 팝업에 남기고 재시도하면 목�
   await page.goto('/medications');
   await page.getByRole('button', { name: '선택', exact: true }).click();
   await page.getByRole('checkbox', { name: /2026년 8월 22일 처방 선택/ }).check();
-  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await page.getByRole('button', { name: '삭제 1개', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('heading', { name: '1개를 삭제할까요?' })).toBeVisible();
   await expect(dialog).toContainText('삭제한 처방은 약봉투를 다시 등록해야 복구할 수 있어요.');

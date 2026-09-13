@@ -63,6 +63,7 @@ class CustomChallengeTargetResponse(CamelModel):
     id: int
     source_id: int
     name: str
+    is_excluded: bool = False
 
 
 class CustomChallengeOccurrenceResponse(CamelModel):

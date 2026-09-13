@@ -7,6 +7,7 @@ test('제품 상세는 공개 후기 10개를 표시하고 더 보기로 이어 
   await page.goto('/dev/supplements/product/mock-501');
 
   const reviews = page.getByRole('region', { name: '후기' });
+  await expect(reviews.getByText('후기: 12개', { exact: false })).toBeVisible();
   await expect(reviews.getByRole('article')).toHaveCount(10);
   await expect(reviews.getByRole('article', { name: '김*훈 후기' })).toHaveCount(2);
   await expect(reviews.getByText('박*', { exact: true })).toBeVisible();
@@ -41,9 +42,10 @@ test('신고 성공은 카드를 제거하고 실패는 그대로 둔다', async
   await expect(failureCard).toBeVisible();
 });
 
-test('실 API 모드는 후기 snake_case 응답을 표시하고 신고 POST를 보낸다', async ({ page }) => {
+test('실 API 모드는 신고 후 표시 수를 줄이고 새로고침해도 신고한 후기를 숨긴다', async ({ page }) => {
   test.skip(!IS_REAL_API, '실 API 모드의 후기 조회·신고 계약을 확인합니다.');
   let reportMethod = '';
+  let reported = false;
   await page.route('**/api/v1/med/nutr/2048', (route) =>
     route.fulfill({
       status: 200,
@@ -72,7 +74,7 @@ test('실 API 모드는 후기 snake_case 응답을 표시하고 신고 POST를 
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        items: [{
+        items: reported ? [] : [{
           id: 77,
           author_label: '김*훈',
           score: 4,
@@ -81,16 +83,17 @@ test('실 API 모드는 후기 snake_case 응답을 표시하고 신고 POST를 
           is_mine: false,
           reported_by_me: false,
         }],
-        total: 1,
+        total: reported ? 0 : 1,
         offset: 0,
         limit: 10,
-        rating_average: '4.0',
-        review_count: 1,
+        rating_average: reported ? null : '4.0',
+        review_count: reported ? 0 : 1,
       }),
     }),
   );
   await page.route('**/api/v1/med/nutr/reviews/77/report', (route) => {
     reportMethod = route.request().method();
+    reported = true;
     return route.fulfill({ status: 204 });
   });
 
@@ -104,4 +107,9 @@ test('실 API 모드는 후기 snake_case 응답을 표시하고 신고 POST를 
 
   expect(reportMethod).toBe('POST');
   await expect(card).toHaveCount(0);
+  await expect(page.getByRole('region', { name: '후기' }).getByText(/후기: 1개/)).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.getByRole('article', { name: '김*훈 후기' })).toHaveCount(0);
+  await expect(page.getByText('아직 후기가 없어요')).toBeVisible();
 });

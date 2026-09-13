@@ -19,6 +19,7 @@ class SupplementNutrientService:
         self,
         name: str,
         *,
+        user_id: int | None = None,
         sort: SupplementSort = "name",
         direction: SupplementSortDirection | None = None,
         offset: int,
@@ -32,6 +33,7 @@ class SupplementNutrientService:
             )
         return await self.repository.search(
             normalized_name,
+            user_id=user_id,
             sort=sort,
             direction=direction,
             offset=offset,

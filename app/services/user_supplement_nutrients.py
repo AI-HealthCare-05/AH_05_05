@@ -19,7 +19,7 @@ from app.dtos.user_supplement_nutrients import (
     UserSupplementNutrientUpsertRequest,
 )
 from app.models.enums import AlarmType, CustomChallengeType, Gender, MealSlot, SupplementStatus
-from app.models.supplement_nutrients import NutrientStandard, UserSupplementNutrient
+from app.models.supplement_nutrients import NutrientStandard, UserSupplementNutrient, UserSupplementNutrientSlot
 from app.models.users import User, UserSettings
 from app.repositories.user_supplement_nutrient_repository import UserSupplementNutrientRepository
 from app.services.custom_challenge_schedule_reconciler import CustomChallengeScheduleReconciler
@@ -134,6 +134,11 @@ class UserSupplementNutrientService:
                     using_db=connection,
                     update_fields=[*values, "updated_at"],
                 )
+            previous_slots = await (
+                UserSupplementNutrientSlot.filter(user_suppl_nutrient_id=registration.id)
+                .using_db(connection)
+                .values_list("slot", flat=True)
+            )
             await self.repository.replace_slots(registration.id, data.slots, connection)
             await self._sync_nutrient_alarms(user_id, settings, connection)
             await self._reconciler.reconcile(
@@ -142,6 +147,7 @@ class UserSupplementNutrientService:
                 source_ids=(registration.id,),
                 changed_at=changed_at,
                 connection=connection,
+                refresh_join_day_slot=set(previous_slots) != set(data.slots),
             )
             return registration.id
 
@@ -245,7 +251,14 @@ class UserSupplementNutrientService:
                     using_db=connection,
                     update_fields=[*updates, "updated_at"],
                 )
+            slots_changed = False
             if slots is not None:
+                previous_slots = await (
+                    UserSupplementNutrientSlot.filter(user_suppl_nutrient_id=registration.id)
+                    .using_db(connection)
+                    .values_list("slot", flat=True)
+                )
+                slots_changed = set(previous_slots) != set(slots)
                 await self.repository.replace_slots(registration.id, slots, connection)
             await self._sync_nutrient_alarms(user.id, settings, connection)
             await self._reconciler.reconcile(
@@ -254,6 +267,7 @@ class UserSupplementNutrientService:
                 source_ids=(registration.id,),
                 changed_at=changed_at,
                 connection=connection,
+                refresh_join_day_slot=slots_changed,
             )
         return await self.get(user, registration_id)
 

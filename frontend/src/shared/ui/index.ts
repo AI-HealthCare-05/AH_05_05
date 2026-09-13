@@ -44,6 +44,8 @@ export { RegistrationProgress } from './RegistrationProgress';
 
 // 인터랙티브 컴포넌트 — shadcn/ui(Radix 기반). 계약서 3장 "shadcn/ui와의 분업" 참고.
 export { Checkbox } from './checkbox';
+export { SelectionActions, SelectionCheckbox } from './SelectionControls';
+export type { SelectionActionsProps, SelectionCheckboxProps } from './SelectionControls';
 export { CheckboxField } from './CheckboxField';
 export type { CheckboxFieldProps } from './CheckboxField';
 export { Switch } from './switch';

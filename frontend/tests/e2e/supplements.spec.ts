@@ -106,7 +106,7 @@ test('영양제 추가는 검색만 제공하고 과다 결과를 식별할 정�
   await expect(sheet.getByText('바코드', { exact: false })).toHaveCount(0);
 
   await search.fill('종합비타민');
-  await expect(sheet.getByText('24개가 찾아졌어요.')).toBeVisible();
+  await expect(sheet.getByText('24개를 찾았어요.')).toBeVisible();
   await expect(
     sheet.getByText('통 앞면의 브랜드를 함께 넣으면 빨리 찾아요 — 예: 센트룸 종합비타민'),
   ).toBeVisible();
@@ -119,7 +119,7 @@ test('영양제 추가는 검색만 제공하고 과다 결과를 식별할 정�
 
   await search.fill('센트룸');
   await expect(results.getByText('센트룸 실버 우먼', { exact: true })).toBeVisible();
-  await expect(sheet.getByText(/개가 찾아졌어요/)).toHaveCount(0);
+  await expect(sheet.getByText(/개를 찾았어요/)).toHaveCount(0);
 });
 
 test('검색 결과는 20개씩 불러와 끝까지 내리면 다음 결과를 이어 보여준다', async ({ page }) => {
@@ -346,7 +346,7 @@ test('복용 중단을 확인하면 삭제 문구 없이 활성 목록과 성분
   await confirm.getByRole('button', { name: '중단하기' }).click();
 
   await expect(supplementList.getByRole('button', { name: /비타민 D/ })).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: '먹고 있는 영양제 2개' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '영양제 2개' })).toBeVisible();
 });
 
 test('성분 8개에서도 초과 항목을 중립 항목보다 먼저 보여준다', async ({ page }) => {

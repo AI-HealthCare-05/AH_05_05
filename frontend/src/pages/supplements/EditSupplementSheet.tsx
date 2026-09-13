@@ -19,7 +19,7 @@ interface EditSupplementSheetProps {
   maskedName: string;
   onOpenChange: (open: boolean) => void;
   onSave: (supplementId: number, payload: UpdateSupplementPayload) => Promise<void>;
-  onStop: (supplementId: number) => Promise<void>;
+  onStop: (supplementId: number) => Promise<boolean | void>;
   onProductInfo?: (productId: string) => void;
 }
 
@@ -40,7 +40,6 @@ export function EditSupplementSheet({
   const [reviewBody, setReviewBody] = useState('');
   const [saving, setSaving] = useState(false);
   const [stopping, setStopping] = useState(false);
-  const [confirmStopOpen, setConfirmStopOpen] = useState(false);
   const [ratingEditOpen, setRatingEditOpen] = useState(false);
   const [ratingDraft, setRatingDraft] = useState<number | null>(null);
   const [ratingSaving, setRatingSaving] = useState(false);
@@ -56,7 +55,6 @@ export function EditSupplementSheet({
     setReviewBody(supplement.reviewBody ?? '');
     setSaving(false);
     setStopping(false);
-    setConfirmStopOpen(false);
     setRatingEditOpen(false);
     setRatingDraft(supplement.score);
     setRatingSaving(false);
@@ -83,8 +81,7 @@ export function EditSupplementSheet({
     if (!supplement || stopping) return;
     setStopping(true);
     try {
-      await onStop(supplement.supplementId);
-      setConfirmStopOpen(false);
+      if (await onStop(supplement.supplementId) === false) return;
       onOpenChange(false);
     } catch {
       // 저장 실패는 부모 화면의 ErrorDialog가 표시합니다.
@@ -130,7 +127,7 @@ export function EditSupplementSheet({
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open} onOpenChange={(nextOpen) => { if (!stopping) onOpenChange(nextOpen); }}>
         <DialogContent
           variant="sheet"
           aria-label={supplement?.name ?? '영양제'}
@@ -240,7 +237,8 @@ export function EditSupplementSheet({
           <button
             type="button"
             className="min-h-touch text-sm font-bold text-danger-strong"
-            onClick={() => setConfirmStopOpen(true)}
+            disabled={stopping}
+            onClick={() => void stop()}
           >
             복용 중단하기
           </button>
@@ -300,34 +298,6 @@ export function EditSupplementSheet({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={confirmStopOpen} onOpenChange={setConfirmStopOpen}>
-        <DialogContent
-          showCloseButton={false}
-          aria-describedby="supplement-stop-description"
-          className="gap-4 p-6"
-        >
-          <DialogHeader>
-            <DialogTitle className="[overflow-wrap:anywhere]">{supplement?.name ?? '영양제'} 복용을 중단할까요?</DialogTitle>
-            <DialogDescription id="supplement-stop-description">
-              성분 합계에서 제외됩니다. 다시 추가할 수 있어요.
-            </DialogDescription>
-          </DialogHeader>
-          {supplement && (
-            <p className="[overflow-wrap:anywhere] rounded-control bg-danger-bg px-3 py-3 text-center text-sm font-bold text-danger-strong">
-              {supplement.name} · {formatDose(doseAmount, supplement.doseUnit)} ·{' '}
-              {slots.map((slot) => mealSlotLabel(slot, 'short')).join(' · ')}
-            </p>
-          )}
-          <DialogFooter>
-            <Button variant="secondary" disabled={stopping} onClick={() => setConfirmStopOpen(false)}>
-              취소
-            </Button>
-            <Button variant="danger" disabled={stopping} onClick={() => void stop()}>
-              {stopping ? '중단 중...' : '중단하기'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }

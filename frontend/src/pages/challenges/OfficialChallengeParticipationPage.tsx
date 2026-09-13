@@ -29,6 +29,7 @@ import {
 import {
   challengeVerificationDates,
   inclusiveChallengeEndDate,
+  koreanChallengeDate,
   trailingNonVerificationDays,
 } from './officialChallengeDates';
 import { OfficialChallengeRejoinDialog } from './OfficialChallengeRejoinDialog';
@@ -38,11 +39,6 @@ function positiveId(value: string | undefined): number | null {
   if (!value || !/^[1-9]\d*$/.test(value)) return null;
   const id = Number(value);
   return Number.isSafeInteger(id) ? id : null;
-}
-
-function dateLabel(value: string) {
-  const [year, month, day] = value.slice(0, 10).split('-');
-  return `${year}.${Number(month)}.${Number(day)}`;
 }
 
 function usesWaterBadgeContour(imagePath: string) {
@@ -184,7 +180,7 @@ export function OfficialChallengeParticipationPage() {
 
   const participation = data.participation;
   const endDate = inclusiveChallengeEndDate(participation.end_at);
-  const startDate = participation.started_at.slice(0, 10);
+  const startDate = koreanChallengeDate(participation.started_at);
   const verificationDates = challengeVerificationDates(participation.progress_periods);
   const nonVerificationDays = trailingNonVerificationDays(participation.progress_periods, endDate);
   const { rate, label: progressLabel } = officialChallengeProgress(participation);
@@ -356,6 +352,7 @@ export function OfficialChallengeParticipationPage() {
         ? { ...current, participation: cancelled }
         : current);
       setCancelOpen(false);
+      navigate('/challenges', { replace: true });
     } catch (reason) {
       if (!isCurrentRequest()) return;
       if (reason instanceof ApiError && reason.status === 401) return;
@@ -375,7 +372,7 @@ export function OfficialChallengeParticipationPage() {
     <>
     <Header title={participation.challenge_name} onBack={goBack} className="h-auto! min-h-header py-2 [&_button]:shrink-0 [&_h1]:overflow-visible [&_h1]:whitespace-normal [&_h1]:break-words [&_h1]:[overflow-wrap:anywhere]" />
     <main className="flex flex-col gap-4 px-page-x py-5">
-      <p className="text-caption text-muted-foreground">내 수행 기간 · {dateLabel(startDate)} ~ {dateLabel(endDate)}</p>
+      <p className="text-caption text-muted-foreground">내 수행 기간 · {startDate} ~ {koreanChallengeDate(endDate)}</p>
 
       {participation.today_verification?.status === 'APPROVED' ? (
         <section className="flex gap-3 rounded-card bg-primary-bg p-5" aria-label="오늘 인증 결과">

@@ -450,7 +450,7 @@ async def test_join_after_current_slot_time_includes_current_pending_slot_but_no
     ]
 
 
-async def test_reconcile_is_owner_scoped_and_zero_future_does_not_complete_or_award() -> None:
+async def test_reconcile_is_owner_scoped_and_last_supplement_removal_cancels_without_award() -> None:
     owner = await _user("zero-owner@example.com")
     other = await _user("zero-other@example.com")
     _, supplement_template = await _templates()
@@ -481,10 +481,10 @@ async def test_reconcile_is_owner_scoped_and_zero_future_does_not_complete_or_aw
         )
 
     owned_after = await _occurrences(owned)
-    assert len(owned_after) == 2
-    assert all(_aware(row.scheduled_at) < CHANGED_AT for row in owned_after)
+    assert len(owned_after) == 1
+    assert all(row.scheduled_date < CHANGED_AT.date() for row in owned_after)
     assert [(row.id, _aware(row.scheduled_at)) for row in await _occurrences(foreign)] == foreign_before
-    assert (await CustomChallengeParticipation.get(id=owned.id)).status is ChallengeParticipationStatus.ACTIVE
+    assert (await CustomChallengeParticipation.get(id=owned.id)).status is ChallengeParticipationStatus.CANCELLED
     assert (await CustomChallengeParticipation.get(id=foreign.id)).status is ChallengeParticipationStatus.ACTIVE
     assert await ChallengeProgress.all().count() == 0
     assert await UserBadge.all().count() == 0
@@ -505,7 +505,7 @@ async def test_ending_source_before_first_goal_keeps_empty_participation_readabl
     assert detail.target_count == detail.completed_count == 0
     assert detail.progress_rate == Decimal("0.00")
     assert detail.actual_end_date is None
-    assert detail.status is ChallengeParticipationStatus.ACTIVE
+    assert detail.status is ChallengeParticipationStatus.CANCELLED
     assert detail.occurrences == []
     assert listing.items == [detail]
     assert await UserBadge.all().count() == 0
@@ -554,8 +554,8 @@ async def test_reconcile_null_source_fk_never_reattaches_reused_snapshot_id() ->
     await target.refresh_from_db()
     remaining = await _occurrences(participation)
     assert target.supplement_registration_id is None
-    assert len(remaining) == 2
-    assert all(_aware(row.scheduled_at) < CHANGED_AT for row in remaining)
+    assert len(remaining) == 1
+    assert all(row.scheduled_date < CHANGED_AT.date() for row in remaining)
     assert not any(row.slot is MealSlot.EVENING for row in remaining)
 
 
@@ -876,7 +876,7 @@ async def test_supplement_update_reconciles_only_selected_registration() -> None
         source_id_snapshot=changed.id,
     )
     changed_after = await CustomChallengeOccurrence.filter(target_id=changed_target.id)
-    assert any(row.slot is MealSlot.MORNING and _aware(row.scheduled_at) < mutation_at for row in changed_after)
+    assert not any(row.slot is MealSlot.MORNING for row in changed_after)
     assert not any(row.slot is MealSlot.MORNING and _aware(row.scheduled_at) >= mutation_at for row in changed_after)
     assert any(row.slot is MealSlot.LUNCH and _aware(row.scheduled_at) >= mutation_at for row in changed_after)
     assert [
@@ -908,12 +908,12 @@ async def test_supplement_upsert_reconciles_reused_registration() -> None:
 
     assert response.id == registration.id
     rows = await _occurrences(participation)
-    assert any(row.slot is MealSlot.MORNING and _aware(row.scheduled_at) < mutation_at for row in rows)
+    assert not any(row.slot is MealSlot.MORNING for row in rows)
     assert not any(row.slot is MealSlot.MORNING and _aware(row.scheduled_at) >= mutation_at for row in rows)
     assert any(row.slot is MealSlot.EVENING and _aware(row.scheduled_at) >= mutation_at for row in rows)
 
 
-async def test_supplement_complete_preserves_history_without_completion_or_award() -> None:
+async def test_supplement_complete_cancels_last_target_without_completion_or_award() -> None:
     user = await _user("supp-complete@example.com")
     _, supplement_template = await _templates()
     registration = await _supplement(user)
@@ -926,9 +926,10 @@ async def test_supplement_complete_preserves_history_without_completion_or_award
     )
 
     rows = await _occurrences(participation)
-    assert len(rows) == 1
-    assert all(_aware(row.scheduled_at) < mutation_at for row in rows)
-    assert (await CustomChallengeParticipation.get(id=participation.id)).status is ChallengeParticipationStatus.ACTIVE
+    assert rows == []
+    assert (
+        await CustomChallengeParticipation.get(id=participation.id)
+    ).status is ChallengeParticipationStatus.CANCELLED
     assert await ChallengeProgress.all().count() == 0
     assert await UserBadge.all().count() == 0
 
@@ -950,9 +951,10 @@ async def test_supplement_complete_reconciles_legacy_future_when_already_complet
     )
 
     remaining = await _occurrences(participation)
-    assert len(remaining) == 1
-    assert all(_aware(row.scheduled_at) < mutation_at for row in remaining)
-    assert (await CustomChallengeParticipation.get(id=participation.id)).status is ChallengeParticipationStatus.ACTIVE
+    assert remaining == []
+    assert (
+        await CustomChallengeParticipation.get(id=participation.id)
+    ).status is ChallengeParticipationStatus.CANCELLED
     assert await ChallengeProgress.all().count() == 0
     assert await UserBadge.all().count() == 0
 
@@ -1053,6 +1055,7 @@ async def test_notify_time_change_uses_one_post_lock_boundary_for_all_source_typ
             source_ids: Collection[int] | None,
             changed_at: datetime,
             connection: BaseDBAsyncClient,
+            refresh_join_day_slot: bool = False,
         ) -> None:
             self.changed_ats.append(changed_at)
             await super().reconcile(
@@ -1061,6 +1064,7 @@ async def test_notify_time_change_uses_one_post_lock_boundary_for_all_source_typ
                 source_ids=source_ids,
                 changed_at=changed_at,
                 connection=connection,
+                refresh_join_day_slot=refresh_join_day_slot,
             )
 
     user = await _user("notify-boundary@example.com")

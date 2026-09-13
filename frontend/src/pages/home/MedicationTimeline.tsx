@@ -309,12 +309,12 @@ function TimelineItem({
                       </span>
                     )}
                   <h3 className="min-w-0 [overflow-wrap:anywhere] text-base font-bold text-foreground">{episodeTitle}</h3>
-                  <span className="block [overflow-wrap:anywhere] text-sm text-muted-foreground">
+                  {!episodeExpanded && <span className="block [overflow-wrap:anywhere] text-sm text-muted-foreground">
                     {summary?.name ?? '복약'}
                     {episode.medications.length > 1
                       ? ` 외 ${episode.medications.length - 1}개`
                       : ''}
-                  </span>
+                  </span>}
                 </span>
                 </button>
 

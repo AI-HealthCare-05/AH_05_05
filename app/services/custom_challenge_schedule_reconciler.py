@@ -1,5 +1,5 @@
-from collections.abc import Collection
-from datetime import datetime
+from collections.abc import Collection, Mapping, Sequence
+from datetime import datetime, time
 from typing import cast
 
 from tortoise.backends.base.client import BaseDBAsyncClient
@@ -15,6 +15,7 @@ from app.models.enums import (
     CareEpisodeStatus,
     ChallengeParticipationStatus,
     CustomChallengeType,
+    MealSlot,
     SupplementStatus,
 )
 from app.models.supplement_nutrients import UserSupplementNutrient
@@ -35,7 +36,7 @@ from app.services.custom_challenges import (
 
 
 class CustomChallengeScheduleReconciler:
-    """Diff mutable goals; rows before each mutation boundary are immutable history."""
+    """Diff mutable goals while preserving completed supplements and prior-day history."""
 
     async def reconcile(
         self,
@@ -45,6 +46,7 @@ class CustomChallengeScheduleReconciler:
         source_ids: Collection[int] | None,
         changed_at: datetime,
         connection: BaseDBAsyncClient,
+        refresh_join_day_slot: bool = False,
     ) -> None:
         if not isinstance(source_kind, CustomChallengeType) or source_kind not in {
             CustomChallengeType.MEDICATION,
@@ -99,13 +101,21 @@ class CustomChallengeScheduleReconciler:
             targets=targets,
             connection=connection,
         )
+        mutation_boundary = (
+            changed_at.replace(hour=0, minute=0, second=0, microsecond=0)
+            if source_kind is CustomChallengeType.SUPPLEMENT
+            else changed_at
+        )
 
         for target in targets:
             participation = participations_by_id[cast(int, target.participation_id)]
+            target_windows = windows_by_source.get(target.source_id_snapshot, [])
+            if source_kind is CustomChallengeType.SUPPLEMENT and target.supplement_registration_id is None:
+                target_windows = []
             planned_end_at = await self._planned_end_at(
                 participation=participation,
                 source_kind=source_kind,
-                windows=windows_by_source.get(target.source_id_snapshot, []),
+                windows=target_windows,
                 changed_at=changed_at,
                 connection=connection,
             )
@@ -115,8 +125,18 @@ class CustomChallengeScheduleReconciler:
                 .select_for_update()
                 .order_by("id")
             )
-            past = [row for row in occurrences if _database_datetime(row.scheduled_at) < changed_at]
-            future = [row for row in occurrences if _database_datetime(row.scheduled_at) >= changed_at]
+            completed_ids = (
+                await lifecycle._completed_occurrence_ids(participation, [target], occurrences, connection)
+                if source_kind is CustomChallengeType.SUPPLEMENT
+                else set()
+            )
+            past = [
+                row
+                for row in occurrences
+                if _database_datetime(row.scheduled_at) < mutation_boundary or row.id in completed_ids
+            ]
+            preserved_ids = {row.id for row in past}
+            future = [row for row in occurrences if row.id not in preserved_ids]
             preserved_keys: set[GoalKey] = {(target.source_id_snapshot, row.scheduled_date, row.slot) for row in past}
             existing_keys: set[GoalKey] = {(target.source_id_snapshot, row.scheduled_date, row.slot) for row in future}
             joined_at = _database_datetime(participation.joined_at)
@@ -128,15 +148,28 @@ class CustomChallengeScheduleReconciler:
                 connection=connection,
                 recorded_before_join=True,
             )
+            # Keep existing_keys separate: newly eligible goals must still be
+            # excluded when taken before joining, unlike existing goal history.
+            eligible_keys = existing_keys | self._refreshed_join_day_keys(
+                enabled=(
+                    refresh_join_day_slot
+                    and source_kind is CustomChallengeType.SUPPLEMENT
+                    and changed_at.date() == joined_at.date()
+                ),
+                windows=target_windows,
+                meal_times=meal_times,
+                changed_at=changed_at,
+                end_at=planned_end_at,
+            )
             desired = (
                 plan_goals(
-                    windows=windows_by_source.get(target.source_id_snapshot, []),
+                    windows=target_windows,
                     meal_times=meal_times,
                     joined_at=joined_at,
                     end_at=planned_end_at,
-                    not_before=changed_at,
+                    not_before=mutation_boundary,
                     preserved_keys=preserved_keys,
-                    existing_keys=existing_keys,
+                    existing_keys=eligible_keys,
                     # Never recreate an absent future slot taken before join.
                     # Existing goals (including legacy ones) retain their history.
                     excluded_keys=prejoin_completed - existing_keys,
@@ -150,13 +183,94 @@ class CustomChallengeScheduleReconciler:
                 desired=desired,
                 connection=connection,
             )
+            if source_kind is CustomChallengeType.SUPPLEMENT and target.source_id_snapshot not in windows_by_source:
+                # Re-registering the same product reuses its source ID. Detach the
+                # removed target so it can never regain goals in this participation.
+                await self._detach_supplement_target(target, past, completed_ids, connection)
 
+        await self._finalize_reconciled(
+            user_id=user_id,
+            source_kind=source_kind,
+            participations=participations_by_id,
+            affected_ids={cast(int, target.participation_id) for target in targets},
+            changed_at=changed_at,
+            connection=connection,
+        )
+
+    @staticmethod
+    def _refreshed_join_day_keys(
+        *,
+        enabled: bool,
+        windows: Sequence[GoalWindow],
+        meal_times: Mapping[MealSlot, time],
+        changed_at: datetime,
+        end_at: datetime,
+    ) -> set[GoalKey]:
+        if not enabled or changed_at >= end_at:
+            return set()
+        # A clock change can make an earlier, absent slot the current one.
+        # Re-evaluate at the mutation time, not the original join time.
+        return {
+            (goal.source_id, goal.scheduled_date, goal.slot)
+            for goal in plan_goals(
+                windows=windows,
+                meal_times=meal_times,
+                joined_at=changed_at,
+                end_at=end_at,
+                include_join_slot=True,
+            )
+            if goal.scheduled_date == changed_at.date()
+        }
+
+    @staticmethod
+    async def _finalize_reconciled(
+        *,
+        user_id: int,
+        source_kind: CustomChallengeType,
+        participations: dict[int, CustomChallengeParticipation],
+        affected_ids: set[int],
+        changed_at: datetime,
+        connection: BaseDBAsyncClient,
+    ) -> None:
+        from app.services.custom_challenge_lifecycle import CustomChallengeLifecycleService
+
+        lifecycle = CustomChallengeLifecycleService()
         if source_kind is CustomChallengeType.MEDICATION:
             await lifecycle.finalize_due_for_user(
                 user_id=user_id,
                 now=changed_at,
                 connection=connection,
             )
+            return
+        for participation_id in sorted(affected_ids):
+            has_active_target = (
+                await CustomChallengeTarget.filter(
+                    participation_id=participation_id,
+                    supplement_registration__user_id=user_id,
+                    supplement_registration__status=SupplementStatus.ACTIVE,
+                )
+                .using_db(connection)
+                .exists()
+            )
+            if not has_active_target:
+                await lifecycle.finalize_cancelled(participations[participation_id], changed_at, connection)
+
+    @staticmethod
+    async def _detach_supplement_target(
+        target: CustomChallengeTarget,
+        preserved: list[CustomChallengeOccurrence],
+        completed_ids: set[int],
+        connection: BaseDBAsyncClient,
+    ) -> None:
+        if target.supplement_registration_id is None:
+            return
+        for occurrence in preserved:
+            completed = occurrence.id in completed_ids
+            if occurrence.is_completed != completed:
+                occurrence.is_completed = completed
+                await occurrence.save(using_db=connection, update_fields=["is_completed"])
+        target.supplement_registration_id = None
+        await target.save(using_db=connection, update_fields=["supplement_registration_id"])
 
     @staticmethod
     async def _planned_end_at(

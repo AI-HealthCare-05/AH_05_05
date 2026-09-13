@@ -419,16 +419,16 @@ test('복약 목록은 연필로 활성 회차를 편집하고 완료 회차를 
   await expect(completedDialog.getByRole('button', { name: /아목시실린 아침약/ })).toHaveCount(0);
 });
 
-test('복약 삭제 선택 모드는 고정 안내와 비활성 위험 버튼을 먼저 보여준다', async ({ page }) => {
+test('복약 선택 모드는 0개일 때 취소만, 선택 뒤 위험 버튼을 보여준다', async ({ page }) => {
   await page.goto('/medications');
   await page.getByRole('button', { name: '선택', exact: true }).click();
 
-  await expect(page.getByRole('heading', { name: '삭제할 처방을 선택하세요' })).toBeVisible();
-  const deleteButton = page.getByRole('button', { name: '삭제', exact: true });
-  await expect(deleteButton).toBeDisabled();
-  await expect(deleteButton).toHaveClass(/bg-muted-bg/);
+  await expect(page.getByRole('heading', { name: '복약' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /삭제 \d+개/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '취소', exact: true })).toBeVisible();
 
   await page.getByRole('checkbox', { name: /2026년 8월 22일 처방 선택/ }).check();
+  const deleteButton = page.getByRole('button', { name: '삭제 1개', exact: true });
   await expect(deleteButton).toBeEnabled();
   await expect(deleteButton).toHaveClass(/bg-danger/);
 });
@@ -640,7 +640,7 @@ test('복약 메모 저장·삭제 중 중복 클릭을 하나의 요청으로 �
   await expect(page.getByText('건강상태 기록 1개', { exact: true })).toBeVisible();
   await expect(page.getByText('중복 저장 방지 메모', { exact: true })).toHaveCount(1);
 
-  await page.getByRole('button', { name: /처방 전체 중복 저장 방지 메모/ }).click();
+  await page.getByRole('button', { name: '중복 저장 방지 메모', exact: true }).click();
   const deleteButton = page.getByRole('button', { name: '메모 삭제', exact: true });
   await deleteButton.click();
   const confirmDeleteButton = page.getByRole('dialog').getByRole('button', { name: /^삭제/ });
