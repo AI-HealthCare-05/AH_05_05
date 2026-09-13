@@ -456,11 +456,7 @@ class ChatRepository:
                     MedicationQueryEntityType.BRAND_ALIAS,
                 }
             ]
-            other_entities = [
-                entity
-                for entity in deduplicated_entities
-                if entity not in product_entities
-            ]
+            other_entities = [entity for entity in deduplicated_entities if entity not in product_entities]
             return MedicationChatSessionReference(
                 entities=[*product_entities, *other_entities][:4],
             )
