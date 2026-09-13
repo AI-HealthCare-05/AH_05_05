@@ -584,6 +584,7 @@ class TestChallengeDomainAPI(TestCase):
         period: str = "D30",
         frequency: str = "WEEKLY_3",
         reference_time: datetime | None = None,
+        is_displayed: bool = True,
     ) -> dict:
         now = reference_time or datetime.now(config.TIMEZONE)
         response = await request(
@@ -601,7 +602,7 @@ class TestChallengeDomainAPI(TestCase):
                 "check_type_id": self.codes[check_type].id,
                 "check_frequency_id": self.codes[frequency].id,
                 "reward_badge_id": badge_id,
-                "is_displayed": True,
+                "is_displayed": is_displayed,
             },
         )
         assert response.status_code == 201, response.text
@@ -898,13 +899,11 @@ class TestChallengeDomainAPI(TestCase):
 
     async def test_catalog_requires_user_and_hides_unpublished_data(self) -> None:
         from app.main import app
-        from app.models.challenges import Challenge
 
         assert (await request("GET", "/api/v1/user/challenge-catalog")).status_code == 401
         badge = await self._create_badge()
         visible = await self._create_challenge(badge["id"], period="D7", frequency="DAILY")
-        hidden = await self._create_challenge(badge["id"])
-        await Challenge.filter(id=hidden["id"]).update(is_displayed=False)
+        hidden = await self._create_challenge(badge["id"], is_displayed=False)
         app.dependency_overrides[get_request_user] = lambda: self.user
         response = await request("GET", "/api/v1/user/challenge-catalog?limit=1")
         assert response.status_code == 200, response.text
