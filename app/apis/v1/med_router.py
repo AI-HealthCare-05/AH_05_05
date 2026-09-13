@@ -160,7 +160,7 @@ async def list_supplement_reviews(
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=50)] = 10,
 ) -> SupplementReviewListResponse:
-    """탈퇴·신고 숨김 대상을 제외한 공개 후기를 최신순으로 조회한다."""
+    """탈퇴·누적 숨김 및 현재 사용자가 신고한 후기를 제외해 최신순으로 조회한다."""
     return await service.list(user, supplement_nutrient_id, offset=offset, limit=limit)
 
 
