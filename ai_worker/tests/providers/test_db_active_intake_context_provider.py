@@ -50,6 +50,8 @@ async def _create_confirmed_episode(
     episode_id: int,
     user: User,
     status: CareEpisodeStatus = CareEpisodeStatus.ACTIVE,
+    medication_start_date: date | None = None,
+    medication_days: int | None = None,
 ) -> CareEpisode:
     return await CareEpisode.create(
         id=episode_id,
@@ -58,6 +60,8 @@ async def _create_confirmed_episode(
         status=status,
         confirmation_hash="a" * 64,
         confirmed_at=datetime(2026, 8, 24, 9, 0),
+        medication_start_date=medication_start_date,
+        medication_days=medication_days,
     )
 
 
@@ -182,6 +186,51 @@ async def test_provider_returns_only_current_user_active_intakes(
     assert context.medications[0].scheduled_slots == [MealSlot.MORNING.value]
     assert context.supplements[0].scheduled_slots == [MealSlot.BEDTIME.value]
     assert context.preferred_care_episode_id == active_episode.id
+
+
+@pytest.mark.asyncio
+async def test_provider_uses_confirmed_episode_period_before_stale_medication_dates(
+    initialized_db: None,
+) -> None:
+    user = await _create_user(1, "episode-period@example.com")
+    current_episode = await _create_confirmed_episode(
+        episode_id=100,
+        user=user,
+        medication_start_date=date(2026, 9, 10),
+        medication_days=30,
+    )
+    future_episode = await _create_confirmed_episode(
+        episode_id=200,
+        user=user,
+        medication_start_date=date(2026, 9, 17),
+        medication_days=30,
+    )
+
+    await Medication.create(
+        id=10,
+        care_episode=current_episode,
+        name="최근 처방인데 약별 날짜가 오래된 약",
+        prescribed_at=date(2025, 10, 25),
+        days=30,
+    )
+    await Medication.create(
+        id=20,
+        care_episode=current_episode,
+        name="약별 복용일이 더 짧아 종료된 약",
+        prescribed_at=date(2025, 10, 25),
+        days=5,
+    )
+    await Medication.create(
+        id=30,
+        care_episode=future_episode,
+        name="아직 시작하지 않은 처방 약",
+    )
+
+    context = await DbActiveIntakeContextProvider(
+        today_provider=lambda: date(2026, 9, 16),
+    ).get_active_context(user_id=user.id, care_episode_id=None)
+
+    assert [item.name for item in context.medications] == ["최근 처방인데 약별 날짜가 오래된 약"]
 
 
 @pytest.mark.asyncio

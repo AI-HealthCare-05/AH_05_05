@@ -2,16 +2,13 @@ import asyncio
 import hashlib
 import json
 import logging
-import os
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from pathlib import Path
 from typing import Any, Protocol, cast
-from uuid import uuid4
 
 from arq import Retry
 from arq.connections import RedisSettings, create_pool
@@ -48,6 +45,7 @@ from app.models.medications import Medication, MedicationDose, MedicationNote, M
 from app.models.ocr import OcrJob
 from app.models.users import User
 from app.services.ocr_image_input import ValidatedImage, validate_image
+from app.services.ocr_volatile_storage import STORAGE_BACKEND, VolatileOcrStorage
 
 logger = logging.getLogger(__name__)
 
@@ -98,113 +96,23 @@ class MedicationOcrV3Analyzer(Protocol):
     async def analyze(self, image: ValidatedImage) -> MedicationOcrV3AnalysisContract: ...
 
 
-class TemporaryOcrStorage:
-    def __init__(self, root: Path) -> None:
-        self.root = root
-
-    def _path(self, storage_key: str) -> Path:
-        if not storage_key or Path(storage_key).name != storage_key:
-            raise ValueError("invalid OCR storage key")
-        return self.root / storage_key
-
-    async def save(self, image: ValidatedImage) -> str:
-        storage_key = f"{uuid4().hex}.{image.provider_format}"
-        path = self._path(storage_key)
-
-        def write() -> None:
-            self.root.mkdir(parents=True, exist_ok=True)
-            temporary = path.with_suffix(f"{path.suffix}.tmp")
-            temporary.write_bytes(image.content)
-            os.replace(temporary, path)
-
-        await asyncio.to_thread(write)
-        return storage_key
-
-    async def save_processed(self, manifest: dict[str, object], content: bytes) -> dict[str, object]:
-        if not isinstance(content, bytes) or not content:
-            raise ValueError("processed OCR image is missing")
-        storage_key = f"{uuid4().hex}.processed.jpg"
-        path = self._path(storage_key)
-
-        def write() -> None:
-            self.root.mkdir(parents=True, exist_ok=True)
-            temporary = path.with_suffix(f"{path.suffix}.tmp")
-            temporary.write_bytes(content)
-            os.replace(temporary, path)
-
-        await asyncio.to_thread(write)
-        return {
-            **manifest,
-            "processedStorageKey": storage_key,
-            "processedContentSha256": hashlib.sha256(content).hexdigest(),
-            "processedMediaType": "image/jpeg",
-        }
-
-    async def load(self, manifest: dict[str, object]) -> ValidatedImage:
-        storage_key = manifest.get("storageKey")
-        if not isinstance(storage_key, str):
-            raise ValueError("OCR storage key is missing")
-        content = await asyncio.to_thread(self._path(storage_key).read_bytes)
-        expected_hash = manifest.get("contentSha256")
-        if not isinstance(expected_hash, str) or hashlib.sha256(content).hexdigest() != expected_hash:
-            raise ValueError("OCR temporary image hash mismatch")
-        filename = manifest.get("filename")
-        media_type = manifest.get("mediaType")
-        provider_format = manifest.get("providerFormat")
-        if not all(isinstance(value, str) and value for value in (filename, media_type, provider_format)):
-            raise ValueError("OCR image metadata is incomplete")
-        return ValidatedImage(
-            filename=str(filename),
-            media_type=str(media_type),
-            provider_format=str(provider_format),
-            content=content,
-        )
-
-    async def load_processed(self, manifest: dict[str, object]) -> tuple[bytes, str]:
-        storage_key = manifest.get("processedStorageKey")
-        if not isinstance(storage_key, str):
-            raise ValueError("processed OCR storage key is missing")
-        content = await asyncio.to_thread(self._path(storage_key).read_bytes)
-        expected_hash = manifest.get("processedContentSha256")
-        if not isinstance(expected_hash, str) or hashlib.sha256(content).hexdigest() != expected_hash:
-            raise ValueError("processed OCR image hash mismatch")
-        media_type = manifest.get("processedMediaType")
-        if media_type != "image/jpeg":
-            raise ValueError("processed OCR image media type is invalid")
-        return content, media_type
-
-    async def delete(self, manifest: dict[str, object]) -> None:
-        for field in ("storageKey", "processedStorageKey"):
-            storage_key = manifest.get(field)
-            if isinstance(storage_key, str):
-                await asyncio.to_thread(self._path(storage_key).unlink, missing_ok=True)
-
-    async def delete_orphans(self, active_storage_keys: set[str], *, older_than: datetime) -> int:
-        """Remove stale files that no database row can discover after a partial submit failure."""
-
-        def delete() -> int:
-            if not self.root.exists():
-                return 0
-            deleted = 0
-            cutoff = older_than.timestamp()
-            for path in self.root.iterdir():
-                if not path.is_file() or path.name in active_storage_keys or path.stat().st_mtime > cutoff:
-                    continue
-                path.unlink(missing_ok=True)
-                deleted += 1
-            return deleted
-
-        return await asyncio.to_thread(delete)
+class OcrImageStorage(Protocol):
+    async def save(self, image: ValidatedImage) -> str: ...
+    async def save_processed(self, manifest: dict[str, object], content: bytes) -> dict[str, object]: ...
+    async def load(self, manifest: dict[str, object]) -> ValidatedImage: ...
+    async def load_processed(self, manifest: dict[str, object]) -> tuple[bytes, str]: ...
+    async def delete(self, manifest: dict[str, object]) -> None: ...
+    async def delete_orphans(self, active_storage_keys: set[str], *, older_than: datetime) -> int: ...
 
 
 class MedicationGuideOcrJobService:
     def __init__(
         self,
         *,
-        storage: TemporaryOcrStorage | None = None,
+        storage: OcrImageStorage | None = None,
         redis_pool: QueueClient | None = None,
     ) -> None:
-        self.storage = storage or TemporaryOcrStorage(config.OCR_TEMP_DIR)
+        self.storage = storage or VolatileOcrStorage(config.OCR_IMAGE_REDIS_URL, config.OCR_REVIEW_TTL_MINUTES * 60)
         self.redis_pool = redis_pool
 
     async def submit(self, user: User, idempotency_key: str, upload: UploadFile) -> OcrJobAcceptedResponse:
@@ -220,9 +128,10 @@ class MedicationGuideOcrJobService:
         except OSError as error:
             raise OcrQueueUnavailableError() from error
         manifest: dict[str, object] = {
+            "storageBackend": STORAGE_BACKEND,
             "storageKey": storage_key,
             "contentSha256": content_hash,
-            "filename": image.filename,
+            "filename": f"ocr-input.{image.provider_format}",
             "mediaType": image.media_type,
             "providerFormat": image.provider_format,
             "size": len(image.content),
@@ -314,14 +223,25 @@ class MedicationGuideOcrJobService:
                 raise OcrJobStateConflictError()
 
             job.status = OcrJobStatus.CANCELLED
+            job.ready_at = None
+            job.structured_result = None
             job.expires_at = None
             job.completed_at = now
             job.updated_at = now
             job.error_code = "USER_CANCELLED"
             await job.save(
                 using_db=connection,
-                update_fields=["status", "expires_at", "completed_at", "updated_at", "error_code"],
+                update_fields=[
+                    "status",
+                    "ready_at",
+                    "structured_result",
+                    "expires_at",
+                    "completed_at",
+                    "updated_at",
+                    "error_code",
+                ],
             )
+        await self._purge_terminal_images(job)
 
     async def process(
         self,
@@ -376,6 +296,7 @@ class MedicationGuideOcrJobService:
             manifest["preprocessVersion"] = analysis.preprocess_version
             with timing.persisting():
                 manifest = await self.storage.save_processed(manifest, analysis.processed_image_bytes)
+                await self._refresh_preview_ttl(manifest)
         except (OcrProviderTimeoutError, OcrProviderTransientError) as error:
             if job_try < 2:
                 raise Retry(defer=timedelta(seconds=config.OCR_RETRY_BASE_SECONDS)) from error
@@ -459,6 +380,10 @@ class MedicationGuideOcrJobService:
         }
         with timing.persisting():
             await self._publish_review(job, publication, manifest)
+
+    async def _refresh_preview_ttl(self, manifest: dict[str, object]) -> None:
+        if isinstance(self.storage, VolatileOcrStorage) and not await self.storage.touch(manifest):
+            raise OSError("OCR preview images expired before review became ready")
 
     async def _publish_review(self, job: OcrJob, publication: dict[str, Any], manifest: dict[str, object]) -> None:
         # Keep the analysis and processed image fixed: only publication is retried.
@@ -575,8 +500,9 @@ class MedicationGuideOcrJobService:
     async def read_input_bytes(self, user: User, job_id: int) -> tuple[bytes, str]:
         """Return a verified original image only when the requesting user owns the job."""
         job = await OcrJob.get_or_none(id=job_id, user_id=user.id)
-        if job is None or job.status in {OcrJobStatus.FAILED, OcrJobStatus.CANCELLED}:
+        if not self._preview_available(job):
             raise OcrJobNotFoundError()
+        assert job is not None
         try:
             image = await self.storage.load(self._manifest(job))
         except (OSError, ValueError) as error:
@@ -586,14 +512,64 @@ class MedicationGuideOcrJobService:
     async def read_processed_bytes(self, user: User, job_id: int) -> tuple[bytes, str]:
         """Return the verified processed JPEG only when the requesting user owns the job."""
         job = await OcrJob.get_or_none(id=job_id, user_id=user.id)
-        if job is None or job.status not in {OcrJobStatus.READY_FOR_REVIEW, OcrJobStatus.COMPLETE}:
+        if not self._preview_available(job):
             raise OcrJobNotFoundError()
+        assert job is not None
         try:
             return await self.storage.load_processed(self._manifest(job))
         except (OSError, ValueError) as error:
             raise OcrJobNotFoundError() from error
 
     async def confirm(
+        self,
+        user: User,
+        job_id: int,
+        request: MedicationGuideConfirmRequest,
+        *,
+        allow_registration_edit: bool = False,
+    ) -> OcrConfirmationResponse:
+        result = await self._confirm(user, job_id, request, allow_registration_edit=allow_registration_edit)
+        # Only release images after the domain transaction commits. A Redis outage
+        # must not turn a successfully saved prescription into a failed response.
+        try:
+            job = await OcrJob.get_or_none(id=job_id, user_id=user.id)
+            if job is not None:
+                await self._purge_terminal_images(job)
+        except (DBConnectionError, OperationalError):
+            logger.warning("OCR preview cleanup pending for job %s", job_id)
+        return result
+
+    @staticmethod
+    def _preview_available(job: OcrJob | None) -> bool:
+        return bool(
+            job is not None
+            and job.status == OcrJobStatus.READY_FOR_REVIEW
+            and job.expires_at is not None
+            and job.expires_at > datetime.now(config.TIMEZONE)
+        )
+
+    async def _purge_terminal_images(self, job: OcrJob) -> None:
+        manifest = dict(self._manifest(job))
+        if manifest.get("imagesPurgedAt"):
+            return
+        if self._uses_legacy_disk_manifest(manifest):
+            # Legacy disk files require the explicit maintenance command. Never
+            # label them purged when the volatile adapter did not delete them.
+            return
+        try:
+            await self.storage.delete(manifest)
+            manifest["imagesPurgedAt"] = datetime.now(config.TIMEZONE).isoformat()
+            await OcrJob.filter(
+                id=job.id, status__in=[OcrJobStatus.COMPLETE, OcrJobStatus.CANCELLED, OcrJobStatus.FAILED]
+            ).update(input_manifest=manifest)
+        except (OSError, ValueError, DBConnectionError, OperationalError):
+            # TTL is the hard retention bound; the worker also retries cleanup.
+            logger.warning("OCR preview cleanup pending for job %s", job.id)
+
+    def _uses_legacy_disk_manifest(self, manifest: dict[str, object]) -> bool:
+        return isinstance(self.storage, VolatileOcrStorage) and manifest.get("storageBackend") != STORAGE_BACKEND
+
+    async def _confirm(
         self,
         user: User,
         job_id: int,
@@ -782,9 +758,15 @@ class MedicationGuideOcrJobService:
     async def cleanup_expired(self, *, now: datetime | None = None) -> int:
         """Purge expired temporary images, retaining OCR jobs as operational history."""
         current = now or datetime.now(config.TIMEZONE)
+        stale_cutoff = current - timedelta(minutes=config.OCR_REVIEW_TTL_MINUTES)
+        for terminal in await OcrJob.filter(
+            status__in=[OcrJobStatus.COMPLETE, OcrJobStatus.CANCELLED, OcrJobStatus.FAILED],
+            completed_at__gte=stale_cutoff,
+        ):
+            if self._manifest(terminal).get("storageBackend") == STORAGE_BACKEND:
+                await self._purge_terminal_images(terminal)
         for job in await OcrJob.filter(status=OcrJobStatus.PROCESSING, care_episode_id=None):
             await self._reconcile_worker_failure(job, now=current)
-        stale_cutoff = current - timedelta(minutes=config.OCR_REVIEW_TTL_MINUTES)
         candidate_ids = await (
             OcrJob.filter(care_episode_id=None)
             .filter(
@@ -799,6 +781,9 @@ class MedicationGuideOcrJobService:
         purged = 0
         for job_id in candidate_ids:
             purged += int(await self._purge_images_if_expired(job_id, now=current))
+        if isinstance(self.storage, VolatileOcrStorage):
+            # Redis TTL owns orphan cleanup; do not read all historical manifests.
+            return purged
         manifests = await OcrJob.all().values_list("input_manifest", flat=True)
         active_storage_keys = {
             storage_key
@@ -824,9 +809,11 @@ class MedicationGuideOcrJobService:
             manifest = dict(self._manifest(job))
             if manifest.get("imagesPurgedAt"):
                 return False
-            await self.storage.delete(manifest)
-            manifest["imagesPurgedAt"] = now.isoformat()
-            update_fields = ["input_manifest"]
+            update_fields = []
+            if not self._uses_legacy_disk_manifest(manifest):
+                await self.storage.delete(manifest)
+                manifest["imagesPurgedAt"] = now.isoformat()
+                update_fields.append("input_manifest")
             if job.status in {OcrJobStatus.QUEUED, OcrJobStatus.PROCESSING}:
                 manifest["expiredFromStatus"] = job.status.value
                 job.status = OcrJobStatus.FAILED
@@ -834,7 +821,11 @@ class MedicationGuideOcrJobService:
                 job.started_at = job.started_at or now
                 job.completed_at = now
                 job.updated_at = now
-                update_fields.extend(["status", "error_code", "started_at", "completed_at", "updated_at"])
+                update_fields.extend(
+                    ["input_manifest", "status", "error_code", "started_at", "completed_at", "updated_at"]
+                )
+            if not update_fields:
+                return False
             job.input_manifest = manifest
             await job.save(using_db=connection, update_fields=update_fields)
         return True

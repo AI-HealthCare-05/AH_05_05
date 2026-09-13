@@ -97,6 +97,14 @@ def test_generator_preserves_warning_and_contraindication_section_markdown() -> 
     assert "🚫 **복용하면 안 되는 경우**" in answer
 
 
+def test_generator_preserves_adverse_reaction_section_markdown() -> None:
+    answer = OpenAIMedicationAnswerGenerator._to_limited_markdown(
+        "🚨 **이상반응**\n- 발진이나 호흡 곤란이 나타나면 즉시 진료를 받으세요."
+    )
+
+    assert answer.startswith("🚨 **이상반응**")
+
+
 def test_generator_preserves_active_intake_section_markdown() -> None:
     answer = OpenAIMedicationAnswerGenerator._to_limited_markdown(
         "💊 **복약정보**\n- 가상 약 A · 1정\n\n💪🏻 **영양제 정보**\n- 가상 영양제 B · 1캡슐"

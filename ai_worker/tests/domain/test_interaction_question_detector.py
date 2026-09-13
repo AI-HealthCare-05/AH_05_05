@@ -10,6 +10,7 @@ from ai_worker.domain.interaction_question_detector import (
     [
         "성분 하나랑 성분 둘 먹어도 돼?",
         "첫 번째와 두 번째를 먹어도 되나요?",
+        "마그네슘이랑 아연 같이 머거도대?",
     ],
 )
 def test_detects_relation_question_without_explicit_interaction_keyword(

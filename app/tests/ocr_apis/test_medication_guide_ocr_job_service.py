@@ -38,8 +38,9 @@ from app.models.ocr import OcrJob
 from app.models.users import User
 from app.services.medication_guide_ocr_jobs import (
     MedicationGuideOcrJobService,
-    TemporaryOcrStorage,
 )
+from app.tests.ocr_apis.legacy_storage_fixture import TemporaryOcrStorage
+from app.tests.ocr_apis.test_ocr_volatile_storage import FakeRedis as ImageRedis
 
 
 def png_bytes(color: str = "white") -> bytes:
@@ -80,7 +81,7 @@ def confirm_request(
                 "days": 5,
             },
             {"tempId": "user-2", "name": "추가한 약품", "timesPerDay": 1, "days": 3},
-            {"tempId": "user-3", "name": "필요 시 약품", "timesPerDay": None},
+            {"tempId": "user-3", "name": "필요 시 약품", "timesPerDay": None, "days": 3},
         ],
     }
     if alias is not None:
@@ -356,6 +357,159 @@ def test_ready_projection_omits_explicit_null_times_per_day() -> None:
 
 
 class TestMedicationGuideOcrJobService(TestCase):
+    async def test_volatile_cleanup_does_not_claim_legacy_disk_images_were_deleted(self) -> None:
+        user = await create_user("ocr-legacy-expiry@example.com")
+        now = datetime.now(config.TIMEZONE)
+        job = await OcrJob.create(
+            user=user,
+            idempotency_key="legacy-expiry",
+            status=OcrJobStatus.READY_FOR_REVIEW,
+            input_manifest={"storageKey": "legacy.png"},
+            ocr_model="legacy",
+            schema_version="v1",
+            started_at=now - timedelta(hours=2),
+            ready_at=now - timedelta(hours=1),
+            expires_at=now - timedelta(seconds=1),
+        )
+        with patch("app.services.ocr_volatile_storage.redis.Redis.from_url", return_value=ImageRedis()):
+            service = MedicationGuideOcrJobService(redis_pool=FakeRedis())
+            await service.cleanup_expired(now=now)
+        retained = await OcrJob.get(id=job.id)
+        assert "imagesPurgedAt" not in retained.input_manifest
+
+    async def test_cancel_clears_ready_timestamp_for_mysql_status_constraint(self) -> None:
+        user = await create_user("ocr-cancel-timestamps@example.com")
+        with patch("app.services.ocr_volatile_storage.redis.Redis.from_url", return_value=ImageRedis()):
+            service = MedicationGuideOcrJobService(redis_pool=FakeRedis())
+            accepted = await service.submit(user, "cancel-timestamps", upload())
+            job_id = int(accepted.ocr_job_id)
+            await service.process(job_id, FixtureAnalyzer(), job_try=1)
+            await service.cancel(user, job_id)
+        job = await OcrJob.get(id=job_id)
+        assert job.status is OcrJobStatus.CANCELLED
+        assert job.ready_at is None
+        assert job.expires_at is None
+        assert job.structured_result is None
+
+    async def test_default_storage_processes_and_previews_without_writing_images_to_disk(self) -> None:
+        user = await create_user("ocr-memory-only@example.com")
+        image_redis = ImageRedis()
+        with (
+            patch("app.services.ocr_volatile_storage.redis.Redis.from_url", return_value=image_redis),
+            patch.object(Path, "write_bytes", side_effect=AssertionError("image disk write forbidden")),
+        ):
+            service = MedicationGuideOcrJobService(redis_pool=FakeRedis())
+            accepted = await service.submit(user, "memory-only", upload())
+            job_id = int(accepted.ocr_job_id)
+            await service.process(job_id, FixtureAnalyzer(), job_try=1)
+            assert len(image_redis.values) == 2
+            assert (await service.read_input_bytes(user, job_id))[1] == "image/png"
+            assert (await service.read_processed_bytes(user, job_id))[1] == "image/jpeg"
+            await service.confirm(user, job_id, confirm_request())
+            assert image_redis.values == {}
+            assert (await service.get(user, job_id)).result is not None
+
+    async def test_memory_loss_does_not_erase_review_information(self) -> None:
+        user = await create_user("ocr-memory-loss@example.com")
+        image_redis = ImageRedis()
+        with patch("app.services.ocr_volatile_storage.redis.Redis.from_url", return_value=image_redis):
+            service = MedicationGuideOcrJobService(redis_pool=FakeRedis())
+            accepted = await service.submit(user, "memory-loss", upload())
+            job_id = int(accepted.ocr_job_id)
+            await service.process(job_id, FixtureAnalyzer(), job_try=1)
+            image_redis.values.clear()
+            with pytest.raises(OcrJobNotFoundError):
+                await service.read_processed_bytes(user, job_id)
+            assert (await service.get(user, job_id)).result is not None
+            await service.confirm(user, job_id, confirm_request())
+            assert (await service.get(user, job_id)).status is MedicationGuideOcrJobStatus.COMPLETE
+
+    async def test_missing_source_before_ready_does_not_publish_a_partial_preview_pair(self) -> None:
+        user = await create_user("ocr-source-expired-processing@example.com")
+        image_redis = ImageRedis()
+        with patch("app.services.ocr_volatile_storage.redis.Redis.from_url", return_value=image_redis):
+            service = MedicationGuideOcrJobService(redis_pool=FakeRedis())
+            accepted = await service.submit(user, "source-expired-processing", upload())
+            job_id = int(accepted.ocr_job_id)
+            with patch.object(image_redis, "expire", new=AsyncMock(return_value=False)):
+                await service.process(job_id, FixtureAnalyzer(), job_try=1)
+            assert (await OcrJob.get(id=job_id)).status is OcrJobStatus.FAILED
+            assert image_redis.values == {}
+
+    async def test_cleanup_failure_does_not_fail_confirmation_and_worker_retries_it(self) -> None:
+        user = await create_user("ocr-memory-cleanup-retry@example.com")
+        image_redis = ImageRedis()
+        with patch("app.services.ocr_volatile_storage.redis.Redis.from_url", return_value=image_redis):
+            service = MedicationGuideOcrJobService(redis_pool=FakeRedis())
+            accepted = await service.submit(user, "memory-cleanup-retry", upload())
+            job_id = int(accepted.ocr_job_id)
+            await service.process(job_id, FixtureAnalyzer(), job_try=1)
+            with patch.object(image_redis, "delete", side_effect=OSError("synthetic outage")):
+                result = await service.confirm(user, job_id, confirm_request())
+            assert result.care_episode_id
+            assert len(image_redis.values) == 2
+            with pytest.raises(OcrJobNotFoundError):
+                await service.read_input_bytes(user, job_id)
+            await service.cleanup_expired()
+            assert image_redis.values == {}
+
+    async def test_recent_final_failure_retries_image_cleanup_before_ttl(self) -> None:
+        user = await create_user("ocr-final-failure-cleanup@example.com")
+        image_redis = ImageRedis()
+        with patch("app.services.ocr_volatile_storage.redis.Redis.from_url", return_value=image_redis):
+            service = MedicationGuideOcrJobService(redis_pool=FakeRedis())
+            accepted = await service.submit(user, "failure-cleanup", upload())
+            job_id = int(accepted.ocr_job_id)
+            with patch.object(image_redis, "delete", side_effect=OSError("synthetic outage")):
+                with pytest.raises(OSError):
+                    await service.process(job_id, RecaptureAnalyzer(), job_try=1)
+            assert (await OcrJob.get(id=job_id)).status is OcrJobStatus.FAILED
+            assert image_redis.values
+            await service.cleanup_expired()
+            assert image_redis.values == {}
+
+    async def test_confirm_removes_both_previews_but_retains_extracted_information(self) -> None:
+        user = await create_user("ocr-no-retention@example.com")
+        with TemporaryDirectory() as directory:
+            service = MedicationGuideOcrJobService(storage=TemporaryOcrStorage(Path(directory)), redis_pool=FakeRedis())
+            accepted = await service.submit(user, "no-retention", upload())
+            job_id = int(accepted.ocr_job_id)
+            await service.process(job_id, FixtureAnalyzer(), job_try=1)
+            assert (await service.read_input_bytes(user, job_id))[0]
+            assert (await service.read_processed_bytes(user, job_id))[0]
+
+            await service.confirm(user, job_id, confirm_request())
+
+            assert list(Path(directory).iterdir()) == []
+            result = await service.get(user, job_id)
+            assert result.status is MedicationGuideOcrJobStatus.COMPLETE
+            assert result.result is not None
+            for read in (service.read_input_bytes, service.read_processed_bytes):
+                with pytest.raises(OcrJobNotFoundError):
+                    await read(user, job_id)
+
+    async def test_cancel_removes_both_previews_immediately(self) -> None:
+        user = await create_user("ocr-cancel-no-retention@example.com")
+        with TemporaryDirectory() as directory:
+            service = MedicationGuideOcrJobService(storage=TemporaryOcrStorage(Path(directory)), redis_pool=FakeRedis())
+            accepted = await service.submit(user, "cancel-no-retention", upload())
+            job_id = int(accepted.ocr_job_id)
+            await service.process(job_id, FixtureAnalyzer(), job_try=1)
+            await service.cancel(user, job_id)
+            assert list(Path(directory).iterdir()) == []
+
+    async def test_expired_review_cannot_bypass_expiry_via_image_endpoints(self) -> None:
+        user = await create_user("ocr-expired-no-preview@example.com")
+        with TemporaryDirectory() as directory:
+            service = MedicationGuideOcrJobService(storage=TemporaryOcrStorage(Path(directory)), redis_pool=FakeRedis())
+            accepted = await service.submit(user, "expired-no-preview", upload())
+            job_id = int(accepted.ocr_job_id)
+            await service.process(job_id, FixtureAnalyzer(), job_try=1)
+            await OcrJob.filter(id=job_id).update(expires_at=datetime.now(config.TIMEZONE) - timedelta(seconds=1))
+            for read in (service.read_input_bytes, service.read_processed_bytes):
+                with pytest.raises(OcrJobNotFoundError):
+                    await read(user, job_id)
+
     async def test_worker_failure_preserves_empty_legacy_stages(self) -> None:
         user = await create_user("ocr-empty-legacy-stages@example.com")
         with TemporaryDirectory() as directory:
@@ -535,8 +689,10 @@ class TestMedicationGuideOcrJobService(TestCase):
                 assert saved.error_code is None
                 if confirm_immediately:
                     assert saved.structured_result["medications"][0]["name"] == "사용자 확정 약"
-                assert Path(directory, saved.input_manifest["storageKey"]).exists()
-                assert Path(directory, saved.input_manifest["processedStorageKey"]).exists()
+                assert Path(directory, saved.input_manifest["storageKey"]).exists() is (not confirm_immediately)
+                assert Path(directory, saved.input_manifest["processedStorageKey"]).exists() is (
+                    not confirm_immediately
+                )
 
     async def test_exhausted_publication_marks_failed_without_recalling_providers(self) -> None:
         user = await create_user("ocr-publication-exhausted@example.com")
@@ -1001,6 +1157,7 @@ class TestMedicationGuideOcrJobService(TestCase):
                 redis_pool=FakeRedis(),
             )
             accepted = await service.submit(owner, "input-content-key", upload(image))
+            await service.process(int(accepted.ocr_job_id), FixtureAnalyzer(), job_try=1)
 
             content, media_type = await service.read_input_bytes(owner, int(accepted.ocr_job_id))
 
@@ -1212,7 +1369,7 @@ class TestMedicationGuideOcrJobService(TestCase):
 
         assert response.status is MedicationGuideOcrJobStatus.CANCELLED
 
-    async def test_confirm_creates_domain_rows_once_and_preserves_image_and_review_result(self) -> None:
+    async def test_confirm_creates_domain_rows_once_and_preserves_only_review_result(self) -> None:
         user = await create_user("ocr-confirm@example.com")
         now = datetime.now(config.TIMEZONE)
         job = await OcrJob.create(
@@ -1332,7 +1489,7 @@ class TestMedicationGuideOcrJobService(TestCase):
             ]
             assert stored_job.ready_at is None
             assert stored_job.expires_at is None
-            assert stored_path.is_file()
+            assert not stored_path.exists()
             complete_status = await service.get(user, job.id)
             assert complete_status.status is MedicationGuideOcrJobStatus.COMPLETE
             assert complete_status.result is not None
@@ -1459,6 +1616,7 @@ class TestMedicationGuideOcrJobService(TestCase):
                         "tempId": "user-1",
                         "name": "사용자 추가 필요 시 약",
                         "timesPerDay": None,
+                        "days": 3,
                     }
                 ],
             }

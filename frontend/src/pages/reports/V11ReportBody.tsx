@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react';
+import { useId, useLayoutEffect, useRef, useState, type ReactElement } from 'react';
 import type { IntakeReport, NutrientTotal } from '@/entities/intake-report/types';
 import { safeLink } from './reportViewPrimitives';
 import './V11ReportBody.css';
@@ -20,15 +20,40 @@ const evidenceLabels: Record<string, string> = {
 
 function CollapsibleText({ text, forceOpen = false }: { text: string; forceOpen?: boolean }) {
   const decoded = decodeEntitiesOnce(text);
-  if (forceOpen || decoded.length <= 160) return <p>{decoded}</p>;
-  return <details className="v11-collapsible">
-    <summary>
-      <span className="v11-collapsible-preview">{decoded}</span>
-      <span className="v11-expand-label">자세히 펼쳐보기<span aria-hidden="true">▾</span></span>
-      <span className="v11-collapse-label">접기<span aria-hidden="true">▴</span></span>
-    </summary>
-    <p className="v11-collapsible-full">{decoded}</p>
-  </details>;
+  const textRef = useRef<HTMLParagraphElement>(null);
+  const textId = useId();
+  const [canExpand, setCanExpand] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  useLayoutEffect(() => {
+    setExpanded(false);
+    const element = textRef.current;
+    if (!element || forceOpen) return;
+    let active = true;
+    const measure = () => {
+      if (!active) return;
+      const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight);
+      const clipped = element.scrollHeight > lineHeight * 3 + 1;
+      setCanExpand(clipped);
+      if (!clipped) setExpanded(false);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    void document.fonts.ready.then(measure);
+    document.fonts.addEventListener('loadingdone', measure);
+    return () => {
+      active = false;
+      observer.disconnect();
+      document.fonts.removeEventListener('loadingdone', measure);
+    };
+  }, [decoded, forceOpen]);
+  if (forceOpen) return <p>{decoded}</p>;
+  return <div className="v11-collapsible">
+    <p ref={textRef} id={textId} className={expanded ? 'v11-collapsible-full' : 'v11-collapsible-preview'}>{decoded}</p>
+    {canExpand ? <button type="button" className={expanded ? 'v11-collapse-label' : 'v11-expand-label'} aria-expanded={expanded} aria-controls={textId} onClick={() => setExpanded(value => !value)}>
+      {expanded ? '접기' : '자세히 펼쳐보기'}<span aria-hidden="true">{expanded ? '▴' : '▾'}</span>
+    </button> : null}
+  </div>;
 }
 
 function ActionGroupedCards<T extends { action?: string | null }>({ cards, contextKey, renderCard }: {
@@ -56,27 +81,43 @@ function ActionGroupedCards<T extends { action?: string | null }>({ cards, conte
     : renderCard(group.members[0].card, true, group.members[0].index))}</>;
 }
 
-function nutrientWidth(percent: number): number {
-  if (!Number.isFinite(percent) || percent <= 0) return 0;
-  if (percent <= 100) return percent * 0.75;
-  return Math.min(100, 75 + (percent - 100) * (25 / 30));
+const nutrientValueFormatter = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 10 });
+
+function nutrientNumber(value: string | null | undefined): number | null {
+  if (value == null || value.trim() === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
 }
 
 function NutrientBar({ item }: { item: NutrientTotal }) {
-  const percent = item.referencePercent === null || item.referencePercent === undefined ? Number.NaN : Number(item.referencePercent);
-  const comparable = item.amount !== null && item.amount !== undefined && item.amount !== '' && item.referenceValue !== null && item.referenceValue !== undefined && item.referenceValue !== '' && Number.isFinite(percent);
-  const amount = item.amount && item.unit ? `${item.amount}${item.unit}` : item.dailyTotal;
-  const reference = item.referenceKind === 'RNI' ? '권장섭취량' : item.referenceKind === 'AI' ? '충분섭취량' : '비교 기준';
+  const amount = nutrientNumber(item.amount);
+  const reference = nutrientNumber(item.referenceValue) || null;
+  const suppliedUpper = nutrientNumber(item.upperLimitValue) || null;
+  const upper = suppliedUpper !== null && (reference === null || suppliedUpper >= reference) ? suppliedUpper : null;
+  const scale = upper ?? reference;
+  const comparable = amount !== null && scale !== null && Boolean(item.unit);
+  const position = (value: number) => Math.min(100, Math.max(0, value / (scale ?? 1) * 80));
+  const referencePosition = reference === null ? null : position(reference);
+  const closeLabels = upper !== null && referencePosition !== null && 80 - referencePosition < 20;
+  const overUpper = upper !== null && amount !== null && amount > upper;
+  const referenceLabel = item.referenceKind === 'AI' ? '충분' : item.referenceKind === 'RNI' ? '권장' : '기준';
+  const threshold = (kind: 'reference' | 'upper', value: number, left: number, label: string) => <div
+    data-threshold={kind}
+    className={`v11-range-label${closeLabels ? ` v11-range-label-close-${kind}` : ''}`}
+    style={{ left: `${Math.min(90, Math.max(8, left))}%` }}
+  ><span>{label}</span><span>{nutrientValueFormatter.format(value)}</span></div>;
   return <article className="v11-nutrient">
-    <div className="v11-row-head"><h3>{item.nutrientName} <span>{amount}</span></h3><strong>{comparable ? `${item.referencePercent}%` : '미확인'}</strong></div>
-    {comparable ? <>
-      <div className="v11-track" role="img" aria-label={`${item.nutrientName} ${item.referencePercent}%`}><span style={{ width: `${nutrientWidth(percent)}%` }} /></div>
-      <div className="v11-scale" aria-hidden="true"><span>0%</span><span>100%</span><span>130%+</span></div>
-      <p className="v11-reference">{reference} {item.referenceValue}{item.unit ?? ''} 기준 · 확인된 합계 {amount}</p>
-    </> : <p className="v11-reference">비교 기준 또는 함량이 미확인이라 막대를 표시하지 않았어요.</p>}
-    {item.unknownProductNames?.length ? item.unknownProductNames.length > 1
-      ? <details><summary>확인 필요 제품 {item.unknownProductNames.length}종</summary><p className="v11-reference">{item.unknownProductNames.join(' · ')}</p></details>
-      : <p className="v11-reference">확인 필요 제품 · {item.unknownProductNames[0]}</p> : null}
+    <h3>{item.nutrientName}</h3>
+    <p className="v11-nutrient-amount">{amount === null ? '미확인' : item.amount}<span>{amount === null ? '' : item.unit}</span></p>
+    {comparable ? <div className={`v11-range${overUpper ? ' v11-range-over' : ''}`} role="img"
+      aria-label={`${item.nutrientName} 합계 ${item.amount}${item.unit}${reference === null ? '' : `, ${referenceLabel} ${item.referenceValue}${item.unit}`}${upper === null ? '' : `, 상한 ${item.upperLimitValue}${item.unit}`}${overUpper ? ', 상한 초과' : ''}`}>
+      <div className="v11-range-track"><span style={{ width: `${position(amount)}%` }} /></div>
+      {reference !== null && <><i className="v11-range-tick" data-range-tick="reference" style={{ left: `${referencePosition}%` }} />{threshold('reference', reference, referencePosition!, referenceLabel)}</>}
+      {upper !== null && <><i className="v11-range-tick" data-range-tick="upper" style={{ left: '80%' }} />{threshold('upper', upper, 80, '상한')}</>}
+      <i className="v11-range-dot" data-range-dot style={{ left: `${position(amount)}%` }} />
+    </div> : <p className="v11-reference">{amount === null ? '함량 또는 복용량을 확인할 수 없어 합계와 막대를 표시하지 않았어요.' : '비교 기준 없음 · 확인된 합계만 표시했어요.'}</p>}
+    {overUpper ? <p className="v11-range-warning">상한 초과</p> : null}
+    {comparable && upper === null ? <p className="v11-reference">{item.upperLimitNote || '상한 기준을 확인할 수 없어요.'}</p> : null}
   </article>;
 }
 
@@ -90,8 +131,10 @@ function interactionLabel(evidenceLevel: string, actionLevel: 'WARNING' | 'CHECK
 export function V11ReportBody({ report }: { report: IntakeReport }) {
   const cards = report.cards;
   if (!cards) return null;
+  const medications = report.currentStack.filter(item => item.itemType === 'MEDICATION');
   const supplements = report.currentStack.filter(item => item.itemType === 'SUPPLEMENT');
-  const registeredByMedicationId = new Map(report.currentStack.filter(item => item.itemType === 'MEDICATION').map(item => [item.itemId, item.registeredIntakeInfo]));
+  const nutrientTotals = report.nutrientTotals.filter(item => item.amount == null || item.amount.trim() === '' || Number(item.amount) !== 0);
+  const registeredByMedicationId = new Map(medications.map(item => [item.itemId, item.registeredIntakeInfo]));
   const sortedInteractions = cards.interactions.slice().sort((a, b) => Number(b.actionLevel === 'WARNING') - Number(a.actionLevel === 'WARNING'));
   const actualCounts = `등록한 복용약 ${report.dataAvailability.activeMedicationCount}종 · 영양제 ${report.dataAvailability.activeSupplementCount}종`;
 
@@ -100,8 +143,22 @@ export function V11ReportBody({ report }: { report: IntakeReport }) {
       <span className="v11-eyebrow">약·영양제 리포트</span>
       <h1>먼저 확인할 것부터<br />정리했어요</h1>
       {report.profileLabel ? <p className="v11-meta">{report.profileLabel}</p> : null}
-      <p className="v11-meta">{actualCounts}</p>
-      {report.basisNote ? <p className="v11-notice">{report.basisNote}</p> : null}
+      <details className="v11-registered-products">
+        <summary>{actualCounts}</summary>
+        {supplements.length > 0 ? <p className="v11-product-ingredients">영양제 성분 · 등록한 하루량 기준</p> : null}
+        <div className="v11-product-columns">
+          {[{ label: '복용약', items: medications }, { label: '영양제', items: supplements }].map(({ label, items }) => <div className="v11-product-column" key={label}>
+            <h3>{label} {items.length}종</h3>
+            {items.length > 0 ? <ul aria-label={`등록한 ${label}`}>
+              {items.map(item => <li key={item.itemId}>
+                {decodeEntitiesOnce(item.productName)}
+                {item.itemType === 'SUPPLEMENT' ? <p className="v11-product-ingredients">{decodeEntitiesOnce(item.ingredientSummary?.trim() || '성분·함량 확인 필요')}</p> : null}
+                {item.itemType === 'SUPPLEMENT' ? <p className="v11-product-intake">사용자가 등록한 복용 정보 · {decodeEntitiesOnce(item.registeredIntakeInfo || '미등록')}</p> : null}
+              </li>)}
+            </ul> : <p className="v11-hint">등록된 제품 없음</p>}
+          </div>)}
+        </div>
+      </details>
     </section>
 
     {report.reportStatus === 'PARTIAL' ? <p role="status" className="v11-status">일부 정보를 확인하지 못했어요. 확인 가능한 정보만 담았으며, 정보 부족은 안전하다는 뜻이 아니에요.</p> : null}
@@ -110,7 +167,7 @@ export function V11ReportBody({ report }: { report: IntakeReport }) {
       <a href="#v11-interactions">함께 확인</a>
       {cards.overlaps.length > 0 ? <a href="#v11-overlaps">영양제 중복</a> : null}
       {cards.lifestyle.length > 0 ? <a href="#v11-lifestyle">생활습관</a> : null}
-      {report.nutrientTotals.length > 0 ? <a href="#v11-nutrients">영양소</a> : null}
+      {nutrientTotals.length > 0 ? <a href="#v11-nutrients">영양소</a> : null}
       {cards.medications.length > 0 ? <a href="#v11-medications">약 정보</a> : null}
     </nav>
 
@@ -137,11 +194,20 @@ export function V11ReportBody({ report }: { report: IntakeReport }) {
       </article>} />
     </section> : null}
 
-    {report.nutrientTotals.length > 0 ? <section id="v11-nutrients" className="v11-card" aria-labelledby="v11-nutrients-title">
-      <h2 id="v11-nutrients-title">영양소는 얼마나 겹칠까요?</h2>
-      <p className="v11-hint">식단은 포함하지 않으며, 확인되지 않은 함량은 0으로 계산하지 않았어요.</p>
-      {report.nutrientTotals.map((item, index) => <NutrientBar key={`${item.nutrientName}-${index}`} item={item} />)}
-      <p className="v11-hint">100%는 권장·충분섭취량 비교 기준이며, 이 비율만으로 부족·과다를 판단하지 않아요.</p>
+    {nutrientTotals.length > 0 ? <section id="v11-nutrients" className="v11-card" aria-labelledby="v11-nutrients-title">
+      <h2 id="v11-nutrients-title">영양제 성분 합계</h2>
+      <ul className="v11-hint v11-nutrient-notes">
+        {report.basisNote ? <>
+          <li>{report.basisNote}</li>
+          <li>직접 입력한 영양제와 의약품의 성분은 합산에 포함되지 않아요.</li>
+        </> : <>
+          <li>검색된 영양제의 성분만 합산된 결과예요.</li>
+          <li>직접 입력한 영양제는 성분 합산에 포함되지 않아요.</li>
+          <li>음식과 의약품을 통한 섭취량은 포함되지 않아요.</li>
+        </>}
+      </ul>
+      <div className="v11-nutrient-grid">{nutrientTotals.map((item, index) => <NutrientBar key={`${item.nutrientName}-${index}`} item={item} />)}</div>
+      <p className="v11-hint">영양제 합계 기준이며 식사는 제외됩니다. 상한은 섭취 목표가 아닙니다.</p>
     </section> : null}
 
     {cards.medications.length > 0 ? <section id="v11-medications" className="v11-card" aria-labelledby="v11-medications-title">
@@ -151,34 +217,25 @@ export function V11ReportBody({ report }: { report: IntakeReport }) {
         const includesRegisteredIntake = card.details.some(detail => /등록.*복용|복용.*등록/.test(detail.label));
         return <article className="v11-medicine" key={card.itemId}>
           <h3>{card.productName}</h3>
+          {card.identityNotice ? <p className="v11-hint">{decodeEntitiesOnce(card.identityNotice)}</p> : null}
           <dl>
             <div><dt>효능</dt><dd>{decodeEntitiesOnce(card.efficacy.text)}</dd></div>
-            <div><dt>주의</dt><dd>{decodeEntitiesOnce(card.caution.text)}</dd></div>
-            <div><dt>금기</dt><dd>{decodeEntitiesOnce(card.contraindication.text)}</dd></div>
           </dl>
-          {(registeredIntake || card.details.length > 0) ? <details>
+          <details>
             <summary>약 정보 더 보기</summary>
+            <dl>
+              <div><dt>주의</dt><dd>{decodeEntitiesOnce(card.caution.text)}</dd></div>
+              <div><dt>금기</dt><dd>{decodeEntitiesOnce(card.contraindication.text)}</dd></div>
+            </dl>
             {registeredIntake && !includesRegisteredIntake ? <div className="v11-extra"><strong>사용자가 등록한 복용 정보</strong><p>{registeredIntake}</p></div> : null}
             {card.details.map((detail, index) => {
               const isRegisteredDetail = /등록.*복용|복용.*등록/.test(detail.label);
               return <div className="v11-extra" key={`${detail.label}-${index}`}><strong>{isRegisteredDetail ? '사용자가 등록한 복용 정보' : detail.label}</strong><p>{decodeEntitiesOnce(detail.text)}</p></div>;
             })}
-          </details> : null}
+          </details>
         </article>;
       })}
     </section> : null}
-
-    {supplements.length > 0 ? <section className="v11-card" aria-labelledby="v11-supplements-title">
-      <h2 id="v11-supplements-title">등록한 영양제 {supplements.length}종</h2>
-      <ul className="v11-supplements">{supplements.map(item => <li key={item.itemId}><h3>{item.productName}</h3><p>사용자가 등록한 복용 정보 · {item.registeredIntakeInfo || '미등록'}</p></li>)}</ul>
-    </section> : null}
-
-    {cards.originalTexts?.length ? <section id="v11-originals" className="v11-card"><details>
-      <summary>정리 전 원문 보기</summary>
-      <div className="v11-details-body">{cards.originalTexts.map(original => <p key={original.key}>
-        <strong>{original.label}</strong><br />{decodeEntitiesOnce(original.text)}
-      </p>)}</div>
-    </details></section> : null}
 
     {report.unverifiedItems.length > 0 ? <section className="v11-card v11-source-card"><details>
       <summary>확인하지 못한 정보</summary>

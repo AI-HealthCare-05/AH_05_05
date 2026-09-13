@@ -10,6 +10,7 @@ SUPPORTED_SUPPLEMENT_NAMES = frozenset(
         "구리",
         "셀레늄",
         "엽산",
+        "비타민 D",
         "오메가3",
         "프로바이오틱스",
         "유산균",

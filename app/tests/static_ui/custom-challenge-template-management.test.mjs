@@ -42,3 +42,14 @@ test("resetCustomTemplateFilters clears a dynamically selected check type", () =
   assert.equal(form.elements.challenge_type.value, "");
   assert.equal(form.elements.is_active.value, "");
 });
+
+test("custom template delete is enabled only when the template is unused", () => {
+  assert.equal(
+    management.customTemplateActionMarkup({ id: 15, is_deletable: true }),
+    '<span class="common-code-row-actions"><button type="button" class="ui-link-button" data-edit-custom-template="15">수정</button><button type="button" class="ui-link-button ui-link-button-danger" data-delete-custom-template="15">삭제</button></span>',
+  );
+  assert.equal(
+    management.customTemplateActionMarkup({ id: 16, is_deletable: false }),
+    '<span class="common-code-row-actions"><button type="button" class="ui-link-button" data-edit-custom-template="16">수정</button><button type="button" class="ui-link-button ui-link-button-danger" data-delete-custom-template="16" disabled aria-disabled="true" title="사용 중인 템플릿은 삭제할 수 없습니다.">삭제</button></span>',
+  );
+});

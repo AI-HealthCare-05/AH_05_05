@@ -1,5 +1,7 @@
 from datetime import date
 
+import pytest
+
 from ai_worker.assemblers.intake_report_assembler import IntakeReportAssembler
 from ai_worker.schemas.intake_report import (
     IntakeReportEvidenceLevel,
@@ -83,6 +85,64 @@ def test_assembler_marks_missing_amount_without_total() -> None:
 
     assert draft.nutrient_totals == []
     assert draft.unverified_items[0].item_type == IntakeReportUnverifiedItemType.MISSING_AMOUNT
+
+
+@pytest.mark.parametrize(
+    ("stored", "display"),
+    [
+        ("2.000", "2"),
+        ("1.000", "1"),
+        ("1.500", "1.5"),
+        ("0.050", "0.05"),
+        ("0.005", "0.005"),
+        ("2000", "2000"),
+        ("2000.000", "2000"),
+        ("확인 필요", "확인 필요"),
+    ],
+)
+def test_report_trims_only_insignificant_dose_zeros(stored: str, display: str) -> None:
+    context = _context_with_active_intakes()
+    context.supplements[0].dose_amount = stored
+    draft = IntakeReportAssembler().assemble(
+        context=context,
+        guide_lookups=[],
+        approved_rules=[],
+        knowledge_chunks=[],
+        rag_available=True,
+    )
+    assert draft.current_stack[1].registered_intake_info == f"{display}캡슐"
+    assert f"{display}캡슐" in draft.deterministic_markdown
+    assert context.supplements[0].dose_amount == stored
+
+
+@pytest.mark.parametrize(
+    ("stored", "display"),
+    [
+        ("1.00", "1"),
+        ("1.500", "1.5"),
+        ("0.005", "0.005"),
+        ("2000.00", "2000"),
+        (" 2.00 ", "2"),
+        ("1정", "1정"),
+        ("필요 시", "필요 시"),
+    ],
+)
+def test_report_trims_medication_dose_zeros_without_changing_source(stored: str, display: str) -> None:
+    context = _context_with_active_intakes()
+    context.medications[0].dose = stored
+    context.medications[0].name = "코아프로벨 300/12.5밀리그램"
+    draft = IntakeReportAssembler().assemble(
+        context=context,
+        guide_lookups=[],
+        approved_rules=[],
+        knowledge_chunks=[],
+        rag_available=True,
+    )
+
+    assert draft.current_stack[0].registered_intake_info == f"{display} · 1일 1회"
+    assert f"{display} · 1일 1회" in draft.deterministic_markdown
+    assert draft.current_stack[0].product_name == "코아프로벨 300/12.5밀리그램"
+    assert context.medications[0].dose == stored
 
 
 def test_assembler_preserves_nullable_urls_for_repeated_source_titles() -> None:

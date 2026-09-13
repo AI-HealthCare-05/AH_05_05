@@ -1,6 +1,8 @@
 import { ApiError, escapeHtml, get, patch, post, request, requireLogin, tableState } from "./api.js";
 
 const CHALLENGE_COLUMN_COUNT = 5;
+const PARTICIPANT_COLUMN_COUNT = 2;
+const PARTICIPANT_PAGE_SIZE = 20;
 export const CHALLENGE_BADGE_TYPE_PATH = "/common-codes/CHL/BDG_TYPE";
 
 export function standardBadgeTypeId(items) {
@@ -12,6 +14,33 @@ export function challengeActionMarkup(challengeId, isDeletable = true) {
     ? ""
     : ' disabled aria-disabled="true" title="참여자가 있는 챌린지는 삭제할 수 없습니다."';
   return `<button type="button" class="ui-link-button" data-edit-challenge="${challengeId}">수정</button> <button type="button" class="ui-link-button ui-link-button-danger" data-delete-challenge="${challengeId}"${disabled}>삭제</button>`;
+}
+
+export function challengePrimaryActionState(participantCount) {
+  const opensParticipants = Number(participantCount) > 0;
+  return {
+    type: opensParticipants ? "button" : "submit",
+    label: opensParticipants ? "챌린지 참여 확인" : "저장",
+    opensParticipants,
+  };
+}
+
+export function challengeParticipantPagination(totalCount, requestedPage) {
+  const totalPages = Math.max(1, Math.ceil(Number(totalCount) / PARTICIPANT_PAGE_SIZE));
+  const currentPage = Math.min(Math.max(1, Number(requestedPage) || 1), totalPages);
+  const startPage = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
+  const pages = Array.from(
+    { length: Math.min(5, totalPages - startPage + 1) },
+    (_, index) => startPage + index,
+  );
+  return {
+    currentPage,
+    totalPages,
+    pages,
+    hasPrevious: currentPage > 1,
+    hasNext: currentPage < totalPages,
+    pageSize: PARTICIPANT_PAGE_SIZE,
+  };
 }
 
 function formatDateTime(value) {
@@ -40,15 +69,85 @@ function initializeChallengeManagement() {
   const tbody = document.querySelector("[data-challenge-rows]");
   const form = document.querySelector("[data-challenge-form]");
   const searchForm = document.querySelector("[data-challenge-search]");
-  if (!tbody || !form || !searchForm || !requireLogin()) {
+  const primaryAction = form?.querySelector("[data-challenge-primary-action]");
+  const participantDialog = document.querySelector("[data-challenge-participant-dialog]");
+  const participantRows = document.querySelector("[data-challenge-participant-rows]");
+  const participantTotal = document.querySelector("[data-challenge-participant-total]");
+  const participantPagination = document.querySelector("[data-challenge-participant-pagination]");
+  if (
+    !tbody
+    || !form
+    || !searchForm
+    || !primaryAction
+    || !participantDialog
+    || !participantRows
+    || !participantTotal
+    || !participantPagination
+    || !requireLogin()
+  ) {
     return;
   }
 
   const error = form.querySelector("[data-form-error]");
   const title = form.querySelector("[data-form-title]");
   let editingId = null;
+  let participantPage = 1;
+  let participantCount = 0;
   let lookups;
   let currentFilters = {};
+
+  const applyPrimaryAction = (count) => {
+    participantCount = Number(count) || 0;
+    const state = challengePrimaryActionState(participantCount);
+    primaryAction.type = state.type;
+    primaryAction.textContent = state.label;
+    primaryAction.dataset.opensParticipants = String(state.opensParticipants);
+  };
+
+  const renderParticipantPagination = () => {
+    const state = challengeParticipantPagination(participantCount, participantPage);
+    participantPage = state.currentPage;
+    participantPagination.innerHTML = `
+      <button class="ui-button" type="button" data-challenge-participant-page="${state.currentPage - 1}" ${state.hasPrevious ? "" : "disabled"}>이전</button>
+      <div class="challenge-participant-pagination-pages">
+        ${state.pages
+          .map(
+            (pageNumber) =>
+              `<button class="ui-button challenge-participant-page-button${pageNumber === state.currentPage ? " is-active" : ""}" type="button" data-challenge-participant-page="${pageNumber}" ${pageNumber === state.currentPage ? 'aria-current="page"' : ""}>${pageNumber}</button>`,
+          )
+          .join("")}
+      </div>
+      <button class="ui-button" type="button" data-challenge-participant-page="${state.currentPage + 1}" ${state.hasNext ? "" : "disabled"}>다음</button>`;
+  };
+
+  const renderParticipants = (response, page) => {
+    participantCount = Number(response.total_count) || 0;
+    participantTotal.textContent = String(participantCount);
+    participantPage = challengeParticipantPagination(participantCount, page).currentPage;
+    if (!response.items.length) {
+      tableState.empty(participantRows, PARTICIPANT_COLUMN_COUNT, "참여 내역이 없습니다.");
+    } else {
+      participantRows.innerHTML = response.items
+        .map(
+          (item) => `<tr>
+            <td>${escapeHtml(item.masked_name)}</td>
+            <td>${escapeHtml(formatDateTime(item.started_at))}</td>
+          </tr>`,
+        )
+        .join("");
+    }
+    renderParticipantPagination();
+  };
+
+  const loadParticipants = async (page = 1) => {
+    tableState.loading(participantRows, PARTICIPANT_COLUMN_COUNT, "참여 내역을 불러오는 중…");
+    const response = await get(`/admin/challenges/${editingId}/participants`, {
+      offset: (page - 1) * PARTICIPANT_PAGE_SIZE,
+      limit: PARTICIPANT_PAGE_SIZE,
+    });
+    renderParticipants(response, page);
+    return response;
+  };
 
   const clearSelectedBadge = () => {
     form.elements.reward_badge_id.value = "";
@@ -131,6 +230,12 @@ function initializeChallengeManagement() {
     form.reset();
     clearSelectedBadge();
     editingId = null;
+    participantPage = 1;
+    participantTotal.textContent = "0";
+    participantRows.innerHTML = "";
+    participantPagination.innerHTML = "";
+    applyPrimaryAction(0);
+    if (participantDialog.open) participantDialog.close();
     error.textContent = "";
   };
 
@@ -148,7 +253,14 @@ function initializeChallengeManagement() {
   const openEdit = async (id) => {
     try {
       await loadLookups();
-      const item = await get(`/admin/challenges/${id}`);
+      editingId = Number(id);
+      const [item, participants] = await Promise.all([
+        get(`/admin/challenges/${id}`),
+        get(`/admin/challenges/${id}/participants`, {
+          offset: 0,
+          limit: PARTICIPANT_PAGE_SIZE,
+        }),
+      ]);
       editingId = item.id;
       for (const key of ["name", "phrase", "description"]) {
         form.elements[key].value = item[key] ?? "";
@@ -168,6 +280,8 @@ function initializeChallengeManagement() {
       form.elements.recruit_start_at.value = toLocalDateTime(item.recruit_start_at);
       form.elements.recruit_end_at.value = toLocalDateTime(item.recruit_end_at);
       form.elements.is_displayed.checked = item.is_displayed;
+      renderParticipants(participants, 1);
+      applyPrimaryAction(participants.total_count);
       title.textContent = "챌린지 수정";
       error.textContent = "";
       form.hidden = false;
@@ -224,8 +338,7 @@ function initializeChallengeManagement() {
       reward_badge_id: data.get("reward_badge_id") ? Number(data.get("reward_badge_id")) : null,
       is_displayed: form.elements.is_displayed.checked,
     };
-    const submit = form.querySelector('button[type="submit"]');
-    submit.disabled = true;
+    primaryAction.disabled = true;
     try {
       if (editingId) await patch(`/admin/challenges/${editingId}`, payload);
       else await post("/admin/challenges", payload);
@@ -234,8 +347,40 @@ function initializeChallengeManagement() {
     } catch (caught) {
       error.textContent = caught instanceof ApiError ? caught.message : "저장에 실패했습니다.";
     } finally {
-      submit.disabled = false;
+      primaryAction.disabled = false;
     }
+  });
+
+  primaryAction.addEventListener("click", () => {
+    if (primaryAction.dataset.opensParticipants === "true") {
+      participantDialog.showModal();
+    }
+  });
+
+  participantPagination.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-challenge-participant-page]");
+    if (!button || button.disabled) return;
+    try {
+      await loadParticipants(Number(button.dataset.challengeParticipantPage));
+    } catch (caught) {
+      tableState.error(
+        participantRows,
+        PARTICIPANT_COLUMN_COUNT,
+        caught instanceof ApiError ? caught.message : "참여 내역 조회에 실패했습니다.",
+      );
+      participantPagination.innerHTML = "";
+    }
+  });
+
+  participantRows.addEventListener("click", (event) => {
+    if (event.target.closest("[data-retry]")) void loadParticipants(participantPage);
+  });
+
+  document.querySelectorAll("[data-close-challenge-participants]").forEach((button) => {
+    button.addEventListener("click", () => participantDialog.close());
+  });
+  participantDialog.addEventListener("click", (event) => {
+    if (event.target === participantDialog) participantDialog.close();
   });
 
   document.querySelector("[data-create-challenge]").addEventListener("click", openCreate);

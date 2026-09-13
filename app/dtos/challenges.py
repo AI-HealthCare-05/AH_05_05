@@ -127,6 +127,18 @@ class ChallengeListResponse(SnakeModel):
     limit: int
 
 
+class ChallengeParticipantResponse(SnakeModel):
+    masked_name: str
+    started_at: datetime
+
+
+class ChallengeParticipantListResponse(SnakeModel):
+    items: list[ChallengeParticipantResponse]
+    total_count: int
+    offset: int
+    limit: int
+
+
 class ChallengeAdminListQuery(SnakeModel):
     name: str | None = Field(default=None, max_length=100)
     challenge_type_id: int | None = Field(default=None, ge=1)
@@ -166,6 +178,7 @@ class CustomChallengeTemplateResponse(SnakeModel):
     challenge_type: int | None = Field(validation_alias="challenge_type_id")
     reward_badge_id: int | None
     is_active: bool
+    is_deletable: bool = True
     created_by_admin_id: int | None
     updated_by_admin_id: int | None
     created_at: datetime

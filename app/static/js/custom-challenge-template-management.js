@@ -1,4 +1,4 @@
-import { ApiError, escapeHtml, get, patch, post, requireLogin, tableState } from "./api.js";
+import { ApiError, escapeHtml, get, patch, post, request, requireLogin, tableState } from "./api.js";
 
 const COLUMN_COUNT = 6;
 export const CUSTOM_TEMPLATE_CHECK_TYPE_PATH = "/common-codes/CHL/CST_CHK_TYPE";
@@ -7,6 +7,13 @@ export const CUSTOM_TEMPLATE_BADGE_TYPE_PATH = "/common-codes/CHL/BDG_TYPE";
 
 export function customBadgeTypeId(items) {
   return items.find((item) => item.detail_code === "CUSTOM")?.id ?? null;
+}
+
+export function customTemplateActionMarkup(item) {
+  const disabled = item.is_deletable
+    ? ""
+    : ' disabled aria-disabled="true" title="사용 중인 템플릿은 삭제할 수 없습니다."';
+  return `<span class="common-code-row-actions"><button type="button" class="ui-link-button" data-edit-custom-template="${item.id}">수정</button><button type="button" class="ui-link-button ui-link-button-danger" data-delete-custom-template="${item.id}"${disabled}>삭제</button></span>`;
 }
 
 export function resetCustomTemplateFilters(form) {
@@ -93,7 +100,7 @@ function initializeCustomChallengeTemplateManagement() {
         <td>${escapeHtml(challengeTypeName(item.challenge_type))}</td>
         <td>${escapeHtml(checkTypeName(item.check_type_id))}</td>
         <td><span class="status-badge ${item.is_active ? "status-active" : "status-stopped"}">${item.is_active ? "사용" : "미사용"}</span></td>
-        <td><button type="button" class="ui-link-button" data-edit-custom-template="${item.id}">수정</button></td>
+        <td>${customTemplateActionMarkup(item)}</td>
       </tr>`).join("");
     } catch (caught) {
       tableState.error(tbody, COLUMN_COUNT, caught instanceof ApiError ? caught.message : "템플릿 목록 조회에 실패했습니다.");
@@ -178,9 +185,20 @@ function initializeCustomChallengeTemplateManagement() {
   document.querySelectorAll("[data-close-form]").forEach((button) => button.addEventListener("click", closeDialog));
   dialog.addEventListener("close", resetForm);
   dialog.addEventListener("click", (event) => { if (event.target === dialog) closeDialog(); });
-  tbody.addEventListener("click", (event) => {
+  tbody.addEventListener("click", async (event) => {
+    if (event.target.closest("[data-retry]")) return load();
     const edit = event.target.closest("[data-edit-custom-template]");
     if (edit) void openEdit(edit.dataset.editCustomTemplate);
+    const remove = event.target.closest("[data-delete-custom-template]");
+    if (!remove || remove.disabled || !window.confirm("이 맞춤 챌린지 템플릿을 삭제하시겠습니까?")) return;
+    try {
+      await request(`/admin/custom-challenge-templates/${remove.dataset.deleteCustomTemplate}`, {
+        method: "DELETE",
+      });
+      await load();
+    } catch (caught) {
+      window.alert(caught instanceof ApiError ? caught.message : "템플릿 삭제에 실패했습니다.");
+    }
   });
 
   void load();

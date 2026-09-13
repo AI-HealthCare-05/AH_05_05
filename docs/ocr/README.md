@@ -33,7 +33,7 @@ GrabCut 경량화 v3.1의 전처리·OCR·LLM 비교는
 ```text
 프론트엔드
   └─ POST /api/v1/ocr
-       ├─ FastAPI: OcrJob 생성 + 원본 이미지 임시 저장
+       ├─ FastAPI: OcrJob 생성 + 원본 이미지를 전용 Redis RAM에 임시 보관
        └─ Redis: OCR 작업 대기열 등록
             └─ ocr-worker: 전처리 → CLOVA OCR → 조건부 LLM → 검증
                  └─ MySQL: READY_FOR_REVIEW 결과 저장
@@ -41,10 +41,10 @@ GrabCut 경량화 v3.1의 전처리·OCR·LLM 비교는
 프론트엔드가 2초마다 GET /api/v1/ocr/jobs/{ocrJobId} 조회
   └─ 사용자가 결과 수정·확인
        └─ PATCH /api/v1/ocr/jobs/{ocrJobId}
-            └─ CareEpisode 1건 + Medication N건 저장
+            └─ CareEpisode 1건 + Medication N건 저장, 원본·처리본 RAM 이미지 삭제
 ```
 
-OCR을 실행하려면 `fastapi`만 아니라 다음 네 서비스가 모두 필요하다.
+OCR을 실행하려면 `fastapi`만 아니라 다음 다섯 서비스가 모두 필요하다.
 
 업로드와 원본·전처리 이미지 조회는 10초 HTTP 제한 시간(`@api_timeout(10)`: 라우트 데코레이터 아래)을 사용하고, 상태 조회·확정은 공통 3초 제한을 사용한다. 제한 시간 초과 응답은 `504 {"code":"API_TIMEOUT","message":"요청 처리 시간이 초과되었습니다."}`다. worker의 전처리·CLOVA·조건부 LLM·검증은 대기열에서 비동기로 실행되므로 이 HTTP 제한 시간과 별개다.
 
@@ -52,8 +52,12 @@ OCR을 실행하려면 `fastapi`만 아니라 다음 네 서비스가 모두 필
 | --- | --- |
 | `mysql` | 사용자, OCR 작업, 확정된 복약 기록 저장 |
 | `redis` | FastAPI와 OCR worker 사이의 비동기 작업 대기열 |
+| `ocr-images` | 원본·전처리 미리보기 전용 RAM 저장소, 디스크 영속화 없음 |
 | `fastapi` | 업로드·상태 조회·확정 API |
 | `ocr-worker` | CLOVA 호출과 OCR 결과 구조화 |
+
+검토 중 원본·전처리 미리보기는 유지하지만 확정·취소 후에는 이미지를 다시 제공하지 않는다.
+기존 디스크 임시파일은 자동 삭제하지 않는다. [메모리 전용 보관과 안전한 레거시 정리](./ocr-memory-only-storage-20260913.md)를 참고한다.
 
 ## 0. 사전 준비
 

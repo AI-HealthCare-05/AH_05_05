@@ -9,6 +9,7 @@ export interface NutrientTotal {
   nutrientName: string; dailyTotal: string; includedProductNames: string[]; calculationStatus: string;
   amount?: string | null; unit?: string | null; referenceValue?: string | null;
   referenceKind?: 'RNI' | 'AI' | null; referencePercent?: string | null; unknownProductNames?: string[];
+  upperLimitValue?: string | null; upperLimitNote?: string | null;
 }
 export interface ProductGuide {
   productName: string; oneLineSummary: string; generalRole: string | null; checkItem: string; sources: ReportSource[];
@@ -20,7 +21,7 @@ export interface CardSection { text: string; sourceIds: string[]; }
 export interface CardDetail { label: string; text: string; sourceIds: string[]; }
 export interface MedicationCard {
   itemId: number; productName: string; efficacy: CardSection; caution: CardSection;
-  contraindication: CardSection; details: CardDetail[]; sourceIds: string[];
+  identityNotice?: string | null; contraindication: CardSection; details: CardDetail[]; sourceIds: string[];
 }
 export interface InteractionCard {
   id: string; title: string; summary: string; action: string; relatedItemIds: number[];
@@ -54,7 +55,7 @@ export interface IntakeReport {
     reviewedProductCount: number; potentialRedundancyCount: number; interactionCheckCount: number; summary: string;
     summaryCards: { key: string; label: string; value: number; unit: string }[];
   };
-  currentStack: { itemType: string; itemId: number; productName: string; ingredientName: string | null; registeredIntakeInfo: string; scheduledSlots: string[]; evidenceLevel: string }[];
+  currentStack: { itemType: string; itemId: number; productName: string; ingredientName: string | null; ingredientSummary?: string | null; registeredIntakeInfo: string; scheduledSlots: string[]; evidenceLevel: string }[];
   reviewCards: IntakeReportCard[];
   nutrientTotals: NutrientTotal[];
   chartData: { medicationCount: number; supplementCount: number; interactionCardCount: number; redundancyCardCount: number; cautionCardCount: number; missingInfoCardCount: number };

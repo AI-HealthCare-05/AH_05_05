@@ -45,6 +45,15 @@ def test_challenge_page_uses_inline_official_badge_select() -> None:
     assert "data-open-badge-search" not in challenge
 
 
+def test_challenge_page_exposes_participant_dialog() -> None:
+    challenge = (STATIC_ROOT / "templates/challenge-management.html").read_text(encoding="utf-8")
+
+    assert "data-challenge-participant-dialog" in challenge
+    assert "data-challenge-participant-total" in challenge
+    assert "data-challenge-participant-rows" in challenge
+    assert "data-challenge-participant-pagination" in challenge
+
+
 def test_custom_challenge_template_management_page_loads_its_script() -> None:
     page = (STATIC_ROOT / "templates/custom-challenge-template-management.html").read_text(encoding="utf-8")
 
@@ -54,7 +63,7 @@ def test_custom_challenge_template_management_page_loads_its_script() -> None:
     assert "data-custom-template-search" in page
     assert "data-custom-template-dialog" in page
     assert "<th>챌린지 유형</th>" in page
-    assert "custom-challenge-template-management.js?v=20260909-4" in page
+    assert "custom-challenge-template-management.js?v=20260913-1" in page
     assert 'name="challenge_type"' in page
     assert "custom-template-search-form" in page
     assert "배지유형" not in page

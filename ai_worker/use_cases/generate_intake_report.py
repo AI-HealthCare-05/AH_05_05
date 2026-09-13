@@ -94,10 +94,22 @@ class GenerateIntakeReportUseCase:
         # Preserve registration identity even when names are repeated or a guide
         # has a canonical display name different from the user's registration.
         medication_names = list(dict.fromkeys(item.name.strip() for item in context.medications if item.name.strip()))
+        lookups_by_name = dict(zip(medication_names, guide_lookups, strict=True))
         guides_by_name = {
             name: lookup.guide.medication_guide_id
-            for name, lookup in zip(medication_names, guide_lookups, strict=True)
+            for name, lookup in lookups_by_name.items()
             if lookup.guide is not None and not lookup.is_ambiguous
+        }
+        inferred_guide_items = {
+            item.medication_id: self._inferred_guide_notice(
+                input_name=(lookup.original_name or item.name).strip(),
+                product_name=lookup.guide.product_name,
+            )
+            for item in context.medications
+            if (lookup := lookups_by_name.get(item.name.strip())) is not None
+            and lookup.guide is not None
+            and not lookup.is_ambiguous
+            and lookup.is_inferred
         }
         draft = draft.model_copy(
             update={
@@ -112,6 +124,11 @@ class GenerateIntakeReportUseCase:
                         for lookup in guide_lookups
                         if lookup.guide is not None and not lookup.is_ambiguous
                     }.values()
+                ),
+                "inferred_guide_items": inferred_guide_items,
+                "deterministic_markdown": self._with_inferred_guide_notices(
+                    draft.deterministic_markdown,
+                    inferred_guide_items,
                 ),
                 "knowledge_evidence": knowledge_chunks,
             }
@@ -139,17 +156,36 @@ class GenerateIntakeReportUseCase:
         )
 
     @staticmethod
+    def _inferred_guide_notice(*, input_name: str, product_name: str) -> str:
+        return f"‘{input_name}’을 ‘{product_name}’으로 추정한 제품 안내입니다. 등록한 이름은 바꾸지 않았어요."
+
+    @staticmethod
+    def _with_inferred_guide_notices(markdown: str, notices: dict[int, str]) -> str:
+        if not notices:
+            return markdown
+        return markdown + "\n\n## 제품 안내 이름 확인\n\n" + "\n".join(f"- {notice}" for notice in notices.values())
+
+    @staticmethod
     def _with_nutrients(
         draft: IntakeReportDraft,
         context: ActiveIntakeContext,
         data: ReportNutrientData,
     ) -> IntakeReportDraft:
-        labels = {s.registration_id: data.product_labels.get(s.supplement_nutrient_id) for s in context.supplements}
+        labels = data.product_labels
+        summaries = getattr(data, "product_ingredient_summaries", {})
         stack = [
             item.model_copy(
-                update={"registered_intake_info": item.registered_intake_info + " · " + labels[item.item_id]}
+                update={
+                    **(
+                        {"registered_intake_info": item.registered_intake_info + " · " + labels[item.item_id]}
+                        if labels.get(item.item_id)
+                        else {}
+                    ),
+                    **({"ingredient_summary": summaries[item.item_id]} if summaries.get(item.item_id) else {}),
+                }
             )
-            if item.item_type == IntakeReportItemType.SUPPLEMENT and labels.get(item.item_id)
+            if item.item_type == IntakeReportItemType.SUPPLEMENT
+            and (labels.get(item.item_id) or summaries.get(item.item_id))
             else item
             for item in draft.current_stack
         ]

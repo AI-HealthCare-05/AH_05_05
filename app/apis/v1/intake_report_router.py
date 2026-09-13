@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.api_timeout import api_timeout
+from app.core.email.intake_report_renderer import render_intake_report_email
 from app.dependencies.intake_report import (
     get_intake_report_application_service,
     get_intake_report_email_job_service,
@@ -112,9 +113,11 @@ async def generate_intake_report(
     result = await service.generate(user=user)
     response = IntakeReportResponse.from_result(result)
     if result.status.value != "EMPTY" and isinstance(getattr(user, "email", None), str):
+        email_content = render_intake_report_email(response)
         response.email_token = email_service.create_snapshot_token(
             user=user,
-            report_markdown=result.report_markdown,
+            report_markdown=email_content[1] if email_content is not None else result.report_markdown,
+            **({"report_html": email_content[0]} if email_content is not None else {}),
         )
     return response
 
@@ -144,6 +147,7 @@ async def send_intake_report_email(
         recipient_email=recipient_email,
         report_markdown=snapshot.report_markdown,
         report_id=snapshot.report_id,
+        **({"report_html": snapshot.report_html} if getattr(snapshot, "report_html", None) is not None else {}),
     )
     if job.status is BackgroundJobStatus.FAILED:
         raise HTTPException(

@@ -1,3 +1,5 @@
+import re
+
 from ai_worker.schemas.intake_report import (
     IntakeReportChartData,
     IntakeReportCurrentStackItem,
@@ -19,6 +21,12 @@ from ai_worker.schemas.medication_chat import (
     InteractionRuleFact,
     MedicationGuideLookup,
 )
+
+
+def _display_dose_amount(value: str) -> str:
+    value = value.strip()
+    # Trim storage scale without rounding, float conversion or altering free text.
+    return value.rstrip("0").rstrip(".") if re.fullmatch(r"[+-]?\d+\.\d+", value) else value
 
 
 class IntakeReportAssembler:
@@ -108,7 +116,7 @@ class IntakeReportAssembler:
                 product_name=supplement.name,
                 ingredient_name=supplement.name,
                 registered_intake_info=(
-                    f"{supplement.dose_amount}{supplement.dose_unit}"
+                    f"{_display_dose_amount(supplement.dose_amount)}{supplement.dose_unit}"
                     if supplement.dose_amount.strip()
                     else "등록된 복용량 확인 필요"
                 ),
@@ -124,7 +132,7 @@ class IntakeReportAssembler:
         dose: str | None,
         times_per_day: int | None,
     ) -> str:
-        details = [dose.strip()] if dose and dose.strip() else []
+        details = [_display_dose_amount(dose)] if dose and dose.strip() else []
         if times_per_day:
             details.append(f"1일 {times_per_day}회")
         return " · ".join(details) or "등록된 복용 정보 확인 필요"
@@ -153,7 +161,12 @@ class IntakeReportAssembler:
             IntakeReportUnverifiedItem(
                 item_type=IntakeReportUnverifiedItemType.AMBIGUOUS_PRODUCT,
                 title="의약품 제품명 확인 필요",
-                message=("같은 이름으로 여러 제품이 확인되어 특정 제품 안내를 사실처럼 표시하지 않았습니다."),
+                message=(
+                    f"‘{lookup.original_name}’의 제품명 후보: {', '.join(lookup.candidate_names[:5])}. "
+                    "제품이 확정되지 않아 해당 제품 안내는 반영하지 않았습니다."
+                    if lookup.original_name
+                    else "같은 이름으로 여러 제품이 확인되어 특정 제품 안내를 사실처럼 표시하지 않았습니다."
+                ),
                 related_items=lookup.candidate_names,
                 next_step="약봉투의 정확한 제품명과 성분명을 확인해 주세요.",
             )
