@@ -46,6 +46,23 @@ async function expectNoDocumentOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 }
 
+async function expectNativeDateContentFits(input: Locator) {
+  const fit = await input.evaluate((element: HTMLInputElement) => {
+    const style = getComputedStyle(element);
+    const context = document.createElement('canvas').getContext('2d')!;
+    context.font = style.font;
+    const displayedDate = element.value ? '2026. 09. 13.' : '연도. 월. 일.';
+    const requiredWidth =
+      parseFloat(style.paddingLeft) +
+      context.measureText(displayedDate).width +
+      8 +
+      24 +
+      parseFloat(style.paddingRight);
+    return { clientWidth: element.clientWidth, requiredWidth };
+  });
+  expect(fit.clientWidth).toBeGreaterThanOrEqual(fit.requiredWidth);
+}
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     sessionStorage.setItem('poke.access-token', '447-remaining-controls');
@@ -150,6 +167,46 @@ test('검색·날짜·메모·후기·진료 시간은 기존 Input과 같은 �
   await expect(review).toHaveAttribute('maxlength', '100');
   expect(await review.evaluate((element) => getComputedStyle(element).resize)).toBe('none');
 });
+
+for (const width of [320, 390]) {
+  test(`${width}px 직접 지정 날짜는 네이티브 내용이 맞는 반응형 열을 사용한다`, async ({ page }) => {
+    test.skip(IS_REAL_API, MOCK_ONLY_REASON);
+    await page.clock.setFixedTime(new Date('2026-09-13T03:00:00Z'));
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto('/dev/medications');
+    await page.getByRole('button', { name: '최근 6개월' }).click();
+    const periodSheet = page.getByRole('dialog', { name: '조회 기간' });
+    await periodSheet.getByText('직접 지정', { exact: true }).click();
+    const from = periodSheet.getByLabel('시작일');
+    const to = periodSheet.getByLabel('종료일');
+
+    const [emptyFromBox, emptyToBox] = await Promise.all([from.boundingBox(), to.boundingBox()]);
+    expect(emptyFromBox).not.toBeNull();
+    expect(emptyToBox).not.toBeNull();
+    if (width < 360) {
+      expect(Math.abs(emptyFromBox!.x - emptyToBox!.x)).toBeLessThan(1);
+      expect(emptyToBox!.y).toBeGreaterThanOrEqual(emptyFromBox!.y + emptyFromBox!.height);
+    } else {
+      expect(Math.abs(emptyFromBox!.y - emptyToBox!.y)).toBeLessThan(1);
+      expect(emptyToBox!.x).toBeGreaterThanOrEqual(emptyFromBox!.x + emptyFromBox!.width);
+    }
+    await expectNativeDateContentFits(from);
+    await expectNativeDateContentFits(to);
+    await expectNoDocumentOverflow(page);
+    await page.screenshot({ path: `${SCREENSHOT_DIR}/task-6-period-empty-${width}.png`, fullPage: true });
+
+    await from.fill('2026-09-01');
+    await to.fill('2026-09-13');
+    await expect(from).toHaveAttribute('min', '2024-09-13');
+    await expect(from).toHaveAttribute('max', '2026-09-13');
+    await expect(to).toHaveAttribute('min', '2026-09-01');
+    await expect(to).toHaveAttribute('max', '2026-09-13');
+    await expectNativeDateContentFits(from);
+    await expectNativeDateContentFits(to);
+    await expectNoDocumentOverflow(page);
+    await page.screenshot({ path: `${SCREENSHOT_DIR}/task-6-period-populated-${width}.png`, fullPage: true });
+  });
+}
 
 test('MY 실행 버튼과 비밀번호 이동 행은 기존 Button과 ManagementRow 역할을 따른다', async ({ page }) => {
   test.skip(IS_REAL_API, MOCK_ONLY_REASON);
