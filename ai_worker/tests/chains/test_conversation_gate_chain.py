@@ -76,6 +76,8 @@ async def test_chain_sends_only_four_recent_messages_and_returns_structured_outp
         "예시(Example)",
     ):
         assert heading in client.rendered_system_prompt
+    assert "현재 질문 자체가 직접 위해 행동을 요청할 때만" in client.rendered_system_prompt
+    assert "상호작용 의도로 우선 분류" in client.rendered_system_prompt
 
 
 def test_classification_accepts_follow_up_schedule_intent() -> None:

@@ -36,7 +36,7 @@ from ai_worker.schemas.medication_search import (
     MedicationQueryResolutionStatus,
 )
 
-_FUNCTION_INTENT_PATTERN = re.compile(r"어디(?:에)?\s*(?:좋|쓰)")
+_FUNCTION_INTENT_PATTERN = re.compile(r"어디(?:에)?\s*(?:좋|쓰)|(?:뭐|무엇)(?:야|예요|인가요)")
 _DAILY_INTAKE_INTENT_PATTERN = re.compile(
     r"(?:하루|1일).{0,12}?(?:최대|몇\s*(?:정|캡슐|포|회|mg|밀리그램))|"
     r"최대.{0,12}?(?:용량|복용량|몇\s*(?:정|캡슐|포|회|mg|밀리그램))",

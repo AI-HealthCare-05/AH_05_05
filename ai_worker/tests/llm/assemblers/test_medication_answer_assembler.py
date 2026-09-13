@@ -16,7 +16,10 @@ from ai_worker.schemas.medication_chat import (
     MedicationEvidenceCoverage,
     MedicationGuideFact,
 )
-from ai_worker.schemas.medication_search import SupplementIngredientFamily
+from ai_worker.schemas.medication_search import (
+    MedicationInteractionQueryPair,
+    SupplementIngredientFamily,
+)
 
 
 def build_guide(**updates: str) -> MedicationGuideFact:
@@ -222,7 +225,7 @@ def test_assemble_formats_active_intake_as_markdown_sections() -> None:
     assert "\n\n💪🏻 **영양제 정보**\n- 비타민 K · 1정" in answer
 
 
-def test_assemble_marks_only_verified_interactions_as_confirmed() -> None:
+def test_assemble_labels_active_intake_interactions_separately() -> None:
     answer = MedicationAnswerAssembler().assemble(
         context=ActiveIntakeContext(user_id=1),
         guide=None,
@@ -241,7 +244,7 @@ def test_assemble_marks_only_verified_interactions_as_confirmed() -> None:
         interaction_question=True,
     )
 
-    assert "🔁 **확인된 상호작용**" in answer
+    assert "🔁 **복약정보와 상호작용**" in answer
     assert "- 와파린 ↔ 비타민 K: 약효에 영향을 줄 수 있어 섭취량을 일정하게 유지해야 합니다." in answer
     assert "☑️ **확인하지 못한 조합**" not in answer
 
@@ -259,6 +262,90 @@ def test_assemble_labels_unverified_interaction_without_confirmed_heading() -> N
     assert "☑️ **확인하지 못한 조합**" in answer
     assert "현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 못했습니다." in answer
     assert "확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다." in answer
+
+
+def test_assemble_separates_question_interaction_from_active_medication_names() -> None:
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=10,
+                    name="세레콕시브캡슐200mg",
+                )
+            ],
+        ),
+        guide=None,
+        rules=[],
+        chunks=[],
+        interaction_question=True,
+        question_interaction_pairs=[
+            MedicationInteractionQueryPair(
+                left_name="타이레놀",
+                right_name="마그네슘",
+                pair_type="DRUG_SUPPLEMENT",
+                pair_key="a" * 64,
+            )
+        ],
+    )
+
+    assert "💊 **복약정보**\n- 세레콕시브캡슐200mg\n\n---\n\n🔁 **질문 상호작용**" in answer
+    assert "**[타이레놀-마그네슘]**" in answer
+    assert "- 현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 못했습니다." in answer
+    assert "세레콕시브캡슐200mg ↔" not in answer
+
+
+def test_assemble_places_verified_question_interaction_content_under_its_pair() -> None:
+    pair = MedicationInteractionQueryPair(
+        left_name="타이레놀",
+        right_name="마그네슘",
+        pair_type="DRUG_SUPPLEMENT",
+        pair_key="a" * 64,
+    )
+    chunk = RetrievedKnowledgeChunk(
+        point_id="tylenol-magnesium-point",
+        chunk_id="c" * 64,
+        content="두 대상의 병용과 관련된 직접 근거입니다.",
+        embedding_text="tylenol magnesium interaction",
+        token_count=20,
+        similarity_score=0.7,
+        metadata=KnowledgeChunkMetadata(
+            source_id="interaction-study",
+            document_id="tylenol-magnesium",
+            title="Tylenol and Magnesium Interaction",
+            provider="학술 논문 발행처",
+            access_scope=KnowledgeAccessScope.DEMO_RESTRICTED,
+            document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+            dataset_version="knowledge-full-v1",
+            drug_names=["타이레놀"],
+            ingredient_names=["마그네슘"],
+            interaction_pair_keys=[pair.pair_key],
+            section_type=KnowledgeSectionType.INTERACTION,
+            page_start=1,
+            page_end=1,
+            chunk_index=0,
+            content_hash="d" * 64,
+        ),
+    )
+
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=[],
+        chunks=[chunk],
+        interaction_question=True,
+        question_interaction_pairs=[pair],
+        evidence_coverage=MedicationEvidenceCoverage(
+            requested_section_types=[KnowledgeSectionType.INTERACTION],
+            covered_section_types=[KnowledgeSectionType.INTERACTION],
+            verified_interaction_pair_keys=[pair.pair_key],
+        ),
+    )
+
+    assert "**[타이레놀-마그네슘]**\n- 두 대상의 병용과 관련된 직접 근거입니다." in answer
+    assert "검색된 상호작용 연구 근거" not in answer
+    assert "확인하지 못했습니다" not in answer
 
 
 def test_assemble_does_not_repeat_unverified_interaction_notice_as_missing_evidence() -> None:

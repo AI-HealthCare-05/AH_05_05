@@ -57,8 +57,9 @@ class OpenAIMedicationAnswerGenerator:
         re.IGNORECASE,
     )
     _MARKDOWN_HEADING_PATTERN = re.compile(r"^\s{0,3}#{1,6}\s*")
-    _SECTION_HEADER_PATTERN = re.compile(r"^\s*(?P<icon>✅|⚠️|🚫|💊|💪🏻)\s*\*\*(?P<title>[^*\n]+)\*\*\s*:?\s*$")
+    _SECTION_HEADER_PATTERN = re.compile(r"^\s*(?P<icon>✅|⚠️|🚫|💊|💪🏻|🔁)\s*\*\*(?P<title>[^*\n]+)\*\*\s*:?\s*$")
     _BOLD_MARKER_PATTERN = re.compile(r"\*\*(.+?)\*\*")
+    _INTERACTION_PAIR_HEADER_PATTERN = re.compile(r"^\*\*(?P<pair>\[[^\]\n]+\])\*\*$")
     _BULLET_MARKER_PATTERN = re.compile(r"^\s*(?:[-*•])\s*")
     _SENTENCE_BOUNDARY_PATTERN = re.compile(r"(?<=[.!?。！？])\s+")
     _DISCLAIMER_PATTERN = re.compile(r"의료\s*(?:전문가|진)의\s*(?:진단|진료|처방).*대체하지\s*않습니다")
@@ -307,13 +308,30 @@ class OpenAIMedicationAnswerGenerator:
     def _format_interaction_section(cls, lines: list[str]) -> list[str]:
         """상호작용 사실을 줄글 대신 대시 목록으로 고정한다."""
 
+        formatted: list[str] = []
         prose_lines: list[str] = []
         bullet_items: list[list[str]] = []
         current_bullet: list[str] | None = None
 
+        def flush_facts() -> None:
+            nonlocal current_bullet
+            if current_bullet is not None:
+                bullet_items.append(current_bullet)
+                current_bullet = None
+            facts = cls._interaction_sentences(prose_lines)
+            facts.extend(cls._normalize_interaction_fact(item) for item in bullet_items)
+            formatted.extend(f"- {fact}" for fact in facts if fact)
+            prose_lines.clear()
+            bullet_items.clear()
+
         for raw_line in lines:
             line = raw_line.strip()
             if not line:
+                continue
+            pair_header = cls._INTERACTION_PAIR_HEADER_PATTERN.fullmatch(line)
+            if pair_header is not None:
+                flush_facts()
+                formatted.append(f"**{pair_header.group('pair')}**")
                 continue
             bullet_match = cls._BULLET_MARKER_PATTERN.match(line)
             if bullet_match is not None:
@@ -326,15 +344,10 @@ class OpenAIMedicationAnswerGenerator:
             else:
                 prose_lines.append(line)
 
-        if current_bullet is not None:
-            bullet_items.append(current_bullet)
-
-        facts = cls._interaction_sentences(prose_lines)
-        facts.extend(cls._normalize_interaction_fact(item) for item in bullet_items)
-        facts = [fact for fact in facts if fact]
-        if not facts:
+        flush_facts()
+        if not formatted:
             return []
-        return ["", *(f"- {fact}" for fact in facts)]
+        return ["", *formatted]
 
     @classmethod
     def _interaction_sentences(cls, lines: list[str]) -> list[str]:

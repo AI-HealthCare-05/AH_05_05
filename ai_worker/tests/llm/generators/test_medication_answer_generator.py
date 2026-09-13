@@ -106,6 +106,19 @@ def test_generator_preserves_active_intake_section_markdown() -> None:
     assert "💪🏻 **영양제 정보**" in answer
 
 
+def test_generator_preserves_question_interaction_pair_and_intake_divider() -> None:
+    answer = OpenAIMedicationAnswerGenerator._to_limited_markdown(
+        "💊 **복약정보**\n- 세레콕시브캡슐200mg\n\n---\n\n"
+        "🔁 **질문 상호작용**\n\n**[타이레놀-마그네슘]**\n"
+        "- 현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 못했습니다."
+    )
+
+    assert "---" in answer
+    assert "🔁 **질문 상호작용**" in answer
+    assert "**[타이레놀-마그네슘]**" in answer
+    assert "- 현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 못했습니다." in answer
+
+
 async def test_generator_skips_llm_when_no_grounded_sources() -> None:
     client = FakeAnswerClient(error=AssertionError("호출하면 안 됩니다."))
     generator = OpenAIMedicationAnswerGenerator(

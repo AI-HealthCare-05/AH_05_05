@@ -8,7 +8,10 @@ from ai_worker.schemas.medication_chat import (
     MedicationEvidenceCoverage,
     MedicationGuideFact,
 )
-from ai_worker.schemas.medication_search import SupplementIngredientFamily
+from ai_worker.schemas.medication_search import (
+    MedicationInteractionQueryPair,
+    SupplementIngredientFamily,
+)
 
 
 class MedicationAnswerAssembler:
@@ -36,19 +39,19 @@ class MedicationAnswerAssembler:
         ingredient_family_reference: bool = False,
         ingredient_family: SupplementIngredientFamily | None = None,
         unsupported_pairs: list[str] | None = None,
+        question_interaction_pairs: list[MedicationInteractionQueryPair] | None = None,
         evidence_coverage: MedicationEvidenceCoverage | None = None,
     ) -> str:
+        intake_sections = self._patient_intake_sections(context)
         sections: list[str] = []
-        has_unverified_interaction_notice = False
-        sections.extend(self._patient_intake_sections(context))
-        if rules:
-            interaction_lines = [
-                f"- {rule.left_name} ↔ {rule.right_name}: " + " ".join(rule.effect_texts) for rule in rules
-            ]
-            sections.append("🔁 **확인된 상호작용**\n" + "\n".join(interaction_lines))
-        elif interaction_question and not chunks:
-            sections.append(self._unverified_interaction_section())
-            has_unverified_interaction_notice = True
+        interaction_sections, has_unverified_interaction_notice = self._interaction_sections(
+            rules=rules,
+            chunks=chunks,
+            interaction_question=interaction_question,
+            question_interaction_pairs=question_interaction_pairs or [],
+            evidence_coverage=evidence_coverage,
+        )
+        sections.extend(interaction_sections)
         if guide is not None:
             covered = self._covered_sections(evidence_coverage)
             guide_lines = [
@@ -119,7 +122,7 @@ class MedicationAnswerAssembler:
                 )
                 section_title = referenced_product_heading or "일반 제품 안내"
             sections.append(section_title + "\n" + "\n".join(guide_lines))
-        if chunks:
+        if chunks and not question_interaction_pairs:
             public_lines = [f"- {chunk.content}" for chunk in chunks[:4]]
             if interaction_question:
                 section_title = "검색된 상호작용 연구 근거"
@@ -159,7 +162,53 @@ class MedicationAnswerAssembler:
                 "찾지 못했습니다. 자료가 없다는 사실이 해당 제품이나 조합이 "
                 "안전하다는 뜻은 아닙니다."
             )
-        return "\n\n".join(sections)
+        if intake_sections and sections:
+            return "\n\n".join([*intake_sections, "---", *sections])
+        return "\n\n".join([*intake_sections, *sections])
+
+    @classmethod
+    def _interaction_sections(
+        cls,
+        *,
+        rules: list[InteractionRuleFact],
+        chunks: list[RetrievedKnowledgeChunk],
+        interaction_question: bool,
+        question_interaction_pairs: list[MedicationInteractionQueryPair],
+        evidence_coverage: MedicationEvidenceCoverage | None,
+    ) -> tuple[list[str], bool]:
+        sections: list[str] = []
+        question_pair_keys = {pair.pair_key for pair in question_interaction_pairs}
+        question_rules = [rule for rule in rules if rule.pair_key in question_pair_keys]
+        active_intake_rules = [rule for rule in rules if rule.pair_key not in question_pair_keys]
+        if active_intake_rules:
+            sections.append("🔁 **복약정보와 상호작용**\n" + "\n".join(cls._rule_lines(active_intake_rules)))
+        elif rules:
+            sections.append("🔁 **확인된 상호작용**\n" + "\n".join(cls._rule_lines(rules)))
+
+        question_section = cls._question_interaction_section(
+            pairs=question_interaction_pairs,
+            rules=question_rules,
+            chunks=chunks,
+            evidence_coverage=evidence_coverage,
+        )
+        if question_section:
+            sections.append(question_section)
+            return (
+                sections,
+                cls._has_unverified_question_interaction(
+                    pairs=question_interaction_pairs,
+                    rules=question_rules,
+                    evidence_coverage=evidence_coverage,
+                ),
+            )
+        if interaction_question and not chunks and not rules:
+            sections.append(cls._unverified_interaction_section())
+            return sections, True
+        return sections, False
+
+    @staticmethod
+    def _rule_lines(rules: list[InteractionRuleFact]) -> list[str]:
+        return [f"- {rule.left_name} ↔ {rule.right_name}: " + " ".join(rule.effect_texts) for rule in rules]
 
     @classmethod
     def _has_guide_value(cls, value: str) -> bool:
@@ -224,6 +273,51 @@ class MedicationAnswerAssembler:
             "현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 "
             "못했습니다. 확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다."
         )
+
+    @classmethod
+    def _question_interaction_section(
+        cls,
+        *,
+        pairs: list[MedicationInteractionQueryPair],
+        rules: list[InteractionRuleFact],
+        chunks: list[RetrievedKnowledgeChunk],
+        evidence_coverage: MedicationEvidenceCoverage | None,
+    ) -> str:
+        if not pairs:
+            return ""
+
+        verified_pair_keys = set(evidence_coverage.verified_interaction_pair_keys if evidence_coverage else [])
+        lines = ["🔁 **질문 상호작용**"]
+        for pair in pairs:
+            lines.extend(["", f"**[{pair.left_name}-{pair.right_name}]**"])
+            pair_rules = [rule for rule in rules if rule.pair_key == pair.pair_key]
+            if pair_rules:
+                lines.extend(f"- {' '.join(rule.effect_texts)}" for rule in pair_rules)
+            elif pair.pair_key in verified_pair_keys:
+                lines.extend(
+                    f"- {chunk.content}"
+                    for chunk in chunks[:4]
+                    if pair.pair_key in chunk.metadata.interaction_pair_keys
+                )
+            else:
+                lines.append(
+                    "- 현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 "
+                    "못했습니다. 확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다."
+                )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _has_unverified_question_interaction(
+        *,
+        pairs: list[MedicationInteractionQueryPair],
+        rules: list[InteractionRuleFact],
+        evidence_coverage: MedicationEvidenceCoverage | None,
+    ) -> bool:
+        if not pairs:
+            return False
+        verified_pair_keys = set(evidence_coverage.verified_interaction_pair_keys if evidence_coverage else [])
+        rule_pair_keys = {rule.pair_key for rule in rules}
+        return any(pair.pair_key not in rule_pair_keys and pair.pair_key not in verified_pair_keys for pair in pairs)
 
     @staticmethod
     def _ingredient_family_section(
