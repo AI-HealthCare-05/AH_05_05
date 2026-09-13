@@ -213,7 +213,7 @@ export function CustomChallengeCalendar({ participation }: { participation: Cust
             </button>;
           })}
         </div>
-        <section aria-label="날짜별 복용 기록" aria-describedby="custom-date-navigation-hint" className="mt-4 min-w-0 touch-pan-y"
+        <section aria-label="날짜별 복용 기록" className="mt-4 min-w-0 touch-pan-y"
           onPointerDown={startSwipe} onPointerUp={finishSwipe} onPointerCancel={() => { gesture.current = null; }}>
           <div className="mb-3 flex items-center justify-between gap-2">
             <h4 className="text-sm font-bold">복용 기록</h4>
@@ -238,7 +238,6 @@ export function CustomChallengeCalendar({ participation }: { participation: Cust
               </ul>
             </section>)}
           </div>}
-          <p id="custom-date-navigation-hint" className="mt-4 text-center text-caption text-muted-foreground">기록을 좌우로 밀어 다른 날짜를 확인해요.</p>
         </section>
     </section>
   );

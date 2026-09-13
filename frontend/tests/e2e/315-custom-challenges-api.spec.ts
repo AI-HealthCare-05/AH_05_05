@@ -426,6 +426,55 @@ test('My lists custom participation independently and detail renders only server
   await expect(detail.getByText(/배지/)).toHaveCount(0);
 });
 
+test('excluded supplement targets leave active summaries but remain named in calendar and terminal history', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-10T03:00:00Z'));
+  await authenticate(page);
+  await stubOfficialMy(page);
+  let item = participation({
+    challengeType: 'SUPPLEMENT',
+    challengeName: '영양제 루틴 이어가기',
+    targets: [
+      { id: 801, sourceId: 201, name: '오메가3', isExcluded: true },
+      { id: 802, sourceId: 202, name: '유산균', isExcluded: false },
+    ],
+    occurrences: [
+      { id: 901, targetId: 801, scheduledDate: '2026-09-09', slot: 'MORNING', scheduledAt: '2026-09-09T08:00:00+09:00', isCompleted: true },
+      { id: 902, targetId: 802, scheduledDate: '2026-09-10', slot: 'MORNING', scheduledAt: '2026-09-10T08:00:00+09:00', isCompleted: false },
+    ],
+  });
+  await page.route('**/api/v1/user/custom-challenge-participations', route => route.fulfill({
+    json: { items: [item], totalCount: 1 },
+  }));
+  await page.route('**/api/v1/user/custom-challenge-participations/701', route => route.fulfill({ json: item }));
+
+  await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
+  const activeCard = page.getByRole('region', { name: '진행 중인 챌린지' }).getByRole('article', { name: item.challengeName });
+  await expect(activeCard).toContainText('유산균');
+  await expect(activeCard).not.toContainText('오메가3');
+  await activeCard.getByRole('link', { name: `${item.challengeName} 자세히 보기` }).click();
+
+  const activeTargets = page.getByRole('region', { name: '참여 대상' });
+  await expect(activeTargets).toContainText('1개');
+  await expect(activeTargets).toContainText('유산균');
+  await expect(activeTargets).not.toContainText('오메가3');
+  await page.getByRole('button', { name: '2026.09.09, 모두 완료' }).click();
+  await expect(recordsForDate(page, '2026-09-09')).toContainText('오메가3');
+
+  item = { ...item, status: 'CANCELLED' };
+  await page.reload();
+  const terminalTargets = page.getByRole('region', { name: '참여 대상' });
+  await expect(terminalTargets).toContainText('2개');
+  await expect(terminalTargets).toContainText('오메가3');
+  await expect(terminalTargets).toContainText('유산균');
+
+  await page.goto('/challenges');
+  await page.getByRole('button', { name: '지난 기록 펼치기', exact: true }).click();
+  const historyCard = page.getByRole('region', { name: '지난 기록' }).getByRole('article', { name: item.challengeName });
+  await expect(historyCard).toContainText('오메가3');
+  await expect(historyCard).toContainText('유산균');
+});
+
 test('custom detail back returns through My without reopening the detail', async ({ page }) => {
   await authenticate(page);
   await stubOfficialMy(page);
@@ -905,10 +954,13 @@ for (const kind of ['MEDICATION', 'SUPPLEMENT']) {
       ],
     }) }));
     await page.goto('/challenges/custom-participations/701');
+    await expect(page.getByText('기록을 좌우로 밀어 다른 날짜를 확인해요.', { exact: true })).toHaveCount(0);
+    await expect(page.getByText(`진행률은 홈과 ${kind === 'SUPPLEMENT' ? '영양제' : '복약'} 기록을 기준으로 자동 계산돼요. 달력에서는 기록을 확인할 수 있어요.`, { exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: '2026.09.10, 1/3 완료, 오늘' })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByRole('button', { name: /2026.09.08/ })).toHaveCount(0);
     await expect(page.getByRole('button', { name: '2026.09.12, 목표 없음' })).toBeEnabled();
     const records = recordsForDate(page, '2026-09-10');
+    await expect(records).not.toHaveAttribute('aria-describedby', 'custom-date-navigation-hint');
     await expect(records.getByRole('listitem')).toHaveCount(3);
     await expect(records.getByRole('region', { name: /복용 기록/ })).toHaveCount(2);
     const morning = records.getByRole('region', { name: '아침 복용 기록' });

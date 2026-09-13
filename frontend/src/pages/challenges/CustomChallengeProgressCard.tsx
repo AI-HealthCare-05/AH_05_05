@@ -13,6 +13,9 @@ export function CustomChallengeProgressCard({ participation: item }: { participa
   const days = customChallengeDayProgress(item);
   const parsed = days.rate;
   const rate = Number.isFinite(parsed) ? Math.min(100, Math.max(0, parsed)) : 0;
+  const displayedTargets = item.status === 'ACTIVE'
+    ? item.targets.filter(target => !target.isExcluded)
+    : item.targets;
   return (
     <article aria-label={item.challengeName} className="relative flex flex-col gap-3 rounded-card bg-card p-5 shadow-card">
       <div className="flex items-start justify-between gap-3">
@@ -22,7 +25,7 @@ export function CustomChallengeProgressCard({ participation: item }: { participa
         </div>
         {item.status !== 'ACTIVE' && <span className="shrink-0 rounded-pill bg-muted-bg px-2 py-1 text-micro font-bold text-muted-foreground">{statusLabel(item.status)}</span>}
       </div>
-      <p className="break-words text-caption text-muted-foreground [overflow-wrap:anywhere]">{item.targets.map(target => target.name).join(' · ')}</p>
+      <p className="break-words text-caption text-muted-foreground [overflow-wrap:anywhere]">{displayedTargets.map(target => target.name).join(' · ')}</p>
       <div className="flex items-center justify-between gap-2 text-caption text-muted-foreground"><span>{days.completed} / {days.target}일</span><span className="font-bold text-primary">{rate}% 달성</span></div>
       <div role="progressbar" aria-label={`${item.challengeName} 진행률`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={rate} className="h-2 overflow-hidden rounded-pill bg-border"><div className="h-full rounded-pill bg-primary" style={{ width: `${rate}%` }} /></div>
     </article>
