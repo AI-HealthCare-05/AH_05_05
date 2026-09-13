@@ -2,8 +2,6 @@ import { expect, test, type Locator, type Page } from 'playwright/test';
 
 import { IS_REAL_API, MOCK_ONLY_REASON, REAL_API_ONLY_REASON } from './helpers/mode';
 
-const SCREENSHOT_DIR = '/mnt/c/dev/AH_05_05/design-plans/447-implementation/screenshots';
-
 interface Surface {
   backgroundImage: string;
   borderColor: string;
@@ -70,7 +68,7 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test('검색·날짜·메모·후기·진료 시간은 기존 Input과 같은 실제 표면을 쓴다', async ({ page }) => {
+test('검색·날짜·메모·후기·진료 시간은 기존 Input과 같은 실제 표면을 쓴다', async ({ page }, testInfo) => {
   test.skip(IS_REAL_API, MOCK_ONLY_REASON);
   test.setTimeout(120_000);
   await page.clock.setFixedTime(new Date('2026-09-13T03:00:00Z'));
@@ -97,7 +95,7 @@ test('검색·날짜·메모·후기·진료 시간은 기존 Input과 같은 �
   await expect(browseIcon).toHaveCount(1);
   expect(await browseIcon.evaluate((icon) => getComputedStyle(icon).pointerEvents)).toBe('none');
   await expectNoDocumentOverflow(page);
-  await page.screenshot({ path: `${SCREENSHOT_DIR}/task-6-supplement-search-320.png`, fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath('task-6-supplement-search-320.png'), fullPage: true });
 
   await page.goto('/dev/my-visits');
   await page.getByRole('button', { name: '진료일정 추가' }).click();
@@ -130,7 +128,7 @@ test('검색·날짜·메모·후기·진료 시간은 기존 Input과 같은 �
   await expect(to).toHaveAttribute('min', '2026-09-01');
   await expect(to).toHaveAttribute('max', '2026-09-13');
   await expectNoDocumentOverflow(page);
-  await page.screenshot({ path: `${SCREENSHOT_DIR}/task-6-medication-period-320.png`, fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath('task-6-medication-period-320.png'), fullPage: true });
 
   await page.goto('/medications/notes/new');
   const prescription = page.getByLabel('처방', { exact: true });
@@ -169,7 +167,7 @@ test('검색·날짜·메모·후기·진료 시간은 기존 Input과 같은 �
 });
 
 for (const width of [320, 390]) {
-  test(`${width}px 직접 지정 날짜는 네이티브 내용이 맞는 반응형 열을 사용한다`, async ({ page }) => {
+  test(`${width}px 직접 지정 날짜는 네이티브 내용이 맞는 반응형 열을 사용한다`, async ({ page }, testInfo) => {
     test.skip(IS_REAL_API, MOCK_ONLY_REASON);
     await page.clock.setFixedTime(new Date('2026-09-13T03:00:00Z'));
     await page.setViewportSize({ width, height: 844 });
@@ -193,7 +191,7 @@ for (const width of [320, 390]) {
     await expectNativeDateContentFits(from);
     await expectNativeDateContentFits(to);
     await expectNoDocumentOverflow(page);
-    await page.screenshot({ path: `${SCREENSHOT_DIR}/task-6-period-empty-${width}.png`, fullPage: true });
+    await page.screenshot({ path: testInfo.outputPath(`task-6-period-empty-${width}.png`), fullPage: true });
 
     await from.fill('2026-09-01');
     await to.fill('2026-09-13');
@@ -204,11 +202,11 @@ for (const width of [320, 390]) {
     await expectNativeDateContentFits(from);
     await expectNativeDateContentFits(to);
     await expectNoDocumentOverflow(page);
-    await page.screenshot({ path: `${SCREENSHOT_DIR}/task-6-period-populated-${width}.png`, fullPage: true });
+    await page.screenshot({ path: testInfo.outputPath(`task-6-period-populated-${width}.png`), fullPage: true });
   });
 }
 
-test('MY 실행 버튼과 비밀번호 이동 행은 기존 Button과 ManagementRow 역할을 따른다', async ({ page }) => {
+test('MY 실행 버튼과 비밀번호 이동 행은 기존 Button과 ManagementRow 역할을 따른다', async ({ page }, testInfo) => {
   test.skip(IS_REAL_API, MOCK_ONLY_REASON);
   await page.setViewportSize({ width: 390, height: 844 });
 
@@ -225,7 +223,7 @@ test('MY 실행 버튼과 비밀번호 이동 행은 기존 Button과 Management
   const logoutSurface = await surface(logout);
   expectRaisedMaterial(logoutSurface, secondarySurface);
   expect(logoutSurface.height).toBe(52);
-  await page.screenshot({ path: `${SCREENSHOT_DIR}/task-6-my-actions-390.png`, fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath('task-6-my-actions-390.png'), fullPage: true });
 
   await page.goto('/dev/my-profile');
   const passwordRow = page.getByRole('button', { name: '비밀번호 변경', exact: true });
@@ -242,7 +240,7 @@ test('MY 실행 버튼과 비밀번호 이동 행은 기존 Button과 Management
   expectRaisedMaterial(withdrawalSurface, secondarySurface);
   expect(withdrawalSurface.height).toBe(52);
   await expect(withdrawal).toHaveCSS('color', 'rgb(176, 63, 60)');
-  await page.screenshot({ path: `${SCREENSHOT_DIR}/task-6-profile-actions-390.png`, fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath('task-6-profile-actions-390.png'), fullPage: true });
 });
 
 test('프로필 재시도는 compact secondary Button 표면과 기존 callback을 유지한다', async ({ page }) => {

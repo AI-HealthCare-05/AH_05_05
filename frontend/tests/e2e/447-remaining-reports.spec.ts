@@ -7,8 +7,6 @@ import {
   remainingV11Report,
 } from './helpers/447-remaining-report-fixtures';
 
-const SCREENSHOT_DIR = '/mnt/c/dev/AH_05_05/design-plans/447-implementation/screenshots';
-
 test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
 test.setTimeout(120_000);
 
@@ -78,7 +76,7 @@ for (const [state, report] of [
   ['default', remainingBaseReport],
   ['v11', remainingV11Report],
 ] as const) {
-  test(`desktop ${state} 보고서의 main과 CTA는 760px 읽기 열에 함께 묶인다`, async ({ page }) => {
+  test(`desktop ${state} 보고서의 main과 CTA는 760px 읽기 열에 함께 묶인다`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.route('**/api/v1/intake-reports', (route) => route.fulfill({ json: report }));
     await page.goto('/reports/new?source=medications');
@@ -93,6 +91,6 @@ for (const [state, report] of [
     expect(emailBox).not.toBeNull();
     expect(emailBox!.x).toBeGreaterThanOrEqual(mainBox!.x);
     expect(emailBox!.x + emailBox!.width).toBeLessThanOrEqual(mainBox!.x + mainBox!.width);
-    await page.screenshot({ path: `${SCREENSHOT_DIR}/task-6-report-${state}-1280.png`, fullPage: true });
+    await page.screenshot({ path: testInfo.outputPath(`task-6-report-${state}-1280.png`), fullPage: true });
   });
 }

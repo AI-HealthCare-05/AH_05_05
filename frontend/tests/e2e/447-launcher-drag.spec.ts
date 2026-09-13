@@ -139,6 +139,49 @@ test('right edge and dropped height persist across reload and tab/non-tab routes
   expect(restored.y).toBeCloseTo(chosen.y, 0);
 });
 
+test('left edge and preferred height persist across reload, tab/non-tab routes, and viewport clamps', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/home', { waitUntil: 'domcontentloaded' });
+  const launcher = page.getByRole('button', { name: '챗봇', exact: true });
+
+  await dragLauncher(page, launcher, { x: 70, y: 680 });
+  await page.mouse.move(200, 200);
+  const preferred = (await launcher.boundingBox())!;
+  expect(preferred.x).toBeCloseTo(16, 0);
+  const saved = await page.evaluate((key) => localStorage.getItem(key), launcherPositionKey);
+  expect(JSON.parse(saved ?? 'null')).toEqual({ edge: 'left', top: Math.round(preferred.y) });
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect.poll(async () => (await launcher.boundingBox())?.x).toBeCloseTo(16, 0);
+  expect((await launcher.boundingBox())!.y).toBeCloseTo(preferred.y, 0);
+
+  await page.evaluate(() => {
+    history.pushState(null, '', '/terms');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await expect(page).toHaveURL(/\/terms$/);
+  await expect(page.getByRole('navigation', { name: '주요 화면' })).toHaveCount(0);
+  await expect.poll(async () => (await launcher.boundingBox())?.x).toBeCloseTo(16, 0);
+  expect((await launcher.boundingBox())!.y).toBeCloseTo(preferred.y, 0);
+
+  await page.evaluate(() => history.back());
+  await expect(page).toHaveURL(/\/home$/);
+  await expect(page.getByRole('navigation', { name: '주요 화면' })).toBeVisible();
+  await expect.poll(async () => (await launcher.boundingBox())?.x).toBeCloseTo(16, 0);
+  expect((await launcher.boundingBox())!.y).toBeCloseTo(preferred.y, 0);
+
+  await page.setViewportSize({ width: 320, height: 700 });
+  await expect.poll(async () => (await launcher.boundingBox())?.y).toBeLessThan(preferred.y);
+  expect((await launcher.boundingBox())!.x).toBeCloseTo(16, 0);
+  await expectLauncherInsideCurrentBounds(page, launcher);
+
+  await page.setViewportSize({ width: 1280, height: 844 });
+  await expect.poll(async () => (await launcher.boundingBox())?.y).toBeCloseTo(preferred.y, 0);
+  expect((await launcher.boundingBox())!.x).toBeCloseTo(16, 0);
+  await expectLauncherInsideCurrentBounds(page, launcher);
+  expect(await page.evaluate((key) => localStorage.getItem(key), launcherPositionKey)).toBe(saved);
+});
+
 test('an exact horizontal midpoint consistently snaps to the right edge without vertical snapping', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/home', { waitUntil: 'domcontentloaded' });

@@ -29,8 +29,9 @@ test('마이페이지는 관리 항목과 세 알림 토글을 보여주고 로�
   await page.goto('/dev/my-authenticated');
 
   await expect(page.getByRole('heading', { name: '마이페이지' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /RxVita사용자.*기본정보/ })).toBeVisible();
-  const profileImage = page.locator('img[src="/images/default-profile.png"]');
+  const profileCard = page.getByRole('button', { name: /RxVita사용자.*기본정보/ });
+  await expect(profileCard).toBeVisible();
+  const profileImage = profileCard.locator('img[src="/images/default-profile.png"]');
   await expect(profileImage).toBeVisible();
   await expect(profileImage).toHaveAttribute('alt', '');
   await expect(profileImage).toHaveCSS('object-fit', 'cover');
