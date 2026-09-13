@@ -57,7 +57,7 @@ test('영양제 기본 화면은 내 영양제이고 쿼리로 둘러보기를 �
     'aria-selected',
     'true',
   );
-  await expect(page.getByRole('heading', { name: /먹고 있는 영양제/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /영양제 \d+개/ })).toBeVisible();
   await expect(page.getByRole('banner').getByRole('button', { name: 'AI 보고서 받기' })).toBeVisible();
 
   await page.goto('/dev/supplements?tab=browse');
@@ -95,7 +95,7 @@ test('둘러보기에서 내 영양제로 돌아오면 기존 목록과 성분 �
   const tabs = page.getByRole('tablist', { name: '영양제 화면' });
   await tabs.getByRole('tab', { name: '내 영양제' }).click();
 
-  await expect(page.getByRole('heading', { name: /먹고 있는 영양제/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /영양제 \d+개/ })).toBeVisible();
   const totals = page.getByRole('region', { name: '성분 합계' });
   await expect(totals.getByRole('heading', { name: '성분 합계' })).toBeVisible();
   await expect(totals.getByRole('article')).toHaveCount(8);

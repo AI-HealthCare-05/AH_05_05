@@ -353,7 +353,7 @@ export function SupplementsPage({
                 )}
               </div>
 
-              <section aria-label="먹고 있는 영양제" aria-labelledby="supplement-list-title">
+              <section aria-label="먹고 있는 영양제">
                 {supplements.length === 0 ? (
                   <div className="flex flex-col items-center gap-3 rounded-card border border-border bg-card px-4 py-8 text-center shadow-card">
                     <h3 className="text-lg font-bold text-foreground">영양제를 등록하고 관리하기</h3>

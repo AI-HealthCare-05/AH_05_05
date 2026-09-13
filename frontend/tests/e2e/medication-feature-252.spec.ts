@@ -419,16 +419,16 @@ test('복약 목록은 연필로 활성 회차를 편집하고 완료 회차를 
   await expect(completedDialog.getByRole('button', { name: /아목시실린 아침약/ })).toHaveCount(0);
 });
 
-test('복약 삭제 선택 모드는 고정 안내와 비활성 위험 버튼을 먼저 보여준다', async ({ page }) => {
+test('복약 선택 모드는 0개일 때 취소만, 선택 뒤 위험 버튼을 보여준다', async ({ page }) => {
   await page.goto('/medications');
   await page.getByRole('button', { name: '선택', exact: true }).click();
 
   await expect(page.getByRole('heading', { name: '복약' })).toBeVisible();
-  const deleteButton = page.getByRole('button', { name: '삭제', exact: true });
-  await expect(deleteButton).toBeDisabled();
-  await expect(deleteButton).toHaveClass(/bg-muted-bg/);
+  await expect(page.getByRole('button', { name: /삭제 \d+개/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '취소', exact: true })).toBeVisible();
 
   await page.getByRole('checkbox', { name: /2026년 8월 22일 처방 선택/ }).check();
+  const deleteButton = page.getByRole('button', { name: '삭제 1개', exact: true });
   await expect(deleteButton).toBeEnabled();
   await expect(deleteButton).toHaveClass(/bg-danger/);
 });

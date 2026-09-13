@@ -29,13 +29,13 @@ test('복약 선택 진입·선택·취소 중에도 상단 제목을 유지한�
   await expect(page.getByRole('button', { name: '선택', exact: true })).toBeVisible();
 });
 
-test('영양제 삭제 편집 모드에서도 상단 제목은 영양제다', async ({ page }) => {
+test('영양제 선택 모드에서도 상단 제목은 영양제다', async ({ page }) => {
   test.skip(IS_REAL_API, MOCK_ONLY_REASON);
   await page.goto('/dev/supplements');
 
   const title = page.getByRole('heading', { name: '영양제', exact: true });
   await expect(title).toBeVisible();
-  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await page.getByRole('button', { name: '선택', exact: true }).click();
   await expect(title).toBeVisible();
-  await expect(page.getByRole('button', { name: '완료', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '취소', exact: true })).toBeVisible();
 });

@@ -110,7 +110,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 for (const width of [320, 390, 1280]) {
-  test(`처방 추가와 선택은 같은 secondary 52px 표면이며 선택 취소는 기록을 보존한다 (${width}px)`, async ({ page }) => {
+  test(`처방 추가와 선택·취소는 같은 secondary 52px 표면이며 선택 수만큼 삭제한다 (${width}px)`, async ({ page }) => {
     test.skip(IS_REAL_API, MOCK_ONLY_REASON);
     await page.setViewportSize({ width, height: 844 });
     await page.goto('/dev/medications');
@@ -120,17 +120,23 @@ for (const width of [320, 390, 1280]) {
     const add = page.getByRole('button', { name: '처방 추가', exact: true });
     const select = page.getByRole('button', { name: '선택', exact: true });
     await expectSameSecondarySurface(add, select);
+    const selectMaterial = await material(select);
     await expectNoOverlap(add, select);
     await expectNoOverflow(page);
     if (width <= 390) await capture(page, `task-3-medications-normal-${width}.png`);
 
     await select.click();
     await expect(page.getByRole('heading', { name: '복약', exact: true })).toBeVisible();
-    const remove = page.getByRole('button', { name: '삭제', exact: true });
-    await expect(remove).toBeDisabled();
-    await expect(remove).toHaveAttribute('data-variant', 'danger');
+    await expect(add).toHaveCount(0);
+    const cancel = page.getByRole('button', { name: '취소', exact: true });
+    await expect(cancel).toHaveAttribute('data-variant', 'secondary');
+    await movePointerAwayAndSettle(page, cancel);
+    expect(await material(cancel)).toEqual(selectMaterial);
+    await expect(page.getByRole('button', { name: /삭제 \d+개/ })).toHaveCount(0);
     await page.getByRole('checkbox', { name: /2026년 8월 24일 처방 선택/ }).check();
+    const remove = page.getByRole('button', { name: '삭제 1개', exact: true });
     await expect(remove).toBeEnabled();
+    await expect(remove).toHaveAttribute('data-variant', 'danger');
     await expectNoOverflow(page);
     if (width <= 390) await capture(page, `task-3-medications-selected-${width}.png`);
 
@@ -141,15 +147,15 @@ for (const width of [320, 390, 1280]) {
 }
 
 for (const width of [320, 390, 1280]) {
-  test(`영양제 추가와 삭제·완료는 같은 secondary 52px 표면이고 danger 삭제 guard를 유지한다 (${width}px)`, async ({ page }) => {
+  test(`영양제 추가와 선택·취소는 같은 secondary 52px 표면이고 선택 뒤 danger 삭제를 보인다 (${width}px)`, async ({ page }) => {
     test.skip(IS_REAL_API, MOCK_ONLY_REASON);
     await page.setViewportSize({ width, height: 844 });
     await page.goto('/dev/supplements');
-    await expect(page.getByRole('heading', { name: /먹고 있는 영양제 \d+개/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /영양제 \d+개/ })).toBeVisible();
     await settleRevealAnimations(page);
 
     const add = page.getByRole('button', { name: '영양제 추가', exact: true });
-    const edit = page.getByRole('button', { name: '삭제', exact: true });
+    const edit = page.getByRole('button', { name: '선택', exact: true });
     const addMaterial = await material(add);
     await expectSameSecondarySurface(add, edit);
     await expectNoOverlap(add, edit);
@@ -157,24 +163,23 @@ for (const width of [320, 390, 1280]) {
     if (width <= 390) await capture(page, `task-3-supplements-normal-${width}.png`);
 
     await edit.click();
-    const done = page.getByRole('button', { name: '완료', exact: true });
-    await expect(done).toHaveAttribute('data-variant', 'secondary');
-    await movePointerAwayAndSettle(page, done);
-    expect(await material(done)).toEqual(addMaterial);
-    const guardedRemove = page.getByRole('button', { name: '선택한 0개 삭제', exact: true });
-    await expect(guardedRemove).toBeDisabled();
-    await expect(guardedRemove).toHaveAttribute('data-variant', 'danger');
+    await expect(add).toHaveCount(0);
+    const cancel = page.getByRole('button', { name: '취소', exact: true });
+    await expect(cancel).toHaveAttribute('data-variant', 'secondary');
+    await movePointerAwayAndSettle(page, cancel);
+    expect(await material(cancel)).toEqual(addMaterial);
+    await expect(page.getByRole('button', { name: /삭제 \d+개/ })).toHaveCount(0);
     const firstSelection = page.getByRole('checkbox').first();
     await firstSelection.check();
-    await expect(page.getByRole('button', { name: '선택한 1개 삭제', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: '삭제 1개', exact: true })).toBeEnabled();
     await expectNoOverflow(page);
     if (width <= 390) {
       await page.locator('main').evaluate(element => element.scrollTo(0, 0));
       await capture(page, `task-3-supplements-edit-${width}.png`);
     }
 
-    await done.click();
-    await expect(page.getByRole('button', { name: '삭제', exact: true })).toBeVisible();
+    await cancel.click();
+    await expect(page.getByRole('button', { name: '선택', exact: true })).toBeVisible();
     await expect(page.locator('section[aria-label="먹고 있는 영양제"] li')).not.toHaveCount(0);
   });
 }
@@ -207,9 +212,10 @@ for (const width of [320, 390]) {
     await capture(page, `task-3-medications-production-normal-${width}.png`);
 
     await select.click();
-    const remove = page.getByRole('button', { name: '삭제', exact: true });
-    await expect(remove).toBeDisabled();
+    await expect(add).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /삭제 \d+개/ })).toHaveCount(0);
     await page.getByRole('checkbox', { name: /2026년 8월 22일 처방 선택/ }).check();
+    const remove = page.getByRole('button', { name: '삭제 1개', exact: true });
     await expect(remove).toBeEnabled();
     await expectNoOverflow(page);
     await capture(page, `task-3-medications-production-selected-${width}.png`);

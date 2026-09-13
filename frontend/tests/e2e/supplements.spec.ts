@@ -346,7 +346,7 @@ test('복용 중단을 확인하면 삭제 문구 없이 활성 목록과 성분
   await confirm.getByRole('button', { name: '중단하기' }).click();
 
   await expect(supplementList.getByRole('button', { name: /비타민 D/ })).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: '먹고 있는 영양제 2개' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '영양제 2개' })).toBeVisible();
 });
 
 test('성분 8개에서도 초과 항목을 중립 항목보다 먼저 보여준다', async ({ page }) => {

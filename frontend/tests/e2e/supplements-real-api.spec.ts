@@ -288,7 +288,7 @@ test('override 목록은 기준 조회가 실패해도 오류 화면으로 바�
 
   await page.goto('/dev/supplements-three-exceeded');
 
-  await expect(page.getByRole('heading', { name: '먹고 있는 영양제 3개' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '영양제 3개' })).toBeVisible();
   await expect(page.getByText('영양제를 불러오지 못했어요')).toHaveCount(0);
 });
 
@@ -998,7 +998,7 @@ test('같은 RDB 제품 재등록은 목록을 교체하고 새로고침 뒤에�
   });
 
   await page.goto('/supplements');
-  await expect(page.getByText('먹고 있는 영양제 1개')).toBeVisible();
+  await expect(page.getByText('영양제 1개')).toBeVisible();
   await page.getByRole('button', { name: '영양제 추가' }).first().click();
   const sheet = page.getByRole('dialog');
   await sheet.getByRole('searchbox', { name: '영양제 제품 검색' }).fill('철분');
@@ -1015,7 +1015,7 @@ test('같은 RDB 제품 재등록은 목록을 교체하고 새로고침 뒤에�
   await expect(list.getByRole('button').first()).toContainText('자기전');
 
   await page.reload();
-  await expect(page.getByText('먹고 있는 영양제 1개')).toBeVisible();
+  await expect(page.getByText('영양제 1개')).toBeVisible();
   await expect(list.getByRole('button')).toHaveCount(1);
   await expect(list.getByRole('button').first()).toContainText('하루 1회 · 1회 2캡슐');
   await expect(list.getByRole('button').first()).toContainText('자기전');

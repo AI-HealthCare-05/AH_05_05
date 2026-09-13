@@ -192,7 +192,7 @@ test('작은 화면의 삭제 선택 목록도 제품명·복용량·시간대�
 
   await page.setViewportSize({ width: 375, height: 667 });
   await page.goto('/dev/supplements');
-  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await page.getByRole('button', { name: '선택', exact: true }).click();
 
   const selection = page.getByRole('checkbox', { name: '직접 입력 테스트 영양제 선택' });
   const row = selection.locator('xpath=ancestor::label');
