@@ -85,10 +85,14 @@ test('작성 목록은 현재 복용 기간만 열고 지난·삭제 처방의 �
 
   await page.goto('/medications/notes');
 
+  await expect(page.getByRole('banner').getByRole('button', { name: '선택', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '새 메모 작성' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /현재 복용 처방.*펼치기/ })).toBeVisible();
   await expect(page.getByText('지난 처방', { exact: true })).toHaveCount(0);
   await expect(page.getByText('삭제한 처방', { exact: true })).toHaveCount(0);
   await page.getByRole('tab', { name: '작성한 메모' }).click();
+  await expect(page.getByRole('banner').getByRole('button', { name: '선택', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '선택', exact: true })).toHaveCount(1);
   await page.getByRole('button', { name: /지난 처방.*펼치기/ }).click();
   await expect(page.getByText('보존된 건강상태 6001')).toBeVisible();
   await expect(page.getByRole('button', { name: '이 처방에 새 메모' })).toHaveCount(0);
@@ -117,7 +121,7 @@ test('메모 선택 취소는 기록을 보존하고 부분 실패 뒤 실패한
 
   await page.goto('/medications/notes?episodeId=502');
   await expect(page.getByRole('heading', { name: '복약 메모', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '선택', exact: true }).click();
+  await page.getByRole('banner').getByRole('button', { name: '선택', exact: true }).click();
   await expect(page.getByRole('button', { name: '새 메모 작성' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /삭제 \d+개/ })).toHaveCount(0);
   await page.getByRole('checkbox', { name: /보존된 건강상태 6001 선택/ }).check();
@@ -138,6 +142,82 @@ test('메모 선택 취소는 기록을 보존하고 부분 실패 뒤 실패한
   await expect.poll(() => [...remainingIds]).toEqual([]);
   await expect(page.getByRole('button', { name: '선택', exact: true })).toHaveCount(0);
   await expect(page.getByText('작성한 건강상태 기록이 아직 없어요.')).toBeVisible();
+});
+
+test('선택 모드는 처방을 바꾸어도 유지하고 여러 처방의 메모를 합산해 삭제한다', async ({ page }) => {
+  const deletedIds: number[] = [];
+  await page.route('**/api/v1/**', route => fulfillJson(route, { code: 'FIXTURE_MISSING', message: 'fixture missing' }, 503));
+  await page.route(/\/api\/v1\/med\/notes\/episodes(?:\?.*)?$/, route =>
+    fulfillJson(route, [{ ...endedEpisode, noteCount: 1 }, { ...deletedEpisode, noteCount: 1 }]));
+  await page.route(/\/api\/v1\/med\/notes\/\d+$/, route => {
+    const id = Number(route.request().url().split('/').pop());
+    if (route.request().method() === 'DELETE') {
+      deletedIds.push(id);
+      return route.fulfill({ status: 204 });
+    }
+    return fulfillJson(route, id === 6003 ? note(id, deletedEpisode) : note(id));
+  });
+  await page.route(/\/api\/v1\/med\/notes(?:\?.*)?$/, route => {
+    const episodeId = new URL(route.request().url()).searchParams.get('episodeId');
+    const items = episodeId === '503' ? [note(6003, deletedEpisode)] : [note(6001)];
+    return fulfillJson(route, { items, total: 1, nextCursor: null });
+  });
+
+  await page.goto('/medications/notes');
+  await page.getByRole('tab', { name: '작성한 메모' }).click();
+  await page.getByRole('button', { name: /지난 처방.*펼치기/ }).click();
+  await page.getByRole('banner').getByRole('button', { name: '선택', exact: true }).click();
+  await page.getByRole('checkbox', { name: /보존된 건강상태 6001 선택/ }).check();
+  await page.getByRole('button', { name: /삭제한 처방.*펼치기/ }).click();
+  await expect(page.getByRole('banner').getByRole('button', { name: '삭제 1개', exact: true })).toBeVisible();
+  await page.getByRole('checkbox', { name: /보존된 건강상태 6003 선택/ }).check();
+  await page.getByRole('banner').getByRole('button', { name: '삭제 2개', exact: true }).click();
+  await page.getByRole('button', { name: '삭제하기', exact: true }).click();
+  await expect.poll(() => deletedIds).toEqual([6001, 6003]);
+});
+
+test('삭제 전에 시작한 더 보기 응답은 삭제 개수를 되돌리지 않는다', async ({ page }) => {
+  let releaseStalePage!: () => void;
+  const stalePageCanFinish = new Promise<void>((resolve) => { releaseStalePage = resolve; });
+  let loadMoreAttempts = 0;
+  await page.route('**/api/v1/**', route => fulfillJson(route, { code: 'FIXTURE_MISSING', message: 'fixture missing' }, 503));
+  await page.route(/\/api\/v1\/med\/notes\/episodes(?:\?.*)?$/, route =>
+    fulfillJson(route, [{ ...endedEpisode, noteCount: 2 }]));
+  await page.route(/\/api\/v1\/med\/notes\/\d+$/, route => {
+    if (route.request().method() === 'DELETE') return route.fulfill({ status: 204 });
+    return fulfillJson(route, note(6001));
+  });
+  await page.route(/\/api\/v1\/med\/notes(?:\?.*)?$/, async route => {
+    const cursor = new URL(route.request().url()).searchParams.get('cursor');
+    if (!cursor) {
+      return fulfillJson(route, { items: [note(6001)], total: 2, nextCursor: 'older-page' });
+    }
+    loadMoreAttempts += 1;
+    if (loadMoreAttempts === 1) {
+      await stalePageCanFinish;
+      return fulfillJson(route, { items: [note(6002)], total: 2, nextCursor: null });
+    }
+    return fulfillJson(route, { items: [note(6002)], total: 1, nextCursor: null });
+  });
+
+  await page.goto('/medications/notes?episodeId=502');
+  await expect(page.getByRole('heading', { name: '건강상태 기록 2개' })).toBeVisible();
+  await page.getByRole('button', { name: '더 보기', exact: true }).click();
+  await page.getByRole('banner').getByRole('button', { name: '선택', exact: true }).click();
+  await page.getByRole('checkbox', { name: /보존된 건강상태 6001 선택/ }).check();
+  await page.getByRole('button', { name: '삭제 1개', exact: true }).click();
+  await page.getByRole('button', { name: '삭제하기', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '건강상태 기록 1개' })).toBeVisible();
+
+  const staleResponse = page.waitForResponse(response =>
+    response.url().includes('cursor=older-page') && response.request().method() === 'GET');
+  releaseStalePage();
+  await staleResponse;
+  await expect(page.getByRole('heading', { name: '건강상태 기록 1개' })).toBeVisible();
+  await expect(page.getByText('보존된 건강상태 6002')).toHaveCount(0);
+  await page.getByRole('button', { name: '더 보기', exact: true }).click();
+  await expect(page.getByText('보존된 건강상태 6002')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '건강상태 기록 1개' })).toBeVisible();
 });
 
 test('새 메모 처방 선택기는 작성 불가 inventory와 종료 overview를 제외한다', async ({ page }) => {

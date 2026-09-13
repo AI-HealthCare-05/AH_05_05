@@ -3,13 +3,13 @@ import { expect, test, type Page } from 'playwright/test';
 import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
 
 const episodes = [
-  { careEpisodeId: 41, alias: '아침 처방', startDate: '2026-08-01', status: 'ACTIVE' },
-  { careEpisodeId: 42, alias: '저녁 처방', startDate: '2026-08-02', status: 'ACTIVE' },
+  { careEpisodeId: 41, alias: '아침 처방', startDate: '2026-09-13', status: 'ACTIVE' },
+  { careEpisodeId: 42, alias: '저녁 처방', startDate: '2026-09-11', status: 'ACTIVE' },
 ];
 const overviews = episodes.map((episode) => ({
   recordId: episode.careEpisodeId, alias: episode.alias, documentImageUrl: '',
-  start: { date: episode.startDate, slot: 'morning' }, endDate: '2026-08-10',
-  daysRemaining: 5, isFinished: false,
+  start: { date: episode.startDate, slot: 'morning' }, endDate: '2026-09-13',
+  daysRemaining: 1, isFinished: false,
   mealTimes: { morning: '08:00', lunch: '13:00', evening: '19:00', bedtime: '22:00' },
   medications: [{
     medicationId: episode.careEpisodeId * 10, name: `${episode.alias} 약`, dose: '1정',
@@ -31,6 +31,7 @@ test.beforeEach(async ({ page }) => {
     else if (url.pathname === '/api/v1/med/notes/episodes') body = episodes.map((episode) => ({
       ...episode,
       noteCount: notes.filter((note) => note.careEpisodeId === episode.careEpisodeId).length,
+      canCreateNote: true,
       medicationCount: 1,
       representativeMedicationName: `${episode.alias} 약`,
       medications: [{ id: episode.careEpisodeId * 10, name: `${episode.alias} 약`, dose: '1정' }],
@@ -42,7 +43,7 @@ test.beforeEach(async ({ page }) => {
         id: 901 + notes.length, ...payload, careEpisodeAlias: episode.alias,
         careEpisodeStartDate: episode.startDate, careEpisodeStatus: 'ACTIVE',
         availableMedications: [], medicationId: payload.medicationId ?? null, medication: null,
-        createdAt: '2026-08-03T09:00:00', updatedAt: null,
+        createdAt: '2026-09-13T09:00:00', updatedAt: null,
       };
       notes.push(body as Record<string, unknown>);
     } else if (url.pathname === '/api/v1/med/notes') {
@@ -54,18 +55,14 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-async function openNewNote(page: Page, episodeId: string | null = '41', hasNotes = false, episodeName?: string) {
+async function openNewNote(page: Page, episodeId = '41', hasNotes = false, episodeName?: string) {
   await page.goto('/dev/home-empty');
   await page.getByRole('navigation', { name: '주요 화면' }).getByRole('button', { name: '복약', exact: true }).click();
   await page.getByRole('button', { name: '복약 메모', exact: true }).click();
-  if (episodeId !== null) {
-    if (hasNotes) await page.getByRole('tab', { name: '작성한 메모' }).click();
-    const episode = episodes.find((item) => String(item.careEpisodeId) === episodeId);
-    await page.getByRole('button', { name: new RegExp(`${episodeName ?? episode?.alias ?? '지난 처방'} .*펼치기`) }).click();
-    await page.getByRole('button', { name: hasNotes ? '이 처방에 새 메모' : '이 처방에 메모 작성' }).click();
-  } else {
-    await page.getByRole('button', { name: '새 메모 작성' }).click();
-  }
+  if (hasNotes) await page.getByRole('tab', { name: '작성한 메모' }).click();
+  const episode = episodes.find((item) => String(item.careEpisodeId) === episodeId);
+  await page.getByRole('button', { name: new RegExp(`${episodeName ?? episode?.alias ?? '지난 처방'} .*펼치기`) }).click();
+  await page.getByRole('button', { name: hasNotes ? '이 처방에 새 메모' : '이 처방에 메모 작성' }).click();
   await expect(page.getByLabel('처방', { exact: true })).toBeEnabled();
 }
 
@@ -73,7 +70,7 @@ test('아코디언의 처방으로 새 메모를 열면 처방과 복용 일시�
   await openNewNote(page);
   await expect(page.getByLabel('처방', { exact: true })).toHaveValue('41');
   await expect(page.getByLabel('약', { exact: true })).toHaveCount(0);
-  await expect(page.getByLabel('복용 일시')).toHaveValue('2026-08-01T08:00');
+  await expect(page.getByLabel('복용 일시')).toHaveValue('2026-09-13T08:00');
 });
 
 for (const chosenEpisode of ['41', '42']) {
@@ -101,14 +98,13 @@ test('새 메모의 처방을 바꾸고 취소하면 원래 목록 아코디언�
   await expect(page.getByRole('button', { name: /아침 처방 .*접기/ })).toHaveAttribute('aria-expanded', 'true');
 });
 
-test('전체 목록에서 작성한 새 메모도 저장한 처방 필터로 이동한다', async ({ page }) => {
-  await openNewNote(page, null);
-  await expect(page.getByLabel('처방', { exact: true })).toHaveValue('');
-  await page.getByLabel('처방', { exact: true }).selectOption('42');
-  await page.getByLabel('건강상태 기록').fill('전체 목록에서 작성');
+test('다른 처방 카드에서 작성한 새 메모도 저장한 처방 필터로 이동한다', async ({ page }) => {
+  await openNewNote(page, '42');
+  await expect(page.getByLabel('처방', { exact: true })).toHaveValue('42');
+  await page.getByLabel('건강상태 기록').fill('다른 처방 카드에서 작성');
   await page.getByRole('button', { name: '저장', exact: true }).click();
   await expect(page).toHaveURL('/medications/notes?episodeId=42');
-  await expect(page.getByText('전체 목록에서 작성')).toBeVisible();
+  await expect(page.getByText('다른 처방 카드에서 작성')).toBeVisible();
 });
 
 test('저장 응답 전에 취소하면 늦은 응답이 원래 필터를 바꾸지 않는다', async ({ page }) => {
@@ -146,7 +142,7 @@ test('새 메모 화면을 새로고침한 뒤 저장해도 저장한 처방 필
 });
 
 for (const status of ['COMPLETED', 'CANCELLED']) {
-  test(`${status} 과거 처방 필터에서 작성하면 활성 목록에 없어도 원래 처방을 선택하고 메모 본문은 비워 둔다`, async ({ page }) => {
+  test(`${status} 과거 처방은 새 메모를 막고 기존 메모 수정과 필터를 보존한다`, async ({ page }) => {
     const oldNote = {
       id: 9909, careEpisodeId: 41, careEpisodeAlias: '지난 처방',
       careEpisodeStartDate: '2025-01-01', careEpisodeStatus: status,
@@ -160,31 +156,39 @@ for (const status of ['COMPLETED', 'CANCELLED']) {
     await page.route('**/api/v1/med/notes/episodes**', (route) => route.fulfill({ json: [
       {
         careEpisodeId: 41, alias: '지난 처방', startDate: '2025-01-01', status,
-        noteCount: 1, medicationCount: 1, representativeMedicationName: '지난 처방 약',
+        noteCount: 1, canCreateNote: false, medicationCount: 1, representativeMedicationName: '지난 처방 약',
         medications: [{ id: 410, name: '지난 처방 약', dose: '1정' }],
       },
-      { ...episodes[1], noteCount: 0, medicationCount: 1, representativeMedicationName: '저녁 처방 약', medications: [{ id: 420, name: '저녁 처방 약', dose: '1정' }] },
+      { ...episodes[1], noteCount: 0, canCreateNote: true, medicationCount: 1, representativeMedicationName: '저녁 처방 약', medications: [{ id: 420, name: '저녁 처방 약', dose: '1정' }] },
     ] }));
     await page.route(/\/api\/v1\/med\/notes(?:\?.*)?$/, (route) => {
       if (route.request().method() !== 'GET') return route.fallback();
       return route.fulfill({ json: { items: [oldNote], total: 1, nextCursor: null } });
     });
-    await openNewNote(page, '41', true, '지난 처방');
+    await page.goto('/dev/home-empty');
+    await page.getByRole('navigation', { name: '주요 화면' }).getByRole('button', { name: '복약', exact: true }).click();
+    await page.getByRole('button', { name: '복약 메모', exact: true }).click();
+    await page.getByRole('tab', { name: '작성한 메모' }).click();
+    await page.getByRole('button', { name: /지난 처방 .*펼치기/ }).click();
+    await expect(page.getByRole('button', { name: '이 처방에 새 메모' })).toHaveCount(0);
+    await page.getByRole('button', { name: /새 메모에 복사하면 안 되는 기존 내용/ }).click();
     await expect(page.getByLabel('처방', { exact: true })).toHaveValue('41');
-    await expect(page.getByLabel('약', { exact: true })).toHaveCount(0);
-    await expect(page.getByLabel('건강상태 기록')).toHaveValue('');
-    await page.getByLabel('복용 일시').fill('2025-01-03T09:00');
-    await page.getByLabel('건강상태 기록').fill('과거 처방에 작성한 새 메모');
-    await page.getByRole('button', { name: '저장', exact: true }).click();
+    await expect(page.getByLabel('처방', { exact: true })).toBeDisabled();
+    await expect(page.getByLabel('건강상태 기록')).toHaveValue('새 메모에 복사하면 안 되는 기존 내용');
+    await page.getByLabel('건강상태 기록').fill('과거 처방 메모 수정');
+    await page.getByRole('button', { name: '수정 저장', exact: true }).click();
     await expect(page).toHaveURL('/medications/notes?episodeId=41');
+    await expect(page.getByRole('tab', { name: '작성한 메모' })).toHaveAttribute('data-state', 'active');
+    await expect(page.getByRole('button', { name: /지난 처방 .*접기/ })).toHaveAttribute('aria-expanded', 'true');
   });
 }
 
-test('목록 인벤토리에 약이 없으면 기존 메모를 참고해 새 메모의 처방을 복원한다', async ({ page }) => {
+test('작성 불가 inventory는 기존 메모로 새 메모 처방을 복원하지 않는다', async ({ page }) => {
   let fallbackRequests = 0;
   await page.route('**/api/v1/medications', (route) => route.fulfill({ json: [] }));
   await page.route('**/api/v1/med/notes/episodes**', (route) => route.fulfill({ json: [{
-    ...episodes[0], noteCount: 0, medicationCount: 0, representativeMedicationName: null, medications: [],
+    ...episodes[0], noteCount: 1, canCreateNote: false, medicationCount: 1,
+    representativeMedicationName: '아침 처방 약', medications: [{ id: 410, name: '아침 처방 약', dose: '1정' }],
   }] }));
   await page.route(/\/api\/v1\/med\/notes(?:\?.*)?$/, (route) => {
     const url = new URL(route.request().url());
@@ -198,8 +202,8 @@ test('목록 인벤토리에 약이 없으면 기존 메모를 참고해 새 메
     }] : [];
     return route.fulfill({ json: { items, total: items.length, nextCursor: null } });
   });
-  await openNewNote(page);
-  await expect(page.getByLabel('처방', { exact: true })).toHaveValue('41');
-  await expect(page.getByLabel('건강상태 기록')).toHaveValue('');
-  expect(fallbackRequests).toBe(1);
+  await page.goto('/medications/notes/new');
+  await expect(page.getByLabel('처방', { exact: true }).locator('option')).toHaveText(['처방을 선택해주세요']);
+  await expect(page.getByRole('button', { name: '저장', exact: true })).toBeDisabled();
+  expect(fallbackRequests).toBe(0);
 });

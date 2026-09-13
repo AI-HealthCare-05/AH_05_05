@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Plus } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import {
@@ -327,11 +327,18 @@ export function MedicationNotesPage() {
             succeededByEpisode.set(episodeId, (succeededByEpisode.get(episodeId) ?? 0) + 1);
           }
         }
+        for (const episodeId of succeededByEpisode.keys()) {
+          episodeRequestGenerationRef.current.set(
+            episodeId,
+            (episodeRequestGenerationRef.current.get(episodeId) ?? 0) + 1,
+          );
+        }
         setEpisodePages((current) => Object.fromEntries(
           Object.entries(current).map(([episodeId, state]) => {
             const removedCount = succeededByEpisode.get(Number(episodeId)) ?? 0;
             return [episodeId, state.page ? {
               ...state,
+              loadingMore: removedCount > 0 ? false : state.loadingMore,
               page: {
                 ...state.page,
                 items: state.page.items.filter((note) => !succeededIds.has(note.id)),
@@ -540,16 +547,16 @@ export function MedicationNotesPage() {
       <Header
         title="복약 메모"
         onBack={returnToMedications}
-        right={!selectionMode ? (
-          <button
-            type="button"
-            aria-label="새 메모 작성"
-            onClick={() => openNewNote()}
-            className="flex min-h-touch items-center gap-1 rounded-control px-2 text-sm font-bold text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <Plus aria-hidden className="size-4" />
-            새 메모
-          </button>
+        right={tab === 'withNotes' && episodesWithNotes.length > 0 ? (
+          <SelectionActions
+            selectionMode={selectionMode}
+            selectedCount={selectedNoteIds.size}
+            onStart={() => setSelectionMode(true)}
+            onCancel={leaveSelectionMode}
+            onDelete={openDeleteConfirmation}
+            deletePending={deletePending}
+            aria-label="복약 메모 선택"
+          />
         ) : undefined}
       />
       <main className="flex flex-1 flex-col gap-4 overflow-y-auto px-page-x py-5">
@@ -604,19 +611,7 @@ export function MedicationNotesPage() {
             ) : episodesWithNotes.length === 0 ? (
               <Card className="p-5">작성한 건강상태 기록이 아직 없어요.</Card>
             ) : (
-              <div className="flex flex-col gap-3">
-                <SelectionActions
-                  selectionMode={selectionMode}
-                  selectedCount={selectedNoteIds.size}
-                  onStart={() => setSelectionMode(true)}
-                  onCancel={leaveSelectionMode}
-                  onDelete={openDeleteConfirmation}
-                  deletePending={deletePending}
-                  aria-label="복약 메모 선택"
-                  className="ml-auto"
-                />
-                {episodesWithNotes.map(renderWithNotesEpisode)}
-              </div>
+              <div className="flex flex-col gap-3">{episodesWithNotes.map(renderWithNotesEpisode)}</div>
             )}
           </TabsContent>
         </Tabs>
