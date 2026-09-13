@@ -890,31 +890,43 @@ for (const kind of ['MEDICATION', 'SUPPLEMENT']) {
     await page.route('**/api/v1/user/custom-challenge-participations/701', route => route.fulfill({ json: participation({
       challengeType: kind,
       challengeName: kind === 'SUPPLEMENT' ? '영양제 루틴 이어가기' : '처방 일정 지키기',
-      targetCount: 4, completedCount: 1, progressRate: '25.00',
+      targetCount: 5, completedCount: 1, progressRate: '20.00',
       actualEndDate: '2026-10-02',
       targets: [
-        { id: 801, sourceId: 101, name: kind === 'SUPPLEMENT' ? '오메가3' : '서울의원 처방' },
-        ...(kind === 'SUPPLEMENT' ? [{ id: 802, sourceId: 102, name: '유산균' }] : []),
+        { id: 801, sourceId: 101, name: kind === 'SUPPLEMENT' ? '오메가3 프리미엄 알티지 캡슐' : '서울의원 소아청소년과에서 처방받은 아침 저녁 감기약' },
+        { id: 802, sourceId: 102, name: kind === 'SUPPLEMENT' ? '유산균 프로바이오틱스 데일리 밸런스' : '튼튼병원에서 처방받은 알레르기 비염약' },
       ],
       occurrences: [
         { id: 904, targetId: 801, scheduledDate: '2026-10-02', slot: 'EVENING', scheduledAt: '2026-10-02T19:00:00+09:00', isCompleted: false },
         { id: 903, targetId: 801, scheduledDate: '2026-09-11', slot: 'MORNING', scheduledAt: '2026-09-11T08:00:00+09:00', isCompleted: false },
         { id: 902, targetId: kind === 'SUPPLEMENT' ? 802 : 801, scheduledDate: '2026-09-10', slot: 'EVENING', scheduledAt: '2026-09-10T19:00:00+09:00', isCompleted: false },
+        { id: 905, targetId: 802, scheduledDate: '2026-09-10', slot: 'MORNING', scheduledAt: '2026-09-10T08:30:00+09:00', isCompleted: false },
         { id: 901, targetId: 801, scheduledDate: '2026-09-10', slot: 'MORNING', scheduledAt: '2026-09-10T08:00:00+09:00', isCompleted: true },
       ],
     }) }));
     await page.goto('/challenges/custom-participations/701');
-    await expect(page.getByRole('button', { name: '2026.09.10, 1/2 완료, 오늘' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('button', { name: '2026.09.10, 1/3 완료, 오늘' })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByRole('button', { name: /2026.09.08/ })).toHaveCount(0);
     await expect(page.getByRole('button', { name: '2026.09.12, 목표 없음' })).toBeEnabled();
     const records = recordsForDate(page, '2026-09-10');
-    await expect(records.getByRole('listitem')).toHaveCount(2);
-    await expect(records.getByRole('listitem').first()).toContainText('아침');
+    await expect(records.getByRole('listitem')).toHaveCount(3);
+    await expect(records.getByRole('region', { name: /복용 기록/ })).toHaveCount(2);
+    const morning = records.getByRole('region', { name: '아침 복용 기록' });
+    await expect(morning).toContainText(kind === 'SUPPLEMENT' ? '오메가3 프리미엄 알티지 캡슐' : '서울의원 소아청소년과에서 처방받은 아침 저녁 감기약');
+    await expect(morning).toContainText(kind === 'SUPPLEMENT' ? '유산균 프로바이오틱스 데일리 밸런스' : '튼튼병원에서 처방받은 알레르기 비염약');
+    await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(1);
+    await expect(morning.getByText('예정', { exact: true })).toHaveCount(1);
+    await expect(morning.locator('svg')).toHaveCount(0);
     if (kind === 'SUPPLEMENT') {
-      await expect(records).toContainText('오메가3');
-      await expect(records).toContainText('유산균');
+      await expect(records).toContainText('오메가3 프리미엄 알티지 캡슐');
+      await expect(records).toContainText('유산균 프로바이오틱스 데일리 밸런스');
     }
-    await page.getByRole('region', { name: '챌린지 달력', exact: true }).screenshot({ path: testInfo.outputPath('calendar.png') });
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+      await expect(morning).toBeVisible();
+      expect(await morning.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+      await page.getByRole('region', { name: '챌린지 달력', exact: true }).screenshot({ path: testInfo.outputPath(`calendar-${width}.png`) });
+    }
     await page.getByRole('button', { name: '2026.09.11, 예정 1회' }).click();
     await expect(recordsForDate(page, '2026-09-11')).toContainText('예정');
     await page.getByRole('button', { name: '2026.10.02, 예정 1회' }).click();
