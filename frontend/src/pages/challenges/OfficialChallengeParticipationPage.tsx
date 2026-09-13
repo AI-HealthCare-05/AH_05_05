@@ -352,6 +352,7 @@ export function OfficialChallengeParticipationPage() {
         ? { ...current, participation: cancelled }
         : current);
       setCancelOpen(false);
+      navigate('/challenges', { replace: true });
     } catch (reason) {
       if (!isCurrentRequest()) return;
       if (reason instanceof ApiError && reason.status === 401) return;

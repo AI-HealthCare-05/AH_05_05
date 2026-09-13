@@ -1028,10 +1028,9 @@ for (const challengeType of ['MEDICATION', 'SUPPLEMENT']) {
     await dialog.getByRole('button', { name: '취소 중...' }).evaluate((button: HTMLButtonElement) => button.click());
     expect(calls).toBe(1);
     release();
+    await expect(page).toHaveURL('/challenges');
     await expect(dialog).toHaveCount(0);
-    await expect(page.getByText('취소', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: '챌린지 참여 취소', exact: true })).toHaveCount(0);
-    await page.getByRole('banner').getByRole('button', { name: '뒤로 가기', exact: true }).click();
     await expect(page.getByRole('region', { name: '진행 중인 챌린지' }).getByRole('article')).toHaveCount(0);
     await page.getByRole('button', { name: '지난 기록 펼치기' }).click();
     await expect(page.getByRole('region', { name: '지난 기록' }).getByRole('article')).toContainText('취소');
@@ -1055,6 +1054,7 @@ test('custom cancellation errors stay retryable and ended state is reconciled on
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: '참여 취소', exact: true }).click();
   await expect(dialog.getByRole('alert')).toContainText('잠시 후 다시');
+  await expect(page).toHaveURL('/challenges/custom-participations/701');
   await dialog.getByRole('button', { name: '참여 취소', exact: true }).click();
   await expect(dialog.getByRole('alert')).toContainText('진행 중인 챌린지만');
   await expect(dialog.getByRole('button', { name: '참여 취소', exact: true })).toBeDisabled();

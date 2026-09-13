@@ -241,6 +241,7 @@ export function CustomChallengeParticipationPage() {
       setError(null);
       setCancelOpen(false);
       invalidateCustomChallengeProgress();
+      navigate('/challenges', { replace: true });
     } catch (reason) {
       if (!isCurrent() || (reason instanceof ApiError && reason.status === 401)) return;
       setCancelError(reason instanceof Error ? reason.message : '참여를 취소하지 못했어요. 다시 시도해주세요.');

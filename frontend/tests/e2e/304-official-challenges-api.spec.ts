@@ -1184,13 +1184,13 @@ test('active participation cancellation confirms retained history, posts once, a
   expect(cancelCalls).toBe(1);
 
   releaseCancel();
-  await expect(page.getByRole('heading', { name: '이번 도전은 여기까지예요' })).toBeVisible();
+  await expect(page).toHaveURL('/challenges');
   await expect(page.getByRole('button', { name: '챌린지 참여 취소' })).toHaveCount(0);
   expect(cancelCalls).toBe(1);
   expect(cancelBody).toBeNull();
   expect(cancelAuthorization).toBe('Bearer token-for-challenge-api@example.com');
 
-  await page.reload();
+  await page.goto('/challenges/participations/501');
   await expect(page.getByRole('heading', { name: '이번 도전은 여기까지예요' })).toBeVisible();
   await expect(page.getByRole('button', { name: '챌린지 참여 취소' })).toHaveCount(0);
   expect(cancelCalls).toBe(1);
@@ -1242,6 +1242,7 @@ test('failed cancellation keeps the active participation and allows a deliberate
   await dialog.getByRole('button', { name: '참여 취소', exact: true }).click();
 
   await expect(dialog.getByRole('alert')).toContainText('진행 중인 챌린지만 취소할 수 있어요.');
+  await expect(page).toHaveURL('/challenges/participations/501');
   await expect(dialog.getByRole('button', { name: '참여 취소', exact: true })).toBeEnabled();
   expect(cancelCalls).toBe(1);
   await dialog.getByRole('button', { name: '돌아가기', exact: true }).click();
