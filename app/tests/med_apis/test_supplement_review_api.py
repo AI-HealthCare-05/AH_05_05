@@ -197,7 +197,7 @@ class TestSupplementReviewAPI(TestCase):
 
     async def test_report_hides_review_only_for_reporter_across_list_requests(self) -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            product = await create_supplement("REVIEW-REPORT-PERSONAL", "신고자별 숨김 제품")
+            product = await create_supplement("REVIEW-REPORT-USER", "신고자별 숨김 제품")
             _, visible, _ = await self._create_registration(
                 client,
                 product,
