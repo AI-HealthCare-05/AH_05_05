@@ -153,9 +153,8 @@ test('정렬 칩은 URL을 바꾸지 않고 실 검색 API 정렬을 첫 페이�
   await expect(page.getByRole('group', { name: '정렬 방향' })).toHaveCount(0);
   await page.getByPlaceholder('제품명 또는 성분 검색').fill('비타민');
   const sorts = page.getByRole('group', { name: '검색 결과 정렬' });
-  const directions = page.getByRole('group', { name: '정렬 방향' });
   await expect(sorts).toBeVisible();
-  await expect(directions).toBeVisible();
+  await expect(page.getByRole('group', { name: '정렬 방향' })).toHaveCount(0);
 
   await expect.poll(() => requests.at(-1)?.searchParams.get('sort')).toBe('name');
   expect(requests.at(-1)?.searchParams.get('direction')).toBe('asc');
@@ -176,7 +175,7 @@ test('정렬 칩은 URL을 바꾸지 않고 실 검색 API 정렬을 첫 페이�
       .toEqual({ sort: expectation.sort, direction: expectation.defaultDirection });
   }
 
-  await directions.getByRole('button', { name: '내림차순' }).click();
+  await sorts.getByRole('button', { name: '이름순 ▲', exact: true }).click();
   await expect
     .poll(() => ({
       sort: requests.at(-1)?.searchParams.get('sort'),
@@ -348,7 +347,7 @@ test('375px에서도 정렬 칩 네 개가 한 줄에 들어가고 가로로 넘
 
   const sorts = page.getByRole('group', { name: '검색 결과 정렬' });
   await expect(sorts.getByRole('button')).toHaveCount(4);
-  await expect(page.getByRole('group', { name: '정렬 방향' }).getByRole('button')).toHaveCount(2);
+  await expect(page.getByRole('group', { name: '정렬 방향' })).toHaveCount(0);
   const hasHorizontalOverflow = await page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
   );

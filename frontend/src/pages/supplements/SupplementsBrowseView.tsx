@@ -27,11 +27,6 @@ const DEFAULT_SORT_DIRECTIONS: Record<SupplementSortKey, SupplementSortDirection
   reviews: 'desc',
 };
 
-const DIRECTION_OPTIONS: { key: SupplementSortDirection; label: string }[] = [
-  { key: 'asc', label: '오름차순' },
-  { key: 'desc', label: '내림차순' },
-];
-
 function searchRequestKey(
   query: string,
   sort: SupplementSortKey,
@@ -243,21 +238,11 @@ export function SupplementsBrowseView({
               label: `${option.label}${sort === option.key ? (direction === 'asc' ? ' ▲' : ' ▼') : ''}`,
             }))}
             onChange={(nextSort) => {
-              if (sort === nextSort) return;
-              const nextDirection = DEFAULT_SORT_DIRECTIONS[nextSort];
+              const nextDirection = sort === nextSort
+                ? direction === 'asc' ? 'desc' : 'asc'
+                : DEFAULT_SORT_DIRECTIONS[nextSort];
               invalidateSearchRequests(searchRequestKey(query, nextSort, nextDirection));
               setSort(nextSort);
-              setDirection(nextDirection);
-            }}
-          />
-          <ContinuousTabs
-            role="group"
-            label="정렬 방향"
-            value={direction}
-            items={DIRECTION_OPTIONS.map((option) => ({ value: option.key, label: option.label }))}
-            onChange={(nextDirection) => {
-              if (direction === nextDirection) return;
-              invalidateSearchRequests(searchRequestKey(query, sort, nextDirection));
               setDirection(nextDirection);
             }}
           />

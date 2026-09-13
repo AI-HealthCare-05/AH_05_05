@@ -162,7 +162,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 for (const width of [320, 390, 1280]) {
-  test(`영양제 정렬은 홈 시간대와 같은 연속 탭 표면을 사용한다 (${width}px)`, async ({ page }) => {
+  test(`영양제 정렬은 한 줄에서 홈과 같은 연속 탭 표면을 사용한다 (${width}px)`, async ({ page }) => {
     test.skip(IS_REAL_API, MOCK_ONLY_REASON);
     await page.setViewportSize({ width, height: 844 });
     await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
@@ -186,25 +186,20 @@ for (const width of [320, 390, 1280]) {
     await page.getByPlaceholder('제품명 또는 성분 검색').fill('센트룸');
     await expect(page.getByLabel('영양제 검색 결과')).toBeVisible();
     const sorts = page.getByRole('group', { name: '검색 결과 정렬' });
-    const directions = page.getByRole('group', { name: '정렬 방향' });
+    await expect(page.getByRole('group', { name: '정렬 방향' })).toHaveCount(0);
     await settleAnimations(page);
 
-    for (const group of [sorts, directions]) {
-      expect(await trackMaterial(group)).toEqual(homeTrack);
-      expect(await pillMaterial(group)).toEqual(homePill);
-      await expectPillAligned(group);
-      await expectLabelsFit(group);
-    }
+    expect(await trackMaterial(sorts)).toEqual(homeTrack);
+    expect(await pillMaterial(sorts)).toEqual(homePill);
+    await expectPillAligned(sorts);
+    await expectLabelsFit(sorts);
 
     await sortButton(sorts, '등록순').click();
-    await expect(sortButton(sorts, '등록순')).toHaveAttribute('aria-pressed', 'true');
-    await expect(directions.getByRole('button', { name: '내림차순', exact: true })).toHaveAttribute('aria-pressed', 'true');
-    await directions.getByRole('button', { name: '오름차순', exact: true }).click();
-    await expect(directions.getByRole('button', { name: '오름차순', exact: true })).toHaveAttribute('aria-pressed', 'true');
-    await expect(sortButton(sorts, '등록순')).toHaveAttribute('aria-pressed', 'true');
+    await expect(sorts.getByRole('button', { name: '등록순 ▼', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await sortButton(sorts, '등록순').click();
+    await expect(sorts.getByRole('button', { name: '등록순 ▲', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await settleAnimations(page);
     await expectPillAligned(sorts);
-    await expectPillAligned(directions);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
 }
@@ -246,7 +241,7 @@ async function expectRequestAndFixture(
 }
 
 for (const width of [320, 390, 1280]) {
-  test(`정렬·방향 계약을 유지하고 등록순 내림차순을 안정적으로 표시한다 (${width}px)`, async ({ page }) => {
+  test(`선택한 정렬 기준을 다시 누르면 방향을 바꾸고 기준 변경은 기본 방향을 쓴다 (${width}px)`, async ({ page }) => {
     test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
     await page.setViewportSize({ width, height: 844 });
     const requests = await prepareProductionBrowse(page);
@@ -254,54 +249,42 @@ for (const width of [320, 390, 1280]) {
     await page.getByPlaceholder('제품명 또는 성분 검색').fill('비타민');
 
     const sorts = page.getByRole('group', { name: '검색 결과 정렬' });
-    const directions = page.getByRole('group', { name: '정렬 방향' });
     await expectRequestAndFixture(page, requests, 'name', 'asc');
     await settleAnimations(page);
-    for (const group of [sorts, directions]) {
-      await expect(group).toHaveCSS('border-top-width', '1px');
-      await expect(group).not.toHaveCSS('border-radius', '0px');
-      await expect(group).not.toHaveCSS('background-image', 'none');
-      await expect(group.locator('[data-continuous-pill]')).not.toHaveCSS('background-image', 'none');
-      await expect(group.locator('[data-continuous-pill]')).not.toHaveCSS('box-shadow', 'none');
-      await expectPillAligned(group);
-      await expectLabelsFit(group);
-    }
+    await expect(sorts).toHaveCSS('border-top-width', '1px');
+    await expect(sorts).not.toHaveCSS('border-radius', '0px');
+    await expect(sorts).not.toHaveCSS('background-image', 'none');
+    await expect(sorts.locator('[data-continuous-pill]')).not.toHaveCSS('background-image', 'none');
+    await expect(sorts.locator('[data-continuous-pill]')).not.toHaveCSS('box-shadow', 'none');
+    await expectPillAligned(sorts);
+    await expectLabelsFit(sorts);
 
     if (width === 390) {
-      const beforeNoOp = requests.length;
       await sortButton(sorts, '이름순').click();
-      await page.waitForTimeout(350);
-      expect(requests).toHaveLength(beforeNoOp);
-
-      await directions.getByRole('button', { name: '내림차순', exact: true }).click();
       await expectRequestAndFixture(page, requests, 'name', 'desc');
-      await directions.getByRole('button', { name: '오름차순', exact: true }).click();
+      await sortButton(sorts, '이름순').click();
       await expectRequestAndFixture(page, requests, 'name', 'asc');
 
       for (const sort of ['rating', 'reviews', 'registered'] as const) {
         await sortButton(sorts, SORT_LABELS[sort]).click();
         await expectRequestAndFixture(page, requests, sort, 'desc');
-        await directions.getByRole('button', { name: '오름차순', exact: true }).click();
+        await sortButton(sorts, SORT_LABELS[sort]).click();
         await expectRequestAndFixture(page, requests, sort, 'asc');
-        await directions.getByRole('button', { name: '내림차순', exact: true }).click();
+        await sortButton(sorts, SORT_LABELS[sort]).click();
         await expectRequestAndFixture(page, requests, sort, 'desc');
       }
-      const beforeDirectionNoOp = requests.length;
-      await directions.getByRole('button', { name: '내림차순', exact: true }).click();
-      await page.waitForTimeout(350);
-      expect(requests).toHaveLength(beforeDirectionNoOp);
     } else {
       await sortButton(sorts, '등록순').click();
       await expectRequestAndFixture(page, requests, 'registered', 'desc');
     }
 
+    await expect(page.getByRole('group', { name: '정렬 방향' })).toHaveCount(0);
     await expect(sortButton(sorts, '등록순')).toHaveAttribute('aria-pressed', 'true');
-    await expect(directions.getByRole('button', { name: '내림차순', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(sorts.getByRole('button', { name: '등록순 ▼', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByLabel('영양제 검색 결과').getByText('복용 중', { exact: true })).toBeVisible();
     await settleAnimations(page);
     await expectPillAligned(sorts);
-    await expectPillAligned(directions);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await capture(page, `task-4-sort-controls-${width}.png`);
+    if (width <= 390) await capture(page, `task-5-sort-controls-${width}.png`);
   });
 }
