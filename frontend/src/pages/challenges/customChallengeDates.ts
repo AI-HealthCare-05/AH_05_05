@@ -8,6 +8,8 @@ export function seoulDate(value = new Date()) {
 }
 
 export function customChallengeDateLabel(value: string) {
-  const date = value.includes('T') ? seoulDate(new Date(value)) : value;
-  return date.replaceAll('-', '.');
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value.replaceAll('-', '.');
+  if (!value.includes('T')) return value;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? seoulDate(new Date(timestamp)).replaceAll('-', '.') : value;
 }

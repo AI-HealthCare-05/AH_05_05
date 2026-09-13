@@ -310,7 +310,7 @@ test('browse labels each type and keeps full recruitment dates', async ({ page }
   await page.getByRole('button', { name: '맞춤 챌린지 펼치기', exact: true }).click();
   const officialEntry = page.getByRole('button', { name: '매일 걷기 자세히 보기' });
   await expect(officialEntry.getByText('공식', { exact: true })).toBeVisible();
-  await expect(officialEntry).toContainText('2026년 9월 1일 ~ 2026년 9월 30일');
+  await expect(officialEntry).toContainText('2026.09.01 ~ 2026.09.30');
   await expect(page.getByRole('button', { name: '영양제 챌린지 대상 선택' }).getByText('맞춤', { exact: true })).toBeVisible();
 });
 
