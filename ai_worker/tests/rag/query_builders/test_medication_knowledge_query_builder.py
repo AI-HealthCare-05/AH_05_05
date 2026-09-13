@@ -429,6 +429,24 @@ def test_build_preserves_every_entity_when_known_pair_is_part_of_larger_question
     assert "calcium iron absorption interaction" in plan.alternate_queries
 
 
+def test_build_preserves_every_pair_for_three_explicit_supplements() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "마그네슘, 아연, 칼슘을 같이 먹어도 되나요?",
+    )
+
+    assert plan.entity_names == ["마그네슘", "아연", "칼슘"]
+    assert {(pair.left_name, pair.right_name) for pair in plan.interaction_pairs} == {
+        ("마그네슘", "아연"),
+        ("마그네슘", "칼슘"),
+        ("아연", "칼슘"),
+    }
+    assert set(plan.alternate_queries) >= {
+        "마그네슘 아연 상호작용",
+        "마그네슘 칼슘 상호작용",
+        "아연 칼슘 상호작용",
+    }
+
+
 def test_build_limits_multi_entity_pairs_and_prioritizes_drug_drug() -> None:
     plan = MedicationKnowledgeQueryBuilder().build(
         "아스피린, 와파린, 비타민 K, 칼슘, 철분의 상호작용을 알려줘.",

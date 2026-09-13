@@ -447,7 +447,23 @@ class ChatRepository:
                     entities,
                 ),
             )
-            return MedicationChatSessionReference(entities=deduplicated_entities[:4])
+            product_entities = [
+                entity
+                for entity in deduplicated_entities
+                if entity.entity_type
+                in {
+                    MedicationQueryEntityType.PRODUCT_NAME,
+                    MedicationQueryEntityType.BRAND_ALIAS,
+                }
+            ]
+            other_entities = [
+                entity
+                for entity in deduplicated_entities
+                if entity not in product_entities
+            ]
+            return MedicationChatSessionReference(
+                entities=[*product_entities, *other_entities][:4],
+            )
         return MedicationChatSessionReference()
 
     @staticmethod

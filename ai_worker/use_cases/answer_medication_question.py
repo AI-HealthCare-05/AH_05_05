@@ -237,7 +237,9 @@ class AnswerMedicationQuestionUseCase:
         r"상호작용|같이\s*먹|함께\s*먹"
     )
     _PATIENT_CONTEXT_CUE_PATTERN = re.compile(
-        r"등록한|등록된|복용\s*중|먹고\s*있는|내\s*(?:약|영양제)|"
+        r"등록한|등록된|복용\s*중|먹고\s*있는|"
+        r"(?:내가|제가)\s*(?:먹는|복용하는)\s*(?:약|영양제)|"
+        r"내\s*(?:약|영양제)|"
         r"현재\s*(?:복용|먹)|지금\s*(?:복용|먹)|복약\s*정보|"
         r"(?:약|영양제|복용)\s*목록|전체\s*상호작용",
     )
@@ -328,6 +330,10 @@ class AnswerMedicationQuestionUseCase:
                 }
             )
         request, referenced_product_name = self._apply_session_reference(request)
+        if referenced_product_name is not None and is_interaction_question(request.question):
+            request = request.model_copy(
+                update={"session_interaction_reference_used": True},
+            )
         prepared_question = await self._prepare_question(
             request=request,
             context=context,
@@ -644,7 +650,15 @@ class AnswerMedicationQuestionUseCase:
                     ingredient_family=query_plan.ingredient_family,
                     unsupported_pairs=unsupported_pairs,
                     question_interaction_pairs=(
-                        query_plan.interaction_pairs if request.conversation_interaction_reference_names else []
+                        query_plan.interaction_pairs
+                        if (
+                            interaction_question
+                            and not self._is_active_intake_interaction_question(
+                                question=request.question,
+                                context=context,
+                            )
+                        )
+                        else []
                     ),
                     evidence_coverage=evidence_coverage,
                 ),
@@ -1265,8 +1279,16 @@ class AnswerMedicationQuestionUseCase:
         ]
         if output.stimuli and not validated_stimuli:
             return planning
-        selected_pair_keys = validated_pair_keys or query_plan.interaction_pair_keys
-        if validated_pair_keys:
+        # A question that explicitly resolves three or more targets requests the
+        # complete combination set.  The conditional LLM may improve wording or
+        # section selection, but it must not silently drop a pair from that set.
+        preserve_explicit_pair_set = len(candidate_pair_keys) > 1
+        selected_pair_keys = (
+            query_plan.interaction_pair_keys
+            if preserve_explicit_pair_set
+            else (validated_pair_keys or query_plan.interaction_pair_keys)
+        )
+        if validated_pair_keys and not preserve_explicit_pair_set:
             selected_pair_key_set = set(selected_pair_keys)
             selected_pairs = [pair for pair in query_plan.interaction_pairs if pair.pair_key in selected_pair_key_set]
             selected_interaction_pair = (
@@ -1890,9 +1912,17 @@ class AnswerMedicationQuestionUseCase:
     def _requires_qdrant_conversation_safety_preflight(
         resolution: MedicationQuestionResolution,
     ) -> bool:
-        """벡터 카탈로그의 넓은 엔터티가 민감 요청을 RAG로 우회하지 않게 한다."""
+        """민감 의약품 후보만 Gate로 보내고 명확한 일반 안내 대상은 검색한다."""
 
-        return any(entity.source is MedicationQueryEntitySource.QDRANT for entity in resolution.entities)
+        return any(
+            entity.source is MedicationQueryEntitySource.QDRANT
+            and entity.kind
+            not in {
+                InteractionEntityKind.SUPPLEMENT,
+                InteractionEntityKind.FOOD,
+            }
+            for entity in resolution.entities
+        )
 
     async def _conversation_classification_result(
         self,
@@ -2554,7 +2584,7 @@ class AnswerMedicationQuestionUseCase:
         planning: MedicationQuestionPlanResult,
     ) -> MedicationQuestionPlanResult:
         """등록 복약정보를 명시했지만 질문 본문에 대상이 없을 때만 검색 대상을 보완한다."""
-        if request.conversation_interaction_reference_names:
+        if request.conversation_interaction_reference_names or request.session_interaction_reference_used:
             return planning
         if request.symptom_interaction_follow_up:
             return cls._with_symptom_interaction_follow_up_query_plan(
@@ -2565,26 +2595,64 @@ class AnswerMedicationQuestionUseCase:
         if not cls._can_answer_from_active_context(
             question=request.question,
             context=context,
-        ) or cls._query_plan_matches_active_context(
+        ):
+            return planning
+
+        # An interaction request about the user's registered intake must be
+        # rebuilt from the selected active targets even when the first resolver
+        # happened to match one of them. That removes incidental topic tokens
+        # such as "혈액응고" from metadata filters and restores the full pair set.
+        is_interaction = cls._is_active_intake_interaction_question(
+            question=request.question,
+            context=context,
+        )
+        if not is_interaction and cls._query_plan_matches_active_context(
             query_plan=planning.query_plan,
             context=context,
         ):
             return planning
 
-        entities = cls._active_intake_query_entities(context)
-        if not entities:
+        active_entities = cls._active_intake_query_entities(context)
+        if not active_entities:
             return planning
 
-        is_interaction = cls._is_active_intake_interaction_question(
-            question=request.question,
-            context=context,
-        )
+        active_entity_keys = {
+            (entity.kind, cls._normalize_entity_name(entity.canonical_name)) for entity in active_entities
+        }
+        explicit_entities = [
+            entity
+            for entity in planning.query_plan.entities
+            if (
+                entity.kind is not None
+                and entity.entity_type is not MedicationQueryEntityType.TOPIC
+                and entity.source is not MedicationQueryEntitySource.REGEX
+                and (entity.kind, cls._normalize_entity_name(entity.canonical_name)) not in active_entity_keys
+            )
+        ]
+        entities = [*active_entities, *explicit_entities]
+
         planning_question = f"{request.question} 상호작용" if is_interaction else request.question
         query_plan = MedicationKnowledgeQueryBuilder(
             catalog_entities=entities,
         ).build(planning_question)
+        # The original wording may contain a treatment-class phrase such as
+        # "혈액응고와 관련된 약". It supports active-intake selection, but is
+        # not itself a medication or supplement search target.
+        query_plan = query_plan.model_copy(
+            update={
+                "entities": entities,
+                "entity_names": [entity.canonical_name for entity in entities],
+            }
+        )
         if is_interaction:
-            interaction_pairs = cls._interaction_pairs_for_entities(entities)
+            interaction_pairs = (
+                cls._interaction_pairs_between(
+                    left_entities=active_entities,
+                    right_entities=explicit_entities,
+                )
+                if explicit_entities
+                else cls._interaction_pairs_for_entities(active_entities)
+            )
             query_plan = query_plan.model_copy(
                 update={
                     "interaction_pairs": interaction_pairs,
@@ -3001,9 +3069,8 @@ class AnswerMedicationQuestionUseCase:
             ),
         )
 
-    @classmethod
     def _active_intake_no_evidence_result(
-        cls,
+        self,
         *,
         request: MedicationChatRequest,
         context: ActiveIntakeContext,
@@ -3012,9 +3079,14 @@ class AnswerMedicationQuestionUseCase:
         interpretation: MedicationQuestionInterpretation,
         evidence_coverage: MedicationEvidenceCoverage,
     ) -> MedicationChatResult:
-        answer = EvidenceGapGuidanceBuilder().build_active_intake(
-            medication_names=[item.name for item in context.medications],
-            supplement_names=[item.name for item in context.supplements],
+        answer = self._assembler.assemble(
+            context=context,
+            guide=None,
+            rules=[],
+            chunks=[],
+            interaction_question=True,
+            active_intake_interaction=True,
+            evidence_coverage=evidence_coverage,
         )
         reason_codes = [
             MedicationChatReasonCode.IN_SCOPE_NO_EVIDENCE.value,
@@ -3029,7 +3101,7 @@ class AnswerMedicationQuestionUseCase:
             route=MedicationChatRoute.ACTIVE_INTAKE,
             safety_status=SafetyStatus.RESTRICTED,
             safety_reason_codes=reason_codes,
-            sources=cls._build_sources(
+            sources=self._build_sources(
                 context=context,
                 guide_lookup=MedicationGuideLookup(),
                 rules=[],
@@ -3037,7 +3109,7 @@ class AnswerMedicationQuestionUseCase:
             ),
             prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
             schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
-            context_hash=cls._context_hash(context),
+            context_hash=self._context_hash(context),
             question_interpretation=interpretation,
             search_observation=(
                 MedicationSearchExecutionObservation.from_execution_plan(
@@ -3124,7 +3196,7 @@ class AnswerMedicationQuestionUseCase:
         ):
             draft = draft.model_copy(
                 update={
-                    "route": MedicationChatRoute.SUPPLEMENT_GUIDE,
+                    "route": MedicationChatRoute.INTERACTION,
                     "safety_status": SafetyStatus.SAFE,
                     "safety_reason_codes": ["GENERAL_SUPPLEMENT_GUIDANCE"],
                     "risk_decision": risk_decision,

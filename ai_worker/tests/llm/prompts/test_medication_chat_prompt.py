@@ -219,10 +219,13 @@ def test_build_messages_keeps_history_for_confirmed_session_reference() -> None:
 
 def test_system_prompt_requires_limited_markdown_product_answer() -> None:
     assert "✅ **효능**" in SYSTEM_PROMPT
+    assert "🚨 **이상반응**" in SYSTEM_PROMPT
     assert "`- ` 목록" in SYSTEM_PROMPT
     assert "굵은 제품명만" in SYSTEM_PROMPT
     assert "값이 없는 항목은 출력하지" in SYSTEM_PROMPT
     assert "질문과 직접 관계있는 섹션" in SYSTEM_PROMPT
+    assert "각 섹션은 최대 3개 bullet" in SYSTEM_PROMPT
+    assert "약 50자 이내" in SYSTEM_PROMPT
 
 
 def test_system_prompt_uses_v7_six_element_contract_and_private_checklist() -> None:
@@ -250,8 +253,8 @@ def test_system_prompt_forbids_repeating_unverified_interaction_notice() -> None
 
 
 def test_system_prompt_limits_each_requested_section_to_short_bullets() -> None:
-    assert "각 bullet은 한 가지 핵심만 약 70자 이내" in SYSTEM_PROMPT
-    assert "섹션당 최대 4개" in SYSTEM_PROMPT
+    assert "각 bullet은 한 가지 핵심만 약 50자 이내" in SYSTEM_PROMPT
+    assert "각 섹션은 최대 3개 bullet" in SYSTEM_PROMPT
 
 
 def test_prompt_limits_product_output_to_requested_sections() -> None:

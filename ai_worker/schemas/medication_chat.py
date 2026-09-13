@@ -227,6 +227,7 @@ class MedicationChatRequest(BaseModel):
     )
     history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=10)
     symptom_interaction_follow_up: bool = False
+    session_interaction_reference_used: bool = False
     conversation_interaction_reference_names: list[str] = Field(
         default_factory=list,
         max_length=2,
