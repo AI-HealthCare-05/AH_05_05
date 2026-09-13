@@ -227,11 +227,12 @@ test("code input guard blocks Korean before insertion but allows code characters
   assert.equal(deletionBlocked, false);
 });
 
-test("code input guard blocks an active IME keydown before composition text appears", async () => {
+test("code input guard does not fight an active IME (strips Korean on composition end instead)", async () => {
   const { guardCodeInput } = await import(moduleUrl);
   let imeBlocked = false;
-  let latinBlocked = false;
 
+  // 조합 중 keydown/beforeinput 을 막으면 조합 범위가 깨져 앞 입력까지 지워진다(#460).
+  // 조합 중에는 개입하지 않고, 조합이 끝난 뒤 compositionend 에서 한글을 제거한다.
   guardCodeInput({
     type: "keydown",
     key: "Process",
@@ -240,13 +241,19 @@ test("code input guard blocks an active IME keydown before composition text appe
     preventDefault() { imeBlocked = true; },
   });
   guardCodeInput({
-    type: "keydown",
-    key: "a",
-    keyCode: 65,
-    isComposing: false,
-    preventDefault() { latinBlocked = true; },
+    type: "beforeinput",
+    data: "한",
+    isComposing: true,
+    preventDefault() { imeBlocked = true; },
   });
 
-  assert.equal(imeBlocked, true);
-  assert.equal(latinBlocked, false);
+  assert.equal(imeBlocked, false);
+});
+
+test("code inputs skip sanitizing during IME composition and strip on composition end", async () => {
+  const script = await readFile(moduleUrl, "utf8");
+
+  // 조합 중에는 value 를 건드리지 않아야 앞 입력이 지워지지 않는다(#460 회귀 방지).
+  assert.match(script, /if \(event\.isComposing\) return;/);
+  assert.match(script, /addEventListener\("compositionend"/);
 });
