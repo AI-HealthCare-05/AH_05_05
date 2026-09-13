@@ -6,18 +6,17 @@ import { getMyProfile, type Gender } from '@/entities/account';
 import { getCustomChallengeParticipations, invalidateCustomChallengeProgress } from '@/entities/custom-challenge';
 import {
   addSupplement,
-  evaluateNutrientStandard,
   getSupplements,
   stopSupplement,
   summarizeNutrients,
   updateSupplement,
   type AddSupplementPayload,
   type NutrientStandards,
-  type NutrientTotal,
   type Supplement,
   type UpdateSupplementPayload,
 } from '@/entities/supplement';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
+import { NutrientTotals } from '@/entities/supplement/ui/NutrientTotals';
 import { calculateFullAge } from '@/shared/lib/birthDate';
 import { mealSlotLabel } from '@/shared/model/mealSlot';
 import { navigateBackOrReplace } from '@/shared/lib/navigation';
@@ -39,7 +38,6 @@ import { SupplementsBrowseView } from './SupplementsBrowseView';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
 
 const numberFormat = new Intl.NumberFormat('ko-KR');
-const nutrientNumberFormat = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 });
 
 interface SupplementsPageProps {
   supplementsOverride?: Supplement[];
@@ -90,8 +88,6 @@ export function SupplementsPage({
     [standards, supplements],
   );
   const hasStandardProfile = standards !== null;
-  const exceeded = hasStandardProfile ? totals.filter((total) => total.exceeded) : [];
-  const neutral = hasStandardProfile ? totals.filter((total) => !total.exceeded) : totals;
   const registeredProductIds = useMemo(
     () =>
       new Set(
@@ -504,25 +500,7 @@ export function SupplementsPage({
                   <h2 id="nutrient-total-title" className="text-xl font-bold text-foreground">
                     성분 합계
                   </h2>
-                  {exceeded.map((total) => (
-                    <NutrientTotalCard
-                      key={total.nutrientId}
-                      total={total}
-                      showStandards={hasStandardProfile}
-                    />
-                  ))}
-                  {neutral.length > 0 && (
-                    <Card className="gap-0 overflow-hidden p-0">
-                      {neutral.map((total) => (
-                        <NutrientTotalCard
-                          key={total.nutrientId}
-                          total={total}
-                          showStandards={hasStandardProfile}
-                          grouped
-                        />
-                      ))}
-                    </Card>
-                  )}
+                  <NutrientTotals totals={totals} showStandards={hasStandardProfile} />
                 </section>
 
                 <div className="flex flex-col gap-1 text-sm text-muted-foreground">
@@ -617,272 +595,6 @@ export function SupplementsPage({
   );
 }
 
-function NutrientTotalCard({
-  total,
-  showStandards,
-  grouped = false,
-}: {
-  total: NutrientTotal;
-  showStandards: boolean;
-  grouped?: boolean;
-}) {
-  const evaluation = evaluateNutrientStandard(total);
-  const isOverUpperLimit = showStandards && evaluation.status === 'over-upper-limit';
-  const statusLabel = showStandards ? standardStatusLabel(total, evaluation) : null;
-  const hasStatus = statusLabel !== null;
-
-  const content = (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-col gap-0">
-        <div data-testid="nutrient-total-header" className="relative mx-1 min-h-7">
-          <div
-            data-testid="nutrient-total-summary"
-            className={`flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 ${
-              hasStatus ? 'max-w-[60%]' : 'max-w-full'
-            }`}
-          >
-            <h3 className="[overflow-wrap:anywhere] text-lg font-bold text-foreground">
-              {total.name}
-            </h3>
-            <strong
-              className={`text-lg font-bold tnum ${
-                isOverUpperLimit ? 'text-danger-strong' : 'text-foreground'
-              }`}
-            >
-              {nutrientNumberFormat.format(total.amount)}
-            </strong>
-            <span className="text-unit text-muted-foreground">{total.unit}</span>
-          </div>
-          {statusLabel !== null && (
-            <StandardStatus total={total} evaluation={evaluation} label={statusLabel} />
-          )}
-        </div>
-
-        {showStandards && (evaluation.base !== null || total.ul !== null) && (
-          <NutrientRangeBar total={total} />
-        )}
-      </div>
-
-      <details className="group text-sm text-muted-foreground">
-        <summary className="flex min-h-touch cursor-pointer list-none items-center justify-between gap-3 rounded-control py-1 font-bold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-          <span>성분 포함 제품 {total.sourceNames.length}개</span>
-          <DrawnChevron
-            aria-hidden
-            direction="down"
-            className="size-5 shrink-0 text-disabled-foreground transition-transform group-open:rotate-180"
-          />
-        </summary>
-        <ul className="flex flex-col gap-1 border-t border-border pt-2">
-          {total.sourceNames.map((sourceName) => (
-            <li key={sourceName} className="[overflow-wrap:anywhere]">
-              {sourceName}
-            </li>
-          ))}
-        </ul>
-      </details>
-    </div>
-  );
-
-  if (grouped) {
-    return (
-      <article
-        aria-label={`${total.name} 성분 합계`}
-        className="flex flex-col gap-4 border-t border-border p-4 first:border-t-0"
-      >
-        {content}
-      </article>
-    );
-  }
-
-  return (
-    <article aria-label={`${total.name} 성분 합계`}>
-      <Card className="gap-4 p-4">
-        {content}
-      </Card>
-    </article>
-  );
-}
-
-function standardStatusLabel(
-  total: NutrientTotal,
-  evaluation: ReturnType<typeof evaluateNutrientStandard>,
-): string | null {
-  const baseLabel = evaluation.baseKind === 'ai' ? '충분섭취량' : '권장량';
-  if (evaluation.status === 'over-upper-limit') {
-    return '상한 초과';
-  }
-  if (evaluation.status === 'below-base' && evaluation.percentOfBase !== null) {
-    return `${baseLabel}의 ${nutrientNumberFormat.format(evaluation.percentOfBase)}%예요`;
-  }
-  if (evaluation.status === 'recommended') {
-    return (
-      total.ul === null && evaluation.percentOfBase !== null
-        ? `${baseLabel}의 ${nutrientNumberFormat.format(evaluation.percentOfBase)}%예요`
-        : '권장 범위예요'
-    );
-  }
-  return null;
-}
-
-function StandardStatus({
-  total,
-  evaluation,
-  label,
-}: {
-  total: NutrientTotal;
-  evaluation: ReturnType<typeof evaluateNutrientStandard>;
-  label: string;
-}) {
-  const upperLimitPosition = rangePositions(total, evaluation.base).upper;
-  return (
-    <p
-      data-nutrient-status
-      className={`absolute top-0 whitespace-nowrap text-right text-sm ${
-        upperLimitPosition === null ? 'right-0' : '-translate-x-1/2'
-      } ${evaluation.status === 'over-upper-limit' ? 'font-bold text-danger-strong' : 'text-muted-foreground'}`}
-      style={upperLimitPosition === null ? undefined : { left: `${upperLimitPosition}%` }}
-    >
-      {label}
-    </p>
-  );
-}
-
-function NutrientRangeBar({ total }: { total: NutrientTotal }) {
-  const evaluation = evaluateNutrientStandard(total);
-  if (total.ul === null && evaluation.base === null) return null;
-
-  const positions = rangePositions(total, evaluation.base);
-  const upperLimit = total.ul;
-  const hasUpperLimit = upperLimit !== null;
-  const labelsAreClose =
-    positions.base !== null &&
-    positions.upper !== null &&
-    Math.abs(positions.upper - positions.base) < 20;
-  const fillColor =
-    evaluation.status === 'below-base'
-      ? 'bg-warning'
-      : evaluation.status === 'over-upper-limit'
-        ? 'bg-danger'
-        : 'bg-primary';
-  const markerColor =
-    evaluation.status === 'below-base'
-      ? 'bg-warning-strong'
-      : evaluation.status === 'over-upper-limit'
-        ? 'bg-danger-strong'
-        : 'bg-primary-strong';
-
-  return (
-    <div
-      data-nutrient-range
-      data-threshold-labels
-      aria-hidden={hasUpperLimit ? undefined : true}
-      className="relative mx-1 h-14"
-    >
-      {positions.base !== null && evaluation.base !== null && (
-        <div
-          data-threshold-label="base"
-          className={`absolute top-0 grid h-14 grid-rows-[1rem_1.5rem_1rem] whitespace-nowrap text-xs text-muted-foreground ${
-            labelsAreClose ? '-translate-x-full text-left' : '-translate-x-1/2 text-center'
-          }`}
-          style={{ left: `${clampThresholdLabel(positions.base)}%` }}
-        >
-          <span className="row-start-1">
-            {evaluation.baseKind === 'ai' ? '충분' : '권장'}
-          </span>
-          <span className="row-start-3 tnum">{nutrientNumberFormat.format(evaluation.base)}</span>
-        </div>
-      )}
-      {positions.upper !== null && upperLimit !== null && (
-        <div
-          data-threshold-label="upper-limit"
-          className={`absolute top-0 grid h-14 grid-rows-[1rem_1.5rem_1rem] whitespace-nowrap text-xs text-muted-foreground ${
-            labelsAreClose ? 'text-right' : '-translate-x-1/2 text-center'
-          }`}
-          style={{ left: `${clampThresholdLabel(positions.upper)}%` }}
-        >
-          <span className="row-start-1">상한</span>
-          <span className="row-start-3 tnum">{nutrientNumberFormat.format(upperLimit)}</span>
-        </div>
-      )}
-      <div
-        role={hasUpperLimit ? 'meter' : undefined}
-        aria-label={hasUpperLimit ? `${total.name} 섭취기준 위치` : undefined}
-        aria-valuemin={hasUpperLimit ? 0 : undefined}
-        aria-valuenow={upperLimit !== null ? Math.min(total.amount, upperLimit) : undefined}
-        aria-valuemax={upperLimit ?? undefined}
-        aria-valuetext={
-          hasUpperLimit ? `${nutrientNumberFormat.format(total.amount)}${total.unit}` : undefined
-        }
-        className="absolute inset-x-0 top-4 h-5"
-      >
-        <div
-          data-range-track
-          className="absolute inset-x-0 top-2 h-2 rounded-pill bg-muted-bg"
-          style={
-            hasUpperLimit
-              ? undefined
-              : {
-                  maskImage: 'linear-gradient(to right, black 0%, black 80%, transparent 100%)',
-                  WebkitMaskImage:
-                    'linear-gradient(to right, black 0%, black 80%, transparent 100%)',
-                }
-          }
-        >
-          <div
-            data-range-fill
-            className={`h-full rounded-pill ${fillColor}`}
-            style={{ width: `${positions.marker}%` }}
-          />
-        </div>
-        {positions.base !== null && (
-          <span
-            data-threshold="base"
-            aria-hidden
-            className="absolute top-1 h-4 w-0.5 bg-muted-foreground"
-            style={{ left: `${positions.base}%` }}
-          />
-        )}
-        {positions.upper !== null && (
-          <span
-            data-threshold="upper-limit"
-            aria-hidden
-            className="absolute top-1 h-4 w-0.5 bg-muted-foreground"
-            style={{ left: `${positions.upper}%` }}
-          />
-        )}
-        <span
-          data-range-marker
-          aria-hidden
-          className={`absolute top-1 size-4 -translate-x-1/2 rounded-pill border-2 border-card ${markerColor}`}
-          style={{ left: `${positions.marker}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function clampThresholdLabel(position: number): number {
-  return Math.max(8, Math.min(92, position));
-}
-
-function rangePositions(total: NutrientTotal, base: number | null) {
-  if (total.ul === null) {
-    if (base === null || base === 0) return { base: null, upper: null, marker: 0 };
-    return {
-      base: 70,
-      upper: null,
-      marker: Math.max(0, Math.min(100, (total.amount / base) * 70)),
-    };
-  }
-  const upper = 88;
-  const marker =
-    total.amount > total.ul
-      ? 100
-      : Math.max(0, Math.min(upper, (total.amount / total.ul) * upper));
-  const basePosition =
-    base === null ? null : Math.max(4, Math.min(upper - 4, (base / total.ul) * upper));
-  return { base: basePosition, upper, marker };
-}
 
 function standardSourceLabel(profile: NutrientStandardProfile | null): string {
   if (!profile?.birthDate || !profile.gender) {

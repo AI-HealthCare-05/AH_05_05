@@ -3,7 +3,7 @@
 .v11-report h1, .v11-report h2, .v11-report h3, .v11-report p { margin: 0; }
 .v11-report h1 { font-size: 1.5rem; line-height: 1.3; letter-spacing: -.05em; }
 .v11-report h2 { font-size: 1.125rem; line-height: 1.35; letter-spacing: -.03em; }
-.v11-report h3 { font-size: .9375rem; line-height: 1.45; overflow-wrap: anywhere; }
+.v11-report h3:not(.nutrient-totals h3) { font-size: .9375rem; line-height: 1.45; overflow-wrap: anywhere; }
 .v11-hero, .v11-card { min-width: 0; border: 1px solid #dce7df; border-radius: 1.2rem; background: #fff; box-shadow: 0 6px 18px rgb(43 81 62 / .035); }
 .v11-hero { padding: 1.25rem; border-color: #d9e6dc; box-shadow: 0 8px 22px rgb(43 81 62 / .06); }
 .v11-eyebrow { display: block; margin-bottom: .375rem; color: #37806a; font-size: .75rem; font-weight: 800; }
@@ -57,29 +57,21 @@
 .v11-report a { color: #1d6e55; }
 .v11-hint, .v11-reference { color: #687c72; font-size: .75rem; line-height: 1.6; overflow-wrap: anywhere; }
 .v11-nutrient-notes { list-style: disc; padding-left: 1rem; }
-.v11-nutrient-grid { display: grid; grid-template-columns: minmax(0, 1fr); column-gap: 2rem; }
-.v11-nutrient-grid + .v11-hint { margin-top: .75rem; }
-@media (min-width: 760px) { .v11-nutrient-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.v11-nutrient { min-width: 0; padding: 1rem 0; border-bottom: 1px solid #e8efea; }
-.v11-nutrient:last-of-type { padding-bottom: 0; border-bottom: 0; }
-.v11-nutrient-amount { display: flex; align-items: baseline; flex-wrap: wrap; gap: .5rem; margin: .625rem 0 .875rem !important; font-size: 1.75rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-.v11-nutrient-amount > span { font-size: .75rem; font-weight: 400; color: #647a6d; }
-.v11-range { position: relative; height: 4rem; margin: 0 .375rem .5rem; color: #087f78; }
-.v11-range-track { position: absolute; top: 1.5rem; width: 100%; height: .4375rem; border-radius: 999px; background: #f0f3f3; }
-.v11-range-track > span { display: block; height: 100%; border-radius: inherit; background: currentColor; }
-.v11-range-dot { position: absolute; top: 1.71875rem; width: .875rem; height: .875rem; border: 2px solid white; border-radius: 50%; background: currentColor; transform: translate(-50%, -50%); }
-.v11-range-tick { position: absolute; top: 1.25rem; width: 1px; height: .9375rem; background: #657b70; }
-.v11-range-label { position: absolute; top: 0; display: flex; flex-direction: column; align-items: center; gap: 1.5rem; transform: translateX(-50%); color: #647a6d; font-size: .6875rem; line-height: 1rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.v11-range-label-close-reference { transform: translateX(-100%); padding-right: .375rem; }
-.v11-range-label-close-upper { transform: none; padding-left: .375rem; }
-.v11-range-over, .v11-range-warning { color: #b34d31; }
-.v11-range-warning { font-size: .8125rem; font-weight: 700; }
+.v11-card > .nutrient-totals { margin-top: 1rem; margin-bottom: .75rem; }
 .v11-medicine { min-width: 0; padding: 1.125rem 0; border-top: 1px solid #e6eee8; }
 .v11-medicine:first-of-type { padding-top: .125rem; border-top: 0; }.v11-medicine:last-child { padding-bottom: 0; }
 .v11-medicine h3 { font-size: 1rem; }.v11-medicine dl { margin: .9375rem 0 0; }
 .v11-medicine dl > div { margin: .8125rem 0; }.v11-medicine dt { margin-bottom: .25rem; color: #347a66; font-size: .75rem; font-weight: 800; }.v11-medicine dd { margin: 0; color: #3b5d50; font-size: .8125rem; line-height: 1.65; overflow-wrap: anywhere; }
-.v11-medicine details, .v11-source-card details { margin-top: 1rem; border-top: 1px solid #e6eee8; }
-.v11-report summary { display: list-item; min-height: 2.75rem; padding: .75rem 0; cursor: pointer; color: #285f4f; font-size: .8125rem; font-weight: 800; }
+.v11-source-card details { margin-top: 1rem; border-top: 1px solid #e6eee8; }
+.v11-report summary:not(.nutrient-totals summary, .v11-medicine-summary) { display: list-item; min-height: 2.75rem; padding: .75rem 0; cursor: pointer; color: #285f4f; font-size: .8125rem; font-weight: 800; }
+.v11-medicine-summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 2.75rem; cursor: pointer; list-style: none; }
+.v11-medicine-summary::-webkit-details-marker { display: none; }
+.v11-medicine-summary h3 { min-width: 0; font-weight: 500; }
+.v11-medicine-toggle { display: inline-flex; align-items: center; gap: .25rem; flex-shrink: 0; white-space: nowrap; color: #285f4f; font-size: .8125rem; font-weight: 700; }
+.v11-medicine-chevron { width: 1rem; height: 1rem; }
+.v11-medicine-close-label, .v11-medicine-disclosure[open] .v11-medicine-open-label { display: none; }
+.v11-medicine-disclosure[open] .v11-medicine-close-label { display: inline; }
+.v11-medicine-disclosure[open] .v11-medicine-chevron { transform: rotate(180deg); }
 .v11-extra { margin: .875rem 0; }.v11-extra strong { color: #2b6850; font-size: .75rem; }.v11-extra p { margin-top: .25rem; color: #4d685a; font-size: .8125rem; line-height: 1.65; }
 .v11-source-card { background: #fbfdfb; }.v11-source-card details { margin-top: 0; border-top: 0; }.v11-details-body p { margin: 0 0 .75rem; color: #50695a; font-size: .8125rem; line-height: 1.65; }.v11-source-list { margin: 0; padding-left: 1.1rem; color: #50695a; font-size: .8125rem; line-height: 1.7; }.v11-source-list li + li { margin-top: .5rem; }
 .v11-footer { margin: 1.2rem .1875rem 0 !important; color: #708178; font-size: .6875rem; line-height: 1.65; }

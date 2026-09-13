@@ -1,5 +1,8 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
+from ai_worker.tests.reports.test_report_html_attachment import decrypt_attachment
 from app.core.email.payload import EmailJobPayload, EmailTemplate
 from app.core.email.renderer import EmailTemplateRenderer
 
@@ -128,6 +131,7 @@ def test_intake_report_template_renders_safe_korean_markdown() -> None:
             template=EmailTemplate.INTAKE_REPORT,
             recipient_email="recipient@example.com",
             report_id="report-20260911-abc123",
+            report_birth_date=date(1990, 1, 2),
             report_markdown=(
                 "# 복용약·영양제 AI 보고서\n\n"
                 "## 현재 복용 목록\n\n"
@@ -139,15 +143,37 @@ def test_intake_report_template_renders_safe_korean_markdown() -> None:
         )
     )
 
-    assert message.subject == "RxVita 복용약·영양제 AI 보고서 · report-20260911-abc123"
-    assert "복용약·영양제 AI 보고서" in message.text_body
-    assert "매우 긴 한글 제품명" in message.html_body
-    assert "<table" in message.html_body
-    assert 'href="https://www.foodsafetykorea.go.kr"' in message.html_body
-    assert "<script>" not in message.html_body
-    assert "javascript:" not in message.html_body
-    assert "&lt;script&gt;alert" in message.html_body
+    assert message.subject.startswith("RxVita 복용약·영양제 AI 보고서 · ")
+    assert "report-20260911-abc123" not in message.subject
+    assert "RxVita AI 보고서" in message.text_body
+    markup = decrypt_attachment(message.attachments[0].data)
+    assert "매우 긴 한글 제품명" not in message.html_body
+    assert "매우 긴 한글 제품명" in markup
+    assert "<table" in markup
+    assert 'href="https://www.foodsafetykorea.go.kr"' in markup
+    assert "<script>" not in markup
+    assert "javascript:" not in markup
+    assert "&lt;script&gt;alert" in markup
     assert 'src="cid:rxvita-logo"' in message.html_body
+
+
+def test_intake_report_subject_includes_korean_send_time_for_html_and_markdown() -> None:
+    sent_at = datetime(2026, 9, 14, 0, 5, 9, tzinfo=ZoneInfo("Asia/Seoul"))
+    for report_html in (None, "<p>보고서 본문</p>"):
+        with patch("app.core.email.renderer.datetime") as clock:
+            clock.now.return_value = sent_at
+            message = EmailTemplateRenderer().render(
+                EmailJobPayload(
+                    template=EmailTemplate.INTAKE_REPORT,
+                    recipient_email="recipient@example.com",
+                    report_id="report-test",
+                    report_birth_date=date(1990, 1, 2),
+                    report_markdown="보고서 본문",
+                    report_html=report_html,
+                )
+            )
+            clock.now.assert_called_once_with(ZoneInfo("Asia/Seoul"))
+        assert message.subject == "RxVita 복용약·영양제 AI 보고서 · 2026-09-14 00:05"
 
 
 def test_intake_report_plain_text_decodes_literal_entities_once() -> None:
@@ -156,12 +182,15 @@ def test_intake_report_plain_text_decodes_literal_entities_once() -> None:
             template=EmailTemplate.INTAKE_REPORT,
             recipient_email="recipient@example.com",
             report_id="report-literal-preview",
+            report_birth_date=date(1990, 1, 2),
             report_markdown="# 가상 제품 &#91;검증&#93; &amp;amp; &lt;태그&gt;",
         )
     )
-    assert "가상 제품 [검증] &amp; <태그>" in message.text_body
-    assert "&#91;" not in message.text_body
-    assert "<태그>" not in message.html_body
+    markup = decrypt_attachment(message.attachments[0].data)
+    assert "가상 제품" not in message.text_body
+    assert "&#91;" not in markup
+    assert "<태그>" not in markup
+    assert "&lt;태그&gt;" in markup
 
 
 def test_intake_report_links_preserve_query_encoding_and_do_not_bold_url_contents() -> None:
@@ -170,14 +199,16 @@ def test_intake_report_links_preserve_query_encoding_and_do_not_bold_url_content
             template=EmailTemplate.INTAKE_REPORT,
             recipient_email="recipient@example.com",
             report_id="report-20260911-link-test",
+            report_birth_date=date(1990, 1, 2),
             report_markdown="[**공식 안내**](https://example.com/docs/**overview**?a=1&b=2)",
         )
     )
 
-    assert 'href="https://example.com/docs/**overview**?a=1&amp;b=2"' in message.html_body
-    assert "amp;amp" not in message.html_body
-    assert '<a href="https://example.com/docs/**overview**?a=1&amp;b=2"' in message.html_body
-    assert "<strong>공식 안내</strong>" in message.html_body
+    markup = decrypt_attachment(message.attachments[0].data)
+    assert 'href="https://example.com/docs/**overview**?a=1&amp;b=2"' in markup
+    assert "amp;amp" not in markup
+    assert '<a href="https://example.com/docs/**overview**?a=1&amp;b=2"' in markup
+    assert "<strong>공식 안내</strong>" in markup
 
 
 def test_intake_report_rejects_malformed_link_without_failing_render() -> None:
@@ -186,9 +217,11 @@ def test_intake_report_rejects_malformed_link_without_failing_render() -> None:
             template=EmailTemplate.INTAKE_REPORT,
             recipient_email="recipient@example.com",
             report_id="report-20260911-malformed-link",
+            report_birth_date=date(1990, 1, 2),
             report_markdown="[잘못된 링크](https://[invalid)",
         )
     )
 
-    assert "잘못된 링크" in message.html_body
-    assert "https://[invalid" not in message.html_body
+    markup = decrypt_attachment(message.attachments[0].data)
+    assert "잘못된 링크" in markup
+    assert "https://[invalid" not in markup

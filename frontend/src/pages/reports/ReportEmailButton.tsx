@@ -65,7 +65,7 @@ export function ReportEmailButton({ emailToken, onRegenerate }: { emailToken?: s
     : job?.status === 'COMPLETED' ? '메일 서버로 발송했어요. 받은편지함과 스팸함을 확인해주세요.'
     : failed ? '이메일을 발송하지 못했어요. 잠시 후 새 보고서를 생성해 다시 요청해주세요.'
     : job ? '발송 요청이 접수됐어요. 아직 발송이 완료되지는 않았어요.'
-    : '현재 보고서를 본인의 인증된 계정 이메일로 보내요. 생성 후 1시간 이내에 요청해주세요.';
+    : '현재 보고서를 암호화된 HTML 첨부파일로 보내요. 비밀번호는 등록된 생년월일 6자리(YYMMDD)예요. 생성 후 1시간 이내에 요청해주세요.';
   return <>
     <Button onClick={() => void send()} disabled={!emailToken || pending || !!job} aria-describedby="report-email-help">
       {pending ? '이메일 요청 중' : job?.status === 'COMPLETED' ? '이메일 발송 완료' : job && !failed ? '이메일 발송 처리 중' : '이메일로 받기'}

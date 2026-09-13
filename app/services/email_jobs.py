@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Protocol
 from uuid import uuid4
 
@@ -190,6 +190,8 @@ class EmailJobService:
         recipient_email: str,
         report_markdown: str,
         report_id: str,
+        report_birth_date: date,
+        recipient_name: str | None = None,
         report_html: str | None = None,
     ) -> BackgroundJob:
         idempotency_key = f"email:intake-report:{user_id}:{report_id}"
@@ -218,6 +220,8 @@ class EmailJobService:
                 EmailJobPayload(
                     template=EmailTemplate.INTAKE_REPORT,
                     recipient_email=recipient_email,
+                    recipient_name=recipient_name,
+                    report_birth_date=report_birth_date,
                     report_id=report_id,
                     report_markdown=report_markdown,
                     report_html=report_html,

@@ -33,13 +33,15 @@ export function summarizeNutrients(
     }
   }
 
-  return [...totals.values()].sort((left, right) => {
-    const leftTier = standardTier(left);
-    const rightTier = standardTier(right);
-    if (leftTier !== rightTier) return leftTier - rightTier;
-    if (leftTier === 4) return left.name.localeCompare(right.name, 'ko');
-    return tierRatio(right, rightTier) - tierRatio(left, leftTier);
-  });
+  return [...totals.values()].sort(compareNutrientTotals);
+}
+
+export function compareNutrientTotals(left: NutrientTotal, right: NutrientTotal): number {
+  const leftTier = standardTier(left);
+  const rightTier = standardTier(right);
+  if (leftTier !== rightTier) return leftTier - rightTier;
+  if (leftTier === 4) return left.name.localeCompare(right.name, 'ko');
+  return tierRatio(right, rightTier) - tierRatio(left, leftTier);
 }
 
 function standardTier(total: NutrientTotal): number {
