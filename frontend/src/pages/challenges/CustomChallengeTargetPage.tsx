@@ -237,7 +237,7 @@ export function CustomChallengeTargetPage() {
                     <strong className="block text-foreground">{target.name}</strong>
                     {alreadyParticipating ? (
                       <Link to={`/challenges/custom-participations/${existingParticipationId}`} className="block text-xs font-bold text-primary">
-                        이미 참여 중인 {supportedKind === 'medication' ? '처방' : '영양제'} 보기 ›
+                        이미 참여 중인 {supportedKind === 'medication' ? '처방' : '챌린지'} 보기 ›
                       </Link>
                     ) : null}
                   </span>

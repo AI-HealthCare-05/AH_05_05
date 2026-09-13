@@ -106,7 +106,7 @@ test('영양제 추가는 검색만 제공하고 과다 결과를 식별할 정�
   await expect(sheet.getByText('바코드', { exact: false })).toHaveCount(0);
 
   await search.fill('종합비타민');
-  await expect(sheet.getByText('24개가 찾아졌어요.')).toBeVisible();
+  await expect(sheet.getByText('24개를 찾았어요.')).toBeVisible();
   await expect(
     sheet.getByText('통 앞면의 브랜드를 함께 넣으면 빨리 찾아요 — 예: 센트룸 종합비타민'),
   ).toBeVisible();
@@ -119,7 +119,7 @@ test('영양제 추가는 검색만 제공하고 과다 결과를 식별할 정�
 
   await search.fill('센트룸');
   await expect(results.getByText('센트룸 실버 우먼', { exact: true })).toBeVisible();
-  await expect(sheet.getByText(/개가 찾아졌어요/)).toHaveCount(0);
+  await expect(sheet.getByText(/개를 찾았어요/)).toHaveCount(0);
 });
 
 test('검색 결과는 20개씩 불러와 끝까지 내리면 다음 결과를 이어 보여준다', async ({ page }) => {
