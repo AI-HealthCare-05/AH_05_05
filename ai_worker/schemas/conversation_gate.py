@@ -1,6 +1,6 @@
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ai_worker.schemas.medication_note_summary import MedicationNoteSummaryScope
 from ai_worker.schemas.medication_search import MedicationQuestionConfidence
@@ -48,6 +48,15 @@ class ConversationClassification(BaseModel):
     confidence: MedicationQuestionConfidence
     follow_up_fields: list[SymptomFollowUpField] = Field(default_factory=list, max_length=3)
     note_summary_scope: MedicationNoteSummaryScope | None = None
+    interaction_reference_names: list[str] = Field(default_factory=list, max_length=2)
+
+    @field_validator("interaction_reference_names")
+    @classmethod
+    def normalize_interaction_reference_names(cls, value: list[str]) -> list[str]:
+        normalized = [name.strip() for name in value if name.strip()]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("상호작용 참조 대상은 중복될 수 없습니다.")
+        return normalized
 
     @model_validator(mode="after")
     def validate_note_summary_scope(self) -> "ConversationClassification":
@@ -56,6 +65,10 @@ class ConversationClassification(BaseModel):
             raise ValueError("MEDICATION_NOTE_SUMMARY에는 note_summary_scope가 필요합니다.")
         if not is_note_summary and self.note_summary_scope is not None:
             raise ValueError("복약메모 요약이 아닌 intent에는 note_summary_scope를 사용할 수 없습니다.")
+        if self.interaction_reference_names and self.intent is not ConversationIntent.SYMPTOM_INTERACTION_FOLLOW_UP:
+            raise ValueError("상호작용 후속 질문이 아닌 intent에는 참조 대상을 사용할 수 없습니다.")
+        if self.interaction_reference_names and len(self.interaction_reference_names) != 2:
+            raise ValueError("상호작용 참조 대상은 두 개여야 합니다.")
         return self
 
 

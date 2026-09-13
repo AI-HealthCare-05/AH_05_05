@@ -7,14 +7,8 @@ MEDICATION_CHAT_PROMPT_CHAIN_ASSET = "medication_chat_prompt_v7.md"
 
 _ALLOWED_PROMPT_ASSETS = frozenset(
     {
-        "medication_chat_prompt_v3.md",
-        "medication_chat_prompt_v4.md",
-        "medication_chat_prompt_v5.md",
         "medication_chat_prompt_v6.md",
         MEDICATION_CHAT_PROMPT_CHAIN_ASSET,
-        "conversation_gate_prompt_v1.md",
-        "conversation_response_prompt_v1.md",
-        "medication_note_summary_prompt_v1.md",
         "intake_report_prompt_v1.md",
         "intake_report_prompt_v11.md",
         "intake_report_plain_language.md",

@@ -1,4 +1,4 @@
-from datetime import date, time
+from datetime import date, time, timedelta
 
 import pytest
 import pytest_asyncio
@@ -71,3 +71,20 @@ async def test_list_upcoming_schedules_limits_to_future_visits_owned_by_user(
     assert schedules[0].visit_time == time(14, 30)
     assert schedules[0].visit_at is not None
     assert schedules[0].visit_at.strftime("%Y-%m-%d %H:%M") == "2026-09-12 14:30"
+
+
+def test_combine_visit_at_accepts_mysql_time_delta() -> None:
+    visit_at = DbFollowUpScheduleProvider._combine_visit_at(
+        visit_date=date(2026, 9, 12),
+        visit_time=timedelta(hours=14, minutes=30),
+    )
+
+    assert visit_at.strftime("%Y-%m-%d %H:%M") == "2026-09-12 14:30"
+
+
+def test_normalize_visit_time_converts_mysql_time_delta() -> None:
+    normalized = DbFollowUpScheduleProvider._normalize_visit_time(
+        timedelta(hours=14, minutes=30),
+    )
+
+    assert normalized == time(14, 30)
