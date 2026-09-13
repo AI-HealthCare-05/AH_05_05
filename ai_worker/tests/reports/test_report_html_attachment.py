@@ -88,9 +88,9 @@ def test_standalone_report_keeps_web_disclosures_and_two_decimal_graph():
     report = sample_email_report()
     report.nutrient_totals[1].amount = "1.6666666666"
     markup, _ = render_intake_report_email(report, standalone=True)
-    assert 'color:#172033;font-family' in markup
-    assert '#145d62' not in markup
-    assert '#588181' not in markup
+    assert "color:#172033;font-family" in markup
+    assert "#145d62" not in markup
+    assert "#588181" not in markup
     assert '<details class="registered-products">' in markup
     assert '<details class="medicine">' in markup
     assert "상세 보기" in markup
