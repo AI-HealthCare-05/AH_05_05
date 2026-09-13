@@ -113,6 +113,7 @@ async def test_post_intake_report_returns_authenticated_camel_case_report() -> N
                 "itemId": 10,
                 "productName": "예시 의약품",
                 "ingredientName": "예시 성분",
+                "ingredientSummary": None,
                 "registeredIntakeInfo": "1정",
                 "scheduledSlots": ["MORNING"],
                 "evidenceLevel": "REGISTERED_INTAKE",
