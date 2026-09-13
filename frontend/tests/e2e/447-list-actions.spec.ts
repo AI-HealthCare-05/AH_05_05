@@ -29,11 +29,14 @@ async function material(control: Locator): Promise<Material> {
   });
 }
 
-async function expectSameSecondarySurface(reference: Locator, candidate: Locator) {
-  await expect(reference).toHaveAttribute('data-variant', 'secondary');
+async function expectAddAndSelectionSurfaces(reference: Locator, candidate: Locator) {
+  await expect(reference).toHaveAttribute('data-variant', 'primary');
   await expect(candidate).toHaveAttribute('data-variant', 'secondary');
   const [referenceMaterial, candidateMaterial] = await Promise.all([material(reference), material(candidate)]);
-  expect(candidateMaterial).toEqual(referenceMaterial);
+  expect(candidateMaterial.backgroundColor).toBe('rgb(255, 255, 255)');
+  expect(referenceMaterial.backgroundColor).not.toBe(candidateMaterial.backgroundColor);
+  expect(referenceMaterial.height).toBe(candidateMaterial.height);
+  expect(referenceMaterial.borderRadius).toBe(candidateMaterial.borderRadius);
   expect(candidateMaterial.height).toBeCloseTo(52, 1);
   expect(candidateMaterial.borderWidth).toBe('1px');
   expect(candidateMaterial.backgroundImage).not.toBe('none');
@@ -110,7 +113,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 for (const width of [320, 390, 1280]) {
-  test(`처방 추가와 선택·취소는 같은 secondary 52px 표면이며 선택 수만큼 삭제한다 (${width}px)`, async ({ page }) => {
+  test(`처방 추가는 primary, 선택·취소는 secondary 52px 표면이며 선택 수만큼 삭제한다 (${width}px)`, async ({ page }) => {
     test.skip(IS_REAL_API, MOCK_ONLY_REASON);
     await page.setViewportSize({ width, height: 844 });
     await page.goto('/dev/medications');
@@ -119,7 +122,7 @@ for (const width of [320, 390, 1280]) {
 
     const add = page.getByRole('button', { name: '처방 추가', exact: true });
     const select = page.getByRole('button', { name: '선택', exact: true });
-    await expectSameSecondarySurface(add, select);
+    await expectAddAndSelectionSurfaces(add, select);
     const selectMaterial = await material(select);
     await expectNoOverlap(add, select);
     await expectNoOverflow(page);
@@ -147,7 +150,7 @@ for (const width of [320, 390, 1280]) {
 }
 
 for (const width of [320, 390, 1280]) {
-  test(`영양제 추가와 선택·취소는 같은 secondary 52px 표면이고 선택 뒤 danger 삭제를 보인다 (${width}px)`, async ({ page }) => {
+  test(`영양제 추가는 primary, 선택·취소는 secondary 52px 표면이고 선택 뒤 danger 삭제를 보인다 (${width}px)`, async ({ page }) => {
     test.skip(IS_REAL_API, MOCK_ONLY_REASON);
     await page.setViewportSize({ width, height: 844 });
     await page.goto('/dev/supplements');
@@ -156,8 +159,8 @@ for (const width of [320, 390, 1280]) {
 
     const add = page.getByRole('button', { name: '영양제 추가', exact: true });
     const edit = page.getByRole('button', { name: '선택', exact: true });
-    const addMaterial = await material(add);
-    await expectSameSecondarySurface(add, edit);
+    const selectionMaterial = await material(edit);
+    await expectAddAndSelectionSurfaces(add, edit);
     await expectNoOverlap(add, edit);
     await expectNoOverflow(page);
     if (width <= 390) await capture(page, `task-3-supplements-normal-${width}.png`);
@@ -167,7 +170,7 @@ for (const width of [320, 390, 1280]) {
     const cancel = page.getByRole('button', { name: '취소', exact: true });
     await expect(cancel).toHaveAttribute('data-variant', 'secondary');
     await movePointerAwayAndSettle(page, cancel);
-    expect(await material(cancel)).toEqual(addMaterial);
+    expect(await material(cancel)).toEqual(selectionMaterial);
     await expect(page.getByRole('button', { name: /삭제 \d+개/ })).toHaveCount(0);
     const firstSelection = page.getByRole('checkbox').first();
     await firstSelection.check();
@@ -185,7 +188,7 @@ for (const width of [320, 390, 1280]) {
 }
 
 for (const width of [320, 390]) {
-  test(`실제 복약 목록의 복용 중 제목·추가·선택 행은 겹치지 않고 같은 secondary 표면이다 (${width}px)`, async ({ page }) => {
+  test(`실제 복약 목록의 제목·primary 추가·secondary 선택 행은 겹치지 않는다 (${width}px)`, async ({ page }) => {
     test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
     await page.addInitScript(() => {
       sessionStorage.setItem('poke.access-token', 'issue-447-list-token');
@@ -206,7 +209,7 @@ for (const width of [320, 390]) {
     await settleRevealAnimations(page);
     const add = page.getByRole('button', { name: '처방 추가', exact: true });
     const select = page.getByRole('button', { name: '선택', exact: true });
-    await expectSameSecondarySurface(add, select);
+    await expectAddAndSelectionSurfaces(add, select);
     await expectNoOverlap(add, select);
     await expectNoOverflow(page);
     await capture(page, `task-3-medications-production-normal-${width}.png`);

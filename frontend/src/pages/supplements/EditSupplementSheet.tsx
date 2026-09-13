@@ -19,7 +19,7 @@ interface EditSupplementSheetProps {
   maskedName: string;
   onOpenChange: (open: boolean) => void;
   onSave: (supplementId: number, payload: UpdateSupplementPayload) => Promise<void>;
-  onStop: (supplementId: number) => Promise<void>;
+  onStop: (supplementId: number) => Promise<boolean | void>;
   onProductInfo?: (productId: string) => void;
 }
 
@@ -83,7 +83,7 @@ export function EditSupplementSheet({
     if (!supplement || stopping) return;
     setStopping(true);
     try {
-      await onStop(supplement.supplementId);
+      if (await onStop(supplement.supplementId) === false) return;
       setConfirmStopOpen(false);
       onOpenChange(false);
     } catch {

@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Star } from 'lucide-react';
 import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { getMyProfile, type Gender } from '@/entities/account';
-import { invalidateCustomChallengeProgress } from '@/entities/custom-challenge';
+import { getCustomChallengeParticipations, invalidateCustomChallengeProgress } from '@/entities/custom-challenge';
 import {
   addSupplement,
   evaluateNutrientStandard,
@@ -36,6 +36,7 @@ import {
 import { AddSupplementSheet } from './AddSupplementSheet';
 import { EditSupplementSheet } from './EditSupplementSheet';
 import { SupplementsBrowseView } from './SupplementsBrowseView';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
 
 const numberFormat = new Intl.NumberFormat('ko-KR');
 
@@ -73,6 +74,9 @@ export function SupplementsPage({
   const [listEditOpen, setListEditOpen] = useState(false);
   const [selectedSupplementIds, setSelectedSupplementIds] = useState<Set<number>>(new Set());
   const [bulkStopping, setBulkStopping] = useState(false);
+  const [removalWarning, setRemovalWarning] = useState<{ count: number; endsChallenge: boolean } | null>(null);
+  const removalDecision = useRef<((confirmed: boolean) => void) | null>(null);
+  const mounted = useRef(true);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveErrorTitle, setSaveErrorTitle] = useState('영양제를 추가하지 못했어요');
   const totals = useMemo(
@@ -91,6 +95,49 @@ export function SupplementsPage({
       ),
     [supplements],
   );
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      removalDecision.current?.(false);
+      removalDecision.current = null;
+    };
+  }, []);
+
+  function resolveRemoval(confirmed: boolean) {
+    removalDecision.current?.(confirmed);
+    removalDecision.current = null;
+    setRemovalWarning(null);
+  }
+
+  async function confirmSupplementRemoval(ids: number[]): Promise<boolean> {
+    try {
+      // Read at the point of deletion so newly joined challenges are included.
+      const { items } = await getCustomChallengeParticipations();
+      if (!mounted.current) return false;
+      const selected = new Set(ids);
+      const affected = items.filter((participation) =>
+        participation.status === 'ACTIVE' && participation.challengeType === 'SUPPLEMENT' &&
+        participation.targets.some((target) => !target.isExcluded && selected.has(target.sourceId)),
+      );
+      if (affected.length === 0) return true;
+      const endsChallenge = affected.some((participation) =>
+        participation.targets.filter((target) => !target.isExcluded)
+          .every((target) => selected.has(target.sourceId)),
+      );
+      return await new Promise<boolean>((resolve) => {
+        removalDecision.current = resolve;
+        setRemovalWarning({ count: ids.length, endsChallenge });
+      });
+    } catch (error: unknown) {
+      if (mounted.current) {
+        setSaveErrorTitle('연결된 챌린지를 확인하지 못했어요');
+        setSaveError(error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.');
+      }
+      return false;
+    }
+  }
 
   useEffect(() => {
     if (routePresetProductId === null) return;
@@ -143,6 +190,7 @@ export function SupplementsPage({
     const selectedIds = [...selectedSupplementIds];
     const failedIds = new Set<number>();
     try {
+      if (!(await confirmSupplementRemoval(selectedIds))) return;
       for (const supplementId of selectedIds) {
         try {
           await stopActiveSupplement(supplementId);
@@ -333,7 +381,7 @@ export function SupplementsPage({
                     {!listEditOpen && (
                       <Button
                         fullWidth={false}
-                        variant="secondary"
+                        variant="primary"
                         onClick={openAddSheet}
                       >
                         <Plus aria-hidden className="mr-1 size-4" />
@@ -518,13 +566,35 @@ export function SupplementsPage({
           if (!open) setEditingSupplement(null);
         }}
         onSave={editSupplement}
-        onStop={stopActiveSupplement}
+        onStop={async (supplementId) => {
+          if (!(await confirmSupplementRemoval([supplementId]))) return false;
+          await stopActiveSupplement(supplementId);
+          return true;
+        }}
         onProductInfo={(productId) =>
           navigate(
             `${location.pathname.startsWith('/dev/') ? '/dev/supplements/product/' : '/supplements/product/'}${encodeURIComponent(productId)}`,
           )
         }
       />
+      <Dialog open={removalWarning !== null} onOpenChange={(open) => { if (!open) resolveRemoval(false); }}>
+        <DialogContent showCloseButton={false} className="gap-4 p-6">
+          <DialogHeader>
+            <DialogTitle>영양제를 삭제할까요?</DialogTitle>
+            <DialogDescription>
+              이 영양제로 참여 중인 챌린지가 있어요.<br />
+              삭제하면 해당 챌린지의 대상에서 제외돼요.
+              {removalWarning?.endsChallenge && (
+                <span className="mt-2 block">챌린지에 남는 영양제가 없어 챌린지가 종료돼요.</span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => resolveRemoval(false)}>취소</Button>
+            <Button variant="danger" onClick={() => resolveRemoval(true)}>삭제 {removalWarning?.count}개</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <ErrorDialog
         open={saveError !== null}
         title={saveErrorTitle}

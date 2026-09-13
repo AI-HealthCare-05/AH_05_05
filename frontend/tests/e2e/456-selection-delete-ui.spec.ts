@@ -76,6 +76,8 @@ async function controlMaterial(control: Locator): Promise<ControlMaterial> {
 
 async function expectWhiteRoundedControl(control: Locator) {
   await expect(control).toHaveAttribute('data-variant', 'secondary');
+  await control.page().mouse.move(0, 0);
+  await expect.poll(async () => (await controlMaterial(control)).backgroundColor).toBe('rgb(255, 255, 255)');
   const material = await controlMaterial(control);
   expect(material.backgroundColor).toBe('rgb(255, 255, 255)');
   expect(material.borderRadius).not.toBe('0px');
@@ -120,6 +122,9 @@ async function prepareSupplements(
   page: Page,
   deleteResponder: (route: Route) => Promise<void> = route => route.fulfill({ status: 204, body: '' }),
 ) {
+  await page.route('**/api/v1/user/custom-challenge-participations', route => fulfillJson(route, {
+    items: [], totalCount: 0,
+  }));
   await page.route('**/api/v1/users/me', route => fulfillJson(route, {
     name: '선택 테스트',
     maskedName: '선*테',
@@ -163,6 +168,7 @@ for (const width of [320, 390]) {
     const selectionEntry = page.getByRole('button', { name: '선택', exact: true });
     await expect(title).toBeVisible();
     await expect(add).toBeVisible();
+    await expect(add).toHaveAttribute('data-variant', 'primary');
     await expectWhiteRoundedControl(selectionEntry);
 
     await selectionEntry.click();
@@ -201,6 +207,7 @@ for (const width of [320, 390]) {
     await expect(listHeading).toBeVisible();
     await expect(listHeading).not.toContainText('먹고 있는');
     await expect(add).toBeVisible();
+    await expect(add).toHaveAttribute('data-variant', 'primary');
     await expectWhiteRoundedControl(selectionEntry);
     const normalCenters = await Promise.all([listHeading, add, selectionEntry].map(async locator => {
       const box = await locator.boundingBox();
@@ -286,4 +293,114 @@ test('영양제 삭제 중에는 취소할 수 없고 부분 실패 대상은 �
   await expect(page.getByRole('checkbox', { name: '아침 비타민 선택', exact: true })).toHaveCount(0);
   await expect(page.getByRole('checkbox', { name: '저녁 오메가 선택', exact: true })).toBeChecked();
   await expect(cancel).toBeEnabled();
+});
+
+function linkedChallenge(sourceIds: number[], status = 'ACTIVE') {
+  return {
+    id: 45631, templateId: 2, challengeType: 'SUPPLEMENT', challengeName: '영양제 챌린지',
+    rewardBadge: null, status, joinedAt: '2026-09-01T08:00:00+09:00',
+    endAt: '2026-09-07T23:59:59+09:00', actualEndDate: null,
+    targetCount: 7, completedCount: 0, progressRate: 0, action: 'NONE', occurrences: [],
+    targets: sourceIds.map((sourceId, index) => ({ id: index + 1, sourceId, name: `영양제 ${sourceId}`, isExcluded: false })),
+  };
+}
+
+for (const removeAll of [false, true]) {
+  test(`참여 중 챌린지 영양제 삭제는 확인 전 요청하지 않고 취소하면 보존한다 (전체=${removeAll})`, async ({ page }) => {
+    const deleted: number[] = [];
+    await prepareSupplements(page, async route => {
+      deleted.push(Number(new URL(route.request().url()).pathname.split('/').at(-1)));
+      await route.fulfill({ status: 204, body: '' });
+    });
+    await page.route('**/api/v1/user/custom-challenge-participations', route => fulfillJson(route, {
+      items: [linkedChallenge([45621, 45622])], totalCount: 1,
+    }));
+    await page.goto('/supplements');
+    await page.getByRole('button', { name: '선택', exact: true }).click();
+    await page.getByRole('checkbox').first().check();
+    if (removeAll) await page.getByRole('checkbox').nth(1).check();
+    const count = removeAll ? 2 : 1;
+    await page.getByRole('button', { name: `삭제 ${count}개`, exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: '영양제를 삭제할까요?' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText('이 영양제로 참여 중인 챌린지가 있어요.');
+    await expect(dialog).toContainText('삭제하면 해당 챌린지의 대상에서 제외돼요.');
+    await capture(page, `supplement-delete-warning-${removeAll ? 'last' : 'partial'}.png`);
+    await expect(dialog.getByText('챌린지에 남는 영양제가 없어 챌린지가 종료돼요.')).toHaveCount(removeAll ? 1 : 0);
+    expect(deleted).toEqual([]);
+    await dialog.getByRole('button', { name: '취소', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole('checkbox').first()).toBeChecked();
+    expect(deleted).toEqual([]);
+    await page.getByRole('button', { name: `삭제 ${count}개`, exact: true }).click();
+    await dialog.getByRole('button', { name: `삭제 ${count}개`, exact: true }).click();
+    if (removeAll) {
+      await expect(page.getByRole('heading', { name: '영양제를 등록하고 관리하기' })).toBeVisible();
+    } else {
+      await expect(page.getByRole('button', { name: '선택', exact: true })).toBeVisible();
+    }
+    expect(deleted).toEqual(removeAll ? [45621, 45622] : [45621]);
+  });
+}
+
+test('종료되거나 제외된 챌린지 대상은 삭제 경고를 띄우지 않는다', async ({ page }) => {
+  await prepareSupplements(page);
+  const excluded = linkedChallenge([45621]);
+  excluded.targets[0].isExcluded = true;
+  await page.route('**/api/v1/user/custom-challenge-participations', route => fulfillJson(route, {
+    items: [linkedChallenge([45621], 'COMPLETED'), excluded], totalCount: 2,
+  }));
+  await page.goto('/supplements');
+  await page.getByRole('button', { name: '선택', exact: true }).click();
+  await page.getByRole('checkbox').first().check();
+  await page.getByRole('button', { name: '삭제 1개', exact: true }).click();
+  await expect(page.getByRole('button', { name: '선택', exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByText('아침 비타민', { exact: true })).toHaveCount(0);
+});
+
+test('챌린지 연결 조회가 실패하면 삭제하지 않고 재시도할 수 있다', async ({ page }) => {
+  let deleteCount = 0;
+  await prepareSupplements(page, async route => {
+    deleteCount += 1;
+    await route.fulfill({ status: 204, body: '' });
+  });
+  await page.route('**/api/v1/user/custom-challenge-participations', route => fulfillJson(route, {
+    message: '챌린지를 확인하지 못했어요.',
+  }, 503));
+  await page.goto('/supplements');
+  await page.getByRole('button', { name: '선택', exact: true }).click();
+  await page.getByRole('checkbox').first().check();
+  await page.getByRole('button', { name: '삭제 1개', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  expect(deleteCount).toBe(0);
+  await dialog.getByRole('button', { name: '확인', exact: true }).click();
+  await expect(page.getByRole('checkbox').first()).toBeChecked();
+  await expect(page.getByRole('button', { name: '삭제 1개', exact: true })).toBeEnabled();
+});
+
+test('편집 화면의 복용 중단도 챌린지 경고 취소 시 영양제를 유지한다', async ({ page }) => {
+  let deleteCount = 0;
+  await prepareSupplements(page, async route => {
+    deleteCount += 1;
+    await route.fulfill({ status: 204, body: '' });
+  });
+  await page.route('**/api/v1/user/custom-challenge-participations', route => fulfillJson(route, {
+    items: [linkedChallenge([45621])], totalCount: 1,
+  }));
+  await page.goto('/supplements');
+  await page.getByRole('button', { name: /^아침 비타민/ }).click();
+  await page.getByRole('button', { name: '복용 중단하기', exact: true }).click();
+  await page.getByRole('button', { name: '중단하기', exact: true }).click();
+  const warning = page.getByRole('dialog', { name: '영양제를 삭제할까요?' });
+  await expect(warning).toBeVisible();
+  await warning.getByRole('button', { name: '취소', exact: true }).click();
+  await expect(page.getByRole('button', { name: '중단하기', exact: true })).toBeEnabled();
+  expect(deleteCount).toBe(0);
+  await page.getByRole('button', { name: '중단하기', exact: true }).click();
+  await warning.getByRole('button', { name: '삭제 1개', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^아침 비타민/ })).toHaveCount(0);
+  expect(deleteCount).toBe(1);
 });

@@ -407,7 +407,7 @@ export function MedicationsPage({
         {!selectionMode && (
           <Button
             fullWidth={false}
-            variant="secondary"
+            variant="primary"
             className="self-start"
             onClick={() => navigate('/document-upload')}
           >
