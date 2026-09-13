@@ -93,4 +93,3 @@ async def test_reported_review_stays_hidden_only_for_reporter_and_counts_after_r
     assert (refreshed.total, refreshed.review_count, refreshed.rating_average) == (1, 1, 5)
     assert [item.id for item in other_result.items] == [reported.id, visible.id]
     assert (other_result.total, other_result.review_count, other_result.rating_average) == (2, 2, 4)
-
