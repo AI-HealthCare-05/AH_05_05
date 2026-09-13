@@ -3,6 +3,7 @@ import { Plus, Star } from 'lucide-react';
 import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { getMyProfile, type Gender } from '@/entities/account';
+import { invalidateCustomChallengeProgress } from '@/entities/custom-challenge';
 import {
   addSupplement,
   evaluateNutrientStandard,
@@ -26,6 +27,8 @@ import {
   Card,
   ErrorDialog,
   Header,
+  SelectionActions,
+  SelectionCheckbox,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -217,6 +220,7 @@ export function SupplementsPage({
             (saved.productId === null || supplement.productId !== saved.productId),
         ),
       ]);
+      invalidateCustomChallengeProgress();
     } catch (error: unknown) {
       setSaveErrorTitle('영양제를 추가하지 못했어요');
       setSaveError(error instanceof Error ? error.message : '영양제를 추가하지 못했어요.');
@@ -235,6 +239,7 @@ export function SupplementsPage({
           supplement.supplementId === supplementId ? updated : supplement,
         ),
       );
+      invalidateCustomChallengeProgress();
     } catch (error: unknown) {
       setSaveErrorTitle('영양제 정보를 저장하지 못했어요');
       setSaveError(error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.');
@@ -248,6 +253,7 @@ export function SupplementsPage({
       setSupplements((current) =>
         (current ?? []).filter((supplement) => supplement.supplementId !== supplementId),
       );
+      invalidateCustomChallengeProgress();
     } catch (error: unknown) {
       setSaveErrorTitle('영양제 복용을 중단하지 못했어요');
       setSaveError(error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.');
@@ -312,10 +318,10 @@ export function SupplementsPage({
         ) : (
           <>
             <div className="flex flex-col gap-3">
-              <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+              <div className="flex items-center justify-between gap-2">
                 {supplements.length > 0 ? (
-                  <h2 id="supplement-list-title" className="text-xl font-bold text-foreground">
-                    먹고 있는 영양제 {supplements.length}개
+                  <h2 id="supplement-list-title" className="shrink-0 text-xl font-bold text-foreground">
+                    영양제 {supplements.length}개
                   </h2>
                 ) : (
                   <h2 id="supplement-list-title" className="sr-only">
@@ -323,7 +329,7 @@ export function SupplementsPage({
                   </h2>
                 )}
                 {supplements.length > 0 && (
-                  <div className="ml-auto flex flex-wrap items-center gap-2">
+                  <div className="ml-auto flex shrink-0 items-center gap-2">
                     {!listEditOpen && (
                       <Button
                         fullWidth={false}
@@ -334,13 +340,15 @@ export function SupplementsPage({
                         영양제 추가
                       </Button>
                     )}
-                    <Button
-                      fullWidth={false}
-                      variant="secondary"
-                      onClick={toggleListEdit}
-                    >
-                      {listEditOpen ? '완료' : '삭제'}
-                    </Button>
+                    <SelectionActions
+                      aria-label="영양제 선택"
+                      selectionMode={listEditOpen}
+                      selectedCount={selectedSupplementIds.size}
+                      deletePending={bulkStopping}
+                      onStart={toggleListEdit}
+                      onCancel={toggleListEdit}
+                      onDelete={() => void stopSelectedSupplements()}
+                    />
                   </div>
                 )}
               </div>
@@ -364,12 +372,10 @@ export function SupplementsPage({
                         return (
                           <li key={supplement.supplementId} className="border-t border-border first:border-t-0">
                             <label className="flex min-h-touch min-w-0 cursor-pointer items-center gap-3 px-1 py-2">
-                              <input
-                                type="checkbox"
+                              <SelectionCheckbox
                                 aria-label={`${supplement.name} 선택`}
                                 checked={selected}
-                                onChange={() => toggleSupplementSelection(supplement.supplementId)}
-                                className="size-5 shrink-0 accent-primary"
+                                onCheckedChange={() => toggleSupplementSelection(supplement.supplementId)}
                               />
                               <span className="min-w-0 flex-1">
                                 <strong className="block [overflow-wrap:anywhere] text-base text-foreground">
@@ -383,26 +389,14 @@ export function SupplementsPage({
                                   {supplement.slots.map((slot) => mealSlotLabel(slot, 'short')).join(' · ')}
                                 </span>
                               </span>
-                              <span
-                                aria-hidden
-                                className="flex size-touch items-center justify-center text-lg text-tertiary-foreground"
-                              >
-                                ≡
-                              </span>
                             </label>
                           </li>
                         );
                       })}
                     </ul>
-                    <Button
-                      variant="danger"
-                      disabled={selectedSupplementIds.size === 0 || bulkStopping}
-                      onClick={() => void stopSelectedSupplements()}
-                    >
-                      {bulkStopping ? '중단 중...' : `선택한 ${selectedSupplementIds.size}개 삭제`}
-                    </Button>
                     <p className="text-center text-xs text-muted-foreground">
-                      삭제해도 성분 합계에서만 빠지고 후기는 남아요.
+                      삭제한 영양제는 챌린지 대상에서 제외돼요. 남은 영양제가 없으면 챌린지가
+                      취소돼요. 지난 기록은 유지돼요.
                     </p>
                   </div>
                 ) : (
