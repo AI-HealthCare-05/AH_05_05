@@ -1,0 +1,18 @@
+.nutrient-totals {
+  container: nutrient-totals / inline-size;
+}
+
+/* Report cards can be narrower than the viewport; keep full status copy readable. */
+@container nutrient-totals (max-width: 320px) {
+  .nutrient-total-summary {
+    max-width: 100%;
+  }
+
+  .nutrient-totals [data-nutrient-status] {
+    position: static;
+    translate: none;
+    transform: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}

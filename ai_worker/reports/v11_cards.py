@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import TYPE_CHECKING, Literal
 
-from ai_worker.reports.text_guidance_rules import load_text_guidance_rules, mentions_food_or_drink
+from ai_worker.reports.text_guidance_rules import is_standalone_food_or_drink_guidance, load_text_guidance_rules
 from ai_worker.reports.v11_lifestyle_guidance import build_lifestyle_guidance_cards
 from ai_worker.schemas.intake_report_cards import (
     CardDetail,
@@ -675,7 +675,9 @@ def _lifestyle_catalog(
         if guide is None:
             continue
         interaction_fragments, _ = _fragments(guide.drug_food_interactions)
-        scenario_fragments = [fragment for fragment in interaction_fragments if mentions_food_or_drink(fragment)]
+        scenario_fragments = [
+            fragment for fragment in interaction_fragments if is_standalone_food_or_drink_guidance(fragment)
+        ]
         if scenario_fragments:
             lifestyle.append(
                 CatalogLifestyle(
@@ -1464,17 +1466,12 @@ def render_cards_markdown(  # noqa: C901 - section projection is deliberately li
 
     if cards.medications:
         lines.extend(("", "## 약 정보"))
-        stack_by_id = {item.item_id: item for item in draft.current_stack if item.item_type.value == "MEDICATION"}
         for card in cards.medications:
-            stack_item = stack_by_id[card.item_id]
             lines.extend(("", f"### {_literal(card.product_name)}"))
             if card.identity_notice:
                 lines.extend(("", _literal(card.identity_notice)))
             lines.extend(
                 (
-                    "",
-                    "**등록 복용 정보**",
-                    _literal(stack_item.registered_intake_info),
                     "",
                     "**효능**",
                     _clinical_literal(card.efficacy.text),
@@ -1487,14 +1484,15 @@ def render_cards_markdown(  # noqa: C901 - section projection is deliberately li
                 )
             )
             for detail in card.details:
+                if re.search(r"등록.*(?:복용|계획)|(?:복용|계획).*등록", detail.label):
+                    continue
                 lines.extend(("", f"**{_literal(detail.label)}**", _clinical_literal(detail.text)))
 
     supplements = [item for item in draft.current_stack if item.item_type.value == "SUPPLEMENT"]
     if supplements:
         lines.extend(("", "## 등록한 영양제", "", "영양제 성분 · 등록한 하루량 기준", ""))
         lines.extend(
-            f"- {_literal(item.product_name)} — {_literal(item.registered_intake_info)}"
-            f" · {_literal(item.ingredient_summary or '성분·함량 확인 필요')}"
+            f"- {_literal(item.product_name)} — {_literal(item.ingredient_summary or '성분·함량 확인 필요')}"
             for item in supplements
         )
 

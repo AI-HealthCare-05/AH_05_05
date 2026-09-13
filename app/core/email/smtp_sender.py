@@ -17,12 +17,20 @@ class InlineAttachment:
 
 
 @dataclass(frozen=True)
+class Attachment:
+    filename: str
+    content_type: str
+    data: bytes
+
+
+@dataclass(frozen=True)
 class EmailMessage:
     to: str
     subject: str
     text_body: str
     html_body: str
     inline_attachments: tuple[InlineAttachment, ...] = ()
+    attachments: tuple[Attachment, ...] = ()
 
 
 class EmailDeliveryError(Exception):
@@ -65,6 +73,10 @@ class SmtpEmailSender:
                 cid=f"<{attachment.content_id}>",
                 filename=attachment.filename,
             )
+
+        for attachment in message.attachments:
+            maintype, subtype = attachment.content_type.split("/", maxsplit=1)
+            mime.add_attachment(attachment.data, maintype=maintype, subtype=subtype, filename=attachment.filename)
 
         try:
             with smtplib.SMTP(self.host, self.port, timeout=SMTP_TIMEOUT_SECONDS) as server:

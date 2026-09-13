@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock
 
 from cryptography.fernet import Fernet
@@ -137,12 +137,16 @@ class TestEmailJobService(TestCase):
             user_id=user.id,
             recipient_email="recipient@example.com",
             report_id="report-20260911-abc123",
+            report_birth_date=date(1990, 1, 2),
+            recipient_name=user.name,
             report_markdown="# 복용약 보고서\n\n아주 긴 제품명",
         )
         second = await self.service.enqueue_intake_report(
             user_id=user.id,
             recipient_email="recipient@example.com",
             report_id="report-20260911-abc123",
+            report_birth_date=date(1990, 1, 2),
+            recipient_name=user.name,
             report_markdown="# 복용약 보고서\n\n아주 긴 제품명",
         )
 
@@ -157,3 +161,5 @@ class TestEmailJobService(TestCase):
         payload = self.codec.decrypt(encrypted_payload)
         assert payload.template is EmailTemplate.INTAKE_REPORT
         assert payload.report_id == "report-20260911-abc123"
+        assert payload.report_birth_date == date(1990, 1, 2)
+        assert payload.recipient_name == user.name

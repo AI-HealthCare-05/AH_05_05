@@ -1,9 +1,10 @@
 import smtplib
+from dataclasses import replace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.core.email.smtp_sender import EmailDeliveryError, EmailMessage, InlineAttachment, SmtpEmailSender
+from app.core.email.smtp_sender import Attachment, EmailDeliveryError, EmailMessage, InlineAttachment, SmtpEmailSender
 
 
 def sender() -> SmtpEmailSender:
@@ -66,6 +67,22 @@ def test_smtp_sender_embeds_cid_inline_attachment() -> None:
     image = next(part for part in sent.walk() if part.get_content_maintype() == "image")
     assert image["Content-ID"] == "<rxvita-logo>"
     assert image.get_filename() == "rxvita-logo.png"
+
+
+def test_html_report_is_a_downloadable_attachment_not_inline_body() -> None:
+    smtp = MagicMock()
+    smtp.__enter__.return_value = smtp
+    encrypted = b"<!doctype html><title>Encrypted report</title>"
+    with patch("app.core.email.smtp_sender.smtplib.SMTP", return_value=smtp):
+        sender().send(replace(message(), attachments=(Attachment("report.html", "text/html", encrypted),)))
+    sent = smtp.send_message.call_args.args[0]
+    assert sent.get_content_type() == "multipart/mixed"
+    attachment = next(sent.iter_attachments())
+    assert attachment.get_content_disposition() == "attachment"
+    assert attachment.get_filename() == "report.html"
+    assert attachment.get_content_type() == "text/html"
+    assert attachment.get_payload(decode=True) == encrypted
+    assert "HTML 본문" in sent.get_body(preferencelist=("html",)).get_content()
 
 
 @pytest.mark.parametrize(

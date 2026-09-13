@@ -72,7 +72,7 @@ _NUTRIENT_SPECS = (
     _NutrientSpec("phosphorus_mg", "인", "mg", "phosphorus_mg", "phosphorus_mg_ul"),
     _NutrientSpec("potassium_mg", "칼륨", "mg", "potassium_mg", None),
     _NutrientSpec("sodium_mg", "나트륨", "mg", "sodium_mg", None),
-    _NutrientSpec("vitamin_a_ug_rae", "비타민 A", "μg RAE", "vitamin_a_ug_rae", None),
+    _NutrientSpec("vitamin_a_ug_rae", "비타민 A", "μg RAE", "vitamin_a_ug_rae", "vitamin_a_ug_rae_ul"),
     # These source values are intentionally kept separate from vitamin A RAE.
     _NutrientSpec("retinol_ug", "레티놀", "μg", None, None),
     _NutrientSpec("beta_carotene_ug", "베타카로틴", "μg", None, None),
@@ -93,7 +93,6 @@ _BASIS_NOTE = (
 )
 _REFERENCE_NEEDED_LABEL = "비교 기준 확인 필요"
 _UPPER_LIMIT_UNAVAILABLE_NOTE = "상한 기준을 확인할 수 없어요."
-_VITAMIN_A_UPPER_LIMIT_NOTE = "성분 형태별 상한 기준이 달라 비교하지 않았어요."
 _SEOUL_TIMEZONE = ZoneInfo("Asia/Seoul")
 
 
@@ -211,8 +210,6 @@ def _upper_limit(
     spec: _NutrientSpec,
     reference_value: str | None,
 ) -> tuple[str | None, str | None]:
-    if spec.field == "vitamin_a_ug_rae":
-        return None, _VITAMIN_A_UPPER_LIMIT_NOTE
     if standard is None or spec.upper_limit_field is None:
         return None, _UPPER_LIMIT_UNAVAILABLE_NOTE
     upper_limit = _positive_number(getattr(standard, spec.upper_limit_field, None))
@@ -234,7 +231,8 @@ def _ingredient_summary(product: _ProductLike, factor: Decimal) -> str | None:
     for spec in _NUTRIENT_SPECS:
         amount = _positive_number(getattr(product, spec.field, None))
         if amount is not None:
-            ingredients.append(f"{spec.name} {_display(amount * factor)}{spec.unit}")
+            displayed_amount = (amount * factor).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            ingredients.append(f"{spec.name} {_display(displayed_amount)}{spec.unit}")
     return " · ".join(ingredients) or None
 
 
@@ -305,7 +303,11 @@ def build_report_nutrient_data(
         totals.append(
             IntakeReportNutrientTotal(
                 nutrient_name=spec.name,
-                daily_total=f"{_display(total)} {spec.unit}" if total is not None else "확인 필요",
+                daily_total=(
+                    f"{_display(total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))} {spec.unit}"
+                    if total is not None
+                    else "확인 필요"
+                ),
                 included_product_names=[name for name, contribution in contributions if contribution > 0],
                 calculation_status=(
                     "UNAVAILABLE"

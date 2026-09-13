@@ -1,6 +1,6 @@
 from datetime import date, datetime
-from unittest.mock import patch
 
+import pytest
 from httpx import ASGITransport, AsyncClient
 from starlette import status
 from tortoise.contrib.test import TestCase
@@ -18,6 +18,13 @@ from app.tests.med_apis.helpers import authentication_headers
 ALIAS_URL = "/api/v1/med/episodes"
 MEDICATIONS_URL = "/api/v1/medications"
 NOTES_URL = "/api/v1/med/notes"
+
+
+@pytest.fixture(autouse=True)
+def fixed_medication_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    # CRUD fixtures cover an active September 3-9 episode, independent of the run date.
+    service = MedicationService(mutation_time_provider=lambda: datetime(2026, 9, 3, 12, tzinfo=config.TIMEZONE))
+    monkeypatch.setitem(app.dependency_overrides, get_medication_service, lambda: service)
 
 
 async def create_episode(user: User, *, title: str, alias: str | None = None) -> CareEpisode:
@@ -92,16 +99,6 @@ class TestMedicationAliasAPI(TestCase):
 
 
 class TestMedicationNotesAPI(TestCase):
-    # Exercise real CRUD inside the fixture's intake period, independent of the
-    # wall-clock date. The dependency override is restored after this test.
-    @patch.dict(
-        app.dependency_overrides,
-        {
-            get_medication_service: lambda: MedicationService(
-                mutation_time_provider=lambda: datetime(2026, 9, 3, 12, tzinfo=config.TIMEZONE)
-            )
-        },
-    )
     async def test_note_crud_uses_dosed_at_order_and_allows_an_optional_medication(self) -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             headers = await authentication_headers(client, "note-owner@example.com", "01025000004")
