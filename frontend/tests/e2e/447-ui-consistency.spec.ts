@@ -91,6 +91,19 @@ async function physical(control: Locator) {
   });
 }
 
+async function settleAnimations(target: Locator) {
+  await target.evaluate(async (element) => {
+    await Promise.all(element.getAnimations().map((animation) => animation.finished.catch(() => undefined)));
+  });
+}
+
+async function hoverAndSettle(control: Locator) {
+  await control.hover();
+  await expect.poll(() => control.evaluate((element) => element.matches(':hover'))).toBe(true);
+  await settleAnimations(control);
+  await expect.poll(() => control.evaluate((element) => element.matches(':hover'))).toBe(true);
+}
+
 async function captureReviewScreenshot(page: Page, name: string) {
   const directory = process.env.UI447_SCREENSHOT_DIR;
   if (!directory) return;
@@ -140,8 +153,7 @@ test('홈 공식 인증은 compact 공통 표면과 pending 중복 방지를 함
   const canonical = page.getByRole('button', { name: 'AI 보고서 받기', exact: true });
   await expectClay(canonical, 44);
   const canonicalIdle = await physical(canonical);
-  await canonical.hover();
-  await page.waitForTimeout(160);
+  await hoverAndSettle(canonical);
   const canonicalHover = await physical(canonical);
   await canonical.evaluate((element) => { element.style.transition = 'none'; });
   await page.mouse.down();
@@ -157,16 +169,15 @@ test('홈 공식 인증은 compact 공통 표면과 pending 중복 방지를 함
   const canonicalDisabledSurface = await physical(canonicalDisabled);
 
   await page.goto('/home');
+  await expect(page.getByRole('region', { name: '오늘의 복약' }).getByText('오늘 복약할 약이 없어요.')).toBeVisible();
+  await settleAnimations(page.locator('.rx-smooth-height'));
   const checkIn = page.getByRole('button', { name: `${challenge.name} 했어요` });
   await expect(checkIn).toHaveAttribute('data-size', 'compact');
   await expectClay(checkIn, 44);
   expect(await physical(checkIn)).toEqual(canonicalIdle);
-  await page.locator('.rx-today-challenge-item').evaluate(async (element) => {
-    await Promise.all(element.getAnimations().map((animation) => animation.finished));
-  });
+  await settleAnimations(page.locator('.rx-today-challenge-item'));
   await captureReviewScreenshot(page, 'task-1-home-controls-390.png');
-  await checkIn.hover();
-  await page.waitForTimeout(160);
+  await hoverAndSettle(checkIn);
   expect(await physical(checkIn)).toEqual(canonicalHover);
   await checkIn.evaluate((element) => { element.style.transition = 'none'; });
   await page.mouse.down();
@@ -299,6 +310,7 @@ test('챌린지·채팅 compact 실행은 긴 문구에서도 44px 높이와 내
       }],
     }));
   });
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/dev/chat');
   const newChat = page.getByRole('button', { name: '새 채팅', exact: true });
   await expect(newChat).toHaveAttribute('data-size', 'compact');

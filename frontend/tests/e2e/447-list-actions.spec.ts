@@ -61,6 +61,15 @@ async function settleRevealAnimations(page: Page) {
   });
 }
 
+async function movePointerAwayAndSettle(page: Page, control: Locator) {
+  await page.mouse.move(0, 0);
+  await expect.poll(() => control.evaluate((element) => element.matches(':hover'))).toBe(false);
+  await control.evaluate(async (element) => {
+    await Promise.all(element.getAnimations().map((animation) => animation.finished.catch(() => undefined)));
+  });
+  await expect.poll(() => control.evaluate((element) => element.matches(':hover'))).toBe(false);
+}
+
 async function capture(page: Page, name: string) {
   const directory = process.env.UI447_SCREENSHOT_DIR;
   if (!directory) return;
@@ -150,6 +159,7 @@ for (const width of [320, 390, 1280]) {
     await edit.click();
     const done = page.getByRole('button', { name: '완료', exact: true });
     await expect(done).toHaveAttribute('data-variant', 'secondary');
+    await movePointerAwayAndSettle(page, done);
     expect(await material(done)).toEqual(addMaterial);
     const guardedRemove = page.getByRole('button', { name: '선택한 0개 삭제', exact: true });
     await expect(guardedRemove).toBeDisabled();
