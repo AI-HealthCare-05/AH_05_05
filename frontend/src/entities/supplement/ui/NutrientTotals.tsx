@@ -5,7 +5,7 @@ import { compareNutrientTotals } from '../summary';
 import type { NutrientTotal } from '../types';
 import './NutrientTotals.css';
 
-const numberFormat = new Intl.NumberFormat('ko-KR');
+const numberFormat = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 });
 
 export type NutrientTotalDisplay = Omit<NutrientTotal, 'amount'> & {
   amount: number | null;
