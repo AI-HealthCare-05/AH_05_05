@@ -7,25 +7,29 @@ const TUTORIAL_STEPS = [
   {
     title: ['약봉투를 찍으면', '복약 일정이 만들어져요'],
     description: ['약 이름을 몰라도 돼요.', '사진 한 장으로 횟수와 기간까지 등록해요.'],
-    illustration: '약봉투 · 카메라 일러스트',
+    image: '/images/tutorial/prescription-scan.png',
+    imageAlt: '약봉투 촬영으로 복약 일정을 등록하는 모습',
     tone: 'bg-primary-bg',
   },
   {
     title: ['먹을 시간에', '알려드려요'],
     description: ['아침 · 점심 · 저녁 · 자기전.', '정해둔 시간에 알림을 보내드려요.'],
-    illustration: '알림 · 시계 일러스트',
+    image: '/images/tutorial/dose-reminder.png',
+    imageAlt: '설정한 복용 시간에 휴대폰 알림을 받는 모습',
     tone: 'bg-info-bg',
   },
   {
     title: ['영양제 성분을', '더해서 보여드려요'],
     description: ['여러 제품의 성분 합계와 상한을', '한 화면에서 확인해요.'],
-    illustration: '성분 합계 바 일러스트',
+    image: '/images/tutorial/ingredient-totals.png',
+    imageAlt: '두 영양제의 성분을 합산해 기준선과 비교하는 모습',
     tone: 'bg-warning-bg',
   },
   {
     title: ['내 약을 근거로', '답해드려요'],
     description: ['확인할 수 있는 출처가 있을 때', '함께 보여드려요.'],
-    illustration: '챗봇 · 출처 일러스트',
+    image: '/images/tutorial/chat-sources.png',
+    imageAlt: '병아리 챗봇의 답변과 연결된 출처 문서',
     tone: 'bg-primary-bg',
   },
 ] as const;
@@ -82,7 +86,15 @@ export function TutorialPage() {
         className={`mt-9 flex h-[300px] items-center justify-center overflow-hidden rounded-card ${current.tone}`}
         aria-label="RxVita 기능 소개 일러스트"
       >
-        <span className="text-caption text-tertiary-foreground">{current.illustration}</span>
+        <img
+          key={current.image}
+          src={current.image}
+          alt={current.imageAlt}
+          width={1254}
+          height={1254}
+          className="h-full w-full object-contain"
+          draggable={false}
+        />
       </div>
 
       <div className="mt-9 flex justify-center gap-1.5" aria-label={`튜토리얼 ${step + 1} / 4`}>
