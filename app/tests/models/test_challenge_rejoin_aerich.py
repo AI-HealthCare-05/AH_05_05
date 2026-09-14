@@ -366,8 +366,12 @@ async def _run_chain(start_version: int) -> None:
         assert await command.heads() == expected_restore
         assert await command.upgrade(fake=False) == expected_restore
         restored = await Aerich.all().order_by("id").values()
-        assert restored[:-1] == after[:-1]
-        assert [row["version"] for row in restored[-1:]] == expected_restore
+        restored_count = len(expected_restore)
+        assert restored[:-restored_count] == after[:-restored_count]
+        assert [row["version"] for row in restored[-restored_count:]] == expected_restore
+        assert [row["content"] for row in restored[-restored_count:]] == [
+            row["content"] for row in after[-restored_count:]
+        ]
         assert restored[-1]["content"] == final_state
         assert await UserChallenge.filter(user_id=user.id, challenge_id=challenge.id).count() == 2
         print(
