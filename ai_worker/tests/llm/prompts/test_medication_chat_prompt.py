@@ -225,11 +225,11 @@ def test_system_prompt_requires_limited_markdown_product_answer() -> None:
     assert "값이 없는 항목은 출력하지" in SYSTEM_PROMPT
     assert "질문과 직접 관계있는 섹션" in SYSTEM_PROMPT
     assert "각 섹션은 최대 3개 bullet" in SYSTEM_PROMPT
-    assert "약 50자 이내" in SYSTEM_PROMPT
+    assert "10어절 이내" in SYSTEM_PROMPT
 
 
-def test_system_prompt_uses_v7_six_element_contract_and_private_checklist() -> None:
-    assert MEDICATION_CHAT_PROMPT_VERSION == "medication-chat-prompt-v7"
+def test_system_prompt_uses_v8_six_element_contract_and_private_checklist() -> None:
+    assert MEDICATION_CHAT_PROMPT_VERSION == "medication-chat-prompt-v8"
     for heading in (
         "역할(Role)",
         "작업(Task)",
@@ -241,7 +241,7 @@ def test_system_prompt_uses_v7_six_element_contract_and_private_checklist() -> N
         assert heading in SYSTEM_PROMPT
     assert "내부적으로 점검" in SYSTEM_PROMPT
     assert "점검 과정이나 숨겨진 추론문은 출력하지" in SYSTEM_PROMPT
-    assert "covered section만 출력" in SYSTEM_PROMPT
+    assert "covered section 밖의 항목은 추가하지" in SYSTEM_PROMPT
     assert "초안에 포함된 의료 면책 문구를 유지" not in SYSTEM_PROMPT
     assert "✉️ **안내사항**" in SYSTEM_PROMPT
     assert "📭 **공식 확인 경로**" in SYSTEM_PROMPT
@@ -253,7 +253,7 @@ def test_system_prompt_forbids_repeating_unverified_interaction_notice() -> None
 
 
 def test_system_prompt_limits_each_requested_section_to_short_bullets() -> None:
-    assert "각 bullet은 한 가지 핵심만 약 50자 이내" in SYSTEM_PROMPT
+    assert "각 bullet은 한 가지 핵심만 10어절 이내" in SYSTEM_PROMPT
     assert "각 섹션은 최대 3개 bullet" in SYSTEM_PROMPT
 
 
@@ -292,7 +292,7 @@ def test_prompt_limits_product_output_to_requested_sections() -> None:
     assert isinstance(user_content, str)
     payload = json.loads(user_content.removeprefix("입력 데이터(JSON)\n"))
     assert payload["requested_section_types"] == ["FUNCTION", "CAUTION"]
-    assert "covered section만 출력" in SYSTEM_PROMPT
+    assert "covered section 밖의 항목은 추가하지" in SYSTEM_PROMPT
 
 
 def test_system_prompt_treats_active_intake_as_requested_sections() -> None:

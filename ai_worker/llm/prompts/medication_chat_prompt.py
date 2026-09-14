@@ -15,7 +15,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatRoute,
 )
 
-MEDICATION_CHAT_PROMPT_VERSION = "medication-chat-prompt-v7"
+MEDICATION_CHAT_PROMPT_VERSION = "medication-chat-prompt-v8"
 
 _DOSAGE_VALUE_PATTERN = re.compile(
     r"\d+(?:\s*[|,./~–-]\s*\d+)*\s*"

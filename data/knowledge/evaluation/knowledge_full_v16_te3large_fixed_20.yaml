@@ -1,0 +1,208 @@
+schema_version: knowledge-retrieval-evaluation-v1
+dataset_version: knowledge-full-v16-te3large
+thresholds:
+  min_hit_at_5: 0.90
+  min_citation_accuracy: 0.90
+  max_wrong_entity_mixing_count: 0
+  max_search_p95_ms: 300.0
+
+# v14와 v16의 벡터 검색만 비교하는 고정 세트다.
+# 제품 가이드·세션 기억·활성 복약정보처럼 Qdrant 외 경로가 필요한 질문은 제외한다.
+cases:
+  - query_id: magnesium-function
+    query: 마그네슘은 왜 먹나요?
+    expected_document_ids:
+      - food_safety_korea_supplement_ingredients-d4b61ec6752184e6
+      - mfds_supplement_code-0d785fd735e66685
+    expected_ingredient_names: [마그네슘]
+    ingredient_names: [마그네슘]
+    document_types: [SUPPLEMENT_CODE]
+    section_types: [FUNCTION]
+    expected_section_types: [FUNCTION]
+
+  - query_id: magnesium-spacing-variation
+    query: 마그 네슘의 기능은 무엇인가요?
+    expected_document_ids:
+      - food_safety_korea_supplement_ingredients-d4b61ec6752184e6
+      - mfds_supplement_code-0d785fd735e66685
+    expected_ingredient_names: [마그네슘]
+    ingredient_names: [마그네슘]
+    document_types: [SUPPLEMENT_CODE]
+    section_types: [FUNCTION]
+    expected_section_types: [FUNCTION]
+
+  - query_id: vitamin-b6-function
+    query: 비타민 B6는 몸에서 어떤 기능을 하나요?
+    expected_document_ids: [food_safety_korea_supplement_ingredients-bbd07d1c2d46d789]
+    expected_ingredient_names: [비타민 B6]
+    ingredient_names: [비타민 B6]
+    document_types: [SUPPLEMENT_CODE]
+    section_types: [FUNCTION]
+    expected_section_types: [FUNCTION]
+
+  - query_id: vitamin-b6-daily-intake
+    query: 비타민 B6의 일일 섭취량 기준은 얼마인가요?
+    expected_document_ids: [food_safety_korea_supplement_ingredients-bbd07d1c2d46d789]
+    expected_ingredient_names: [비타민 B6]
+    ingredient_names: [비타민 B6]
+    document_types: [SUPPLEMENT_CODE]
+    section_types: [DAILY_INTAKE]
+    expected_section_types: [DAILY_INTAKE]
+
+  - query_id: vitamin-a-daily-intake
+    query: 비타민 A의 일일 섭취량 기준은 어떻게 되나요?
+    expected_document_ids: [food_safety_korea_supplement_ingredients-1d2702336f22ecc4]
+    expected_ingredient_names: [비타민 A]
+    ingredient_names: [비타민 A]
+    document_types: [SUPPLEMENT_CODE]
+    section_types: [DAILY_INTAKE]
+    expected_section_types: [DAILY_INTAKE]
+
+  - query_id: hepatitis-a-vaccine-purpose
+    query: A형 간염 백신은 어떤 역할을 하나요?
+    expected_document_ids: [kpicia_drug_encyclopedia-3e5922cbedbdbc62]
+    expected_drug_names: [A형 간염 백신]
+    drug_names: [A형 간염 백신]
+    document_types: [DRUG_ENCYCLOPEDIA]
+
+  - query_id: doxazosin-dizziness-case
+    query: 독사조신 복용 후 심한 어지러움이 보고된 사례가 있나요?
+    expected_document_ids: [kpicia_adverse_case_report-2e89423c98769fbb]
+    expected_drug_names: [독사조신]
+    drug_names: [독사조신]
+    document_types: [ADVERSE_CASE_REPORT]
+    section_types: [ADVERSE_EVENT]
+    expected_section_types: [ADVERSE_EVENT]
+
+  - query_id: irritable-bowel-syndrome-management
+    query: 과민성대장증후군은 어떤 증상이 나타나고 어떻게 관리하나요?
+    expected_document_ids: [kpicia_pharm_review-dd03682eeb66c07e]
+    document_types: [PHARM_REVIEW]
+
+  - query_id: sleep-supplement-function
+    query: 수면의 질 개선과 관련된 건강기능식품 기능 정보가 있나요?
+    expected_document_ids: [mfds_supplement_function_guide-b6e3f0c206cd3a22]
+    document_types: [SUPPLEMENT_FUNCTION_GUIDE]
+    section_types: [FUNCTION]
+    expected_section_types: [FUNCTION]
+
+  - query_id: acetaminophen-caution
+    query: 아세트아미노펜의 주의사항을 알려줘.
+    expected_document_ids: [kpicia_drug_encyclopedia-33898a903b6cbca7]
+    expected_drug_names: [아세트아미노펜]
+    drug_names: [아세트아미노펜]
+    document_types: [DRUG_ENCYCLOPEDIA]
+    section_types: [CAUTION]
+    expected_section_types: [CAUTION]
+
+  - query_id: losartan-function-caution-hard-negative
+    query: 로사르탄의 효능과 주의사항을 알려줘.
+    expected_document_ids: [kpicia_drug_encyclopedia-5fe155bd6066b3c6]
+    forbidden_document_ids: [kpicia_drug_encyclopedia-c649427ba7b67d68]
+    expected_drug_names: [로사르탄]
+    drug_names: [로사르탄]
+    document_types: [DRUG_ENCYCLOPEDIA]
+    section_types: [FUNCTION]
+    expected_section_types: [FUNCTION]
+
+  - query_id: fexofenadine-fruit-juice
+    query: 펙소페나딘을 자몽주스나 사과주스와 함께 먹어도 되나요?
+    expected_document_ids: [mfds_drug_food_interaction_guide-53bfb2433f48a8b0]
+    expected_drug_names: [펙소페나딘]
+    expected_interaction_pair_keys: [f9802ebfd475228768bee877a5e3594f606bb2941b56b0edb4fe142f969efab1]
+    interaction_type: DRUG_FOOD
+    interaction_pair_keys: [f9802ebfd475228768bee877a5e3594f606bb2941b56b0edb4fe142f969efab1]
+    document_types: [DRUG_FOOD_INTERACTION_GUIDE]
+    section_types: [INTERACTION]
+    expected_section_types: [INTERACTION]
+
+  - query_id: acetaminophen-alcohol
+    query: 아세트아미노펜과 술을 같이 먹어도 되나요?
+    expected_document_ids: [kpicia_pharm_review-3ce7212b15e7c2de]
+    expected_drug_names: [아세트아미노펜]
+    expected_interaction_pair_keys: [19c21e5f2ad531db594efed010d675e1e099fe02f8f2476da9980af48f6176d8]
+    interaction_type: DRUG_FOOD
+    interaction_pair_keys: [19c21e5f2ad531db594efed010d675e1e099fe02f8f2476da9980af48f6176d8]
+    document_types: [PHARM_REVIEW]
+    section_types: [SUMMARY]
+    expected_section_types: [SUMMARY]
+
+  - query_id: warfarin-vitamin-k
+    query: 와파린과 비타민 K 영양제를 같이 먹어도 되나요?
+    expected_document_ids: [kpicia_pharm_review-c4ea8e68b35b65b3]
+    expected_drug_names: [와파린]
+    expected_ingredient_names: [비타민 K]
+    expected_interaction_pair_keys: [d6653608f46bb208d7f63306f9078d18aa0b88444c9cf7a01cb3936432e24af9]
+    interaction_type: DRUG_SUPPLEMENT
+    interaction_pair_keys: [d6653608f46bb208d7f63306f9078d18aa0b88444c9cf7a01cb3936432e24af9]
+    document_types: [PHARM_REVIEW]
+    section_types: [SUMMARY]
+    expected_section_types: [SUMMARY]
+
+  - query_id: warfarin-metronidazole
+    query: 와파린과 메트로니다졸을 같이 복용해도 되나요?
+    expected_document_ids: [kpicia_pharm_review-e8127943c02a5a76]
+    expected_drug_names: [와파린, 메트로니다졸]
+    expected_interaction_pair_keys: [e3cadc1cf121c5fd105f8ee57d012a0419c4d4f9638edbcc229e77820ff6608a]
+    interaction_type: DRUG_DRUG
+    interaction_pair_keys: [e3cadc1cf121c5fd105f8ee57d012a0419c4d4f9638edbcc229e77820ff6608a]
+    document_types: [PHARM_REVIEW]
+    section_types: [SUMMARY]
+    expected_section_types: [SUMMARY]
+
+  - query_id: vitamin-d-calcium
+    query: 비타민 D와 칼슘을 같이 먹을 때 알아둘 점은 무엇인가요?
+    expected_document_ids: [mfds_supplement_code-72e61399c742b0e5]
+    expected_ingredient_names: [비타민 D, 칼슘]
+    expected_interaction_pair_keys: [551e4775820c8616a6b14157b565d1a68d2ae3540367e010c534ad58dae205f5]
+    interaction_type: SUPPLEMENT_SUPPLEMENT
+    interaction_pair_keys: [551e4775820c8616a6b14157b565d1a68d2ae3540367e010c534ad58dae205f5]
+    document_types: [SUPPLEMENT_CODE]
+    section_types: [FUNCTION]
+    expected_section_types: [FUNCTION]
+
+  - query_id: calcium-iron-absorption
+    query: 칼슘을 철분과 함께 먹으면 흡수에 영향이 있나요?
+    expected_document_ids:
+      - research_supplement_interactions-016c81c9a3e29ebd
+      - research_micronutrient_interactions-e3b164ce9cc98cc6
+    expected_ingredient_names: [칼슘, 철분]
+    expected_interaction_pair_keys: [38dc3ee431472133b30bbb47997b5933968c14bee17140cdad320c06092de3fc]
+    interaction_type: SUPPLEMENT_SUPPLEMENT
+    interaction_pair_keys: [38dc3ee431472133b30bbb47997b5933968c14bee17140cdad320c06092de3fc]
+    document_types: [RESEARCH_ARTICLE]
+    section_types: [RESULTS]
+    expected_section_types: [RESULTS]
+
+  - query_id: iron-zinc-absorption
+    query: 철분과 아연을 함께 먹으면 흡수에 영향이 있나요?
+    expected_document_ids: [research_micronutrient_interactions-e3b164ce9cc98cc6]
+    expected_ingredient_names: [철분, 아연]
+    expected_interaction_pair_keys: [54e08cf63ea1eba49e79c48ad172b529626259c4a0ded7931d12b98609f2aed5]
+    interaction_type: SUPPLEMENT_SUPPLEMENT
+    interaction_pair_keys: [54e08cf63ea1eba49e79c48ad172b529626259c4a0ded7931d12b98609f2aed5]
+    document_types: [RESEARCH_ARTICLE]
+    section_types: [INTRODUCTION]
+    expected_section_types: [INTRODUCTION]
+
+  - query_id: zinc-copper-status
+    query: 아연 보충제와 구리를 함께 섭취할 때 주의할 점은 무엇인가요?
+    expected_document_ids: [research_micronutrient_interactions-e3b164ce9cc98cc6]
+    expected_ingredient_names: [아연, 구리]
+    expected_interaction_pair_keys: [403d2c493b5fad1b522fba499094233f4947bf7c91a60c48eccd8658a08cfbbe]
+    interaction_type: SUPPLEMENT_SUPPLEMENT
+    interaction_pair_keys: [403d2c493b5fad1b522fba499094233f4947bf7c91a60c48eccd8658a08cfbbe]
+    document_types: [RESEARCH_ARTICLE]
+    section_types: [CONCLUSION]
+    expected_section_types: [CONCLUSION]
+
+  - query_id: vitamin-c-iron-absorption
+    query: 비타민 C를 철분과 함께 먹으면 철 흡수에 도움이 되나요?
+    expected_document_ids: [research_micronutrient_interactions-e3b164ce9cc98cc6]
+    expected_ingredient_names: [비타민 C, 철분]
+    expected_interaction_pair_keys: [e78c7e82b75b1436684970ea4236df98f8475c15b12345390f02a4a0ba002ecf]
+    interaction_type: SUPPLEMENT_SUPPLEMENT
+    interaction_pair_keys: [e78c7e82b75b1436684970ea4236df98f8475c15b12345390f02a4a0ba002ecf]
+    document_types: [RESEARCH_ARTICLE]
+    section_types: [INTRODUCTION]
+    expected_section_types: [INTRODUCTION]

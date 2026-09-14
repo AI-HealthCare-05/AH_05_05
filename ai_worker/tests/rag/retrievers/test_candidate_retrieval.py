@@ -89,3 +89,21 @@ async def test_retrieve_uses_runnable_parallel_for_each_candidate_search_fan_out
     assert parallel_calls == [
         ("query_0", "query_1"),
     ] * (1 + len(result.attempted_search_tiers))
+
+
+@pytest.mark.asyncio
+async def test_retrieve_embeds_query_with_resolved_entities_and_requested_sections() -> None:
+    embedding_provider = FakeEmbeddingProvider()
+    retriever = MedicationKnowledgeCandidateRetriever(
+        embedding_provider=embedding_provider,
+        vector_store=FakeKnowledgeStore(),
+        dataset_version="knowledge-full-v16",
+        eligibility_evaluator=lambda _result, _plan: "ELIGIBLE",
+        section_coverage_evaluator=lambda _results, _plan: True,
+    )
+
+    await retriever.retrieve(execution_plan=build_execution_plan())
+
+    assert embedding_provider.queries[0].startswith("[질문] 마그네슘은 왜 먹나요?")
+    assert "[대상] 마그네슘" in embedding_provider.queries[0]
+    assert "[요청 섹션] FUNCTION" in embedding_provider.queries[0]

@@ -27,6 +27,17 @@ def test_v7_prompt_pack_loads_only_requested_stage() -> None:
     assert "예시(Example)" in document.compiled_system
 
 
+def test_v8_prompt_pack_is_the_runtime_default_and_keeps_all_chain_stages() -> None:
+    prompt_assets = _prompt_assets_module()
+
+    assert prompt_assets.MEDICATION_CHAT_PROMPT_CHAIN_ASSET == "medication_chat_prompt_v8.md"
+    for stage in prompt_assets.MedicationPromptStage:
+        document = prompt_assets.load_prompt_chain_stage(stage)
+        assert document.system
+        assert document.user
+        assert document.examples
+
+
 @pytest.mark.parametrize(
     ("stage_name", "uses_directional_stimulus"),
     [

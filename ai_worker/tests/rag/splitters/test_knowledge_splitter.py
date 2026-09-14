@@ -1035,6 +1035,29 @@ def test_recursive_split_merges_tiny_tail_when_union_fits_hard_limit() -> None:
     assert merged == [(content, 0, len(content))]
 
 
+def test_recursive_split_merges_leading_short_fragment_with_following_chunk() -> None:
+    heading = "Results"
+    body = " ".join(f"evidence{index}" for index in range(300))
+    content = f"{heading} {body}"
+    body_start = len(heading) + 1
+    splitter = KnowledgeSplitter(token_counter=WordTokenCounter())
+
+    merged = splitter._merge_small_fragments(
+        content,
+        [
+            (heading, 0, len(heading)),
+            (body, body_start, len(content)),
+        ],
+        ChunkingPolicy(
+            target_min_tokens=250,
+            hard_max_tokens=500,
+            overlap_tokens=40,
+        ),
+    )
+
+    assert merged == [(content, 0, len(content))]
+
+
 def test_split_atomic_case_does_not_add_overlap() -> None:
     words = [f"사례{index}" for index in range(900)]
     page = build_page(
@@ -1093,10 +1116,33 @@ def test_split_regulatory_drug_label_preserves_safety_sections() -> None:
     ]
     assert "Calcium may reduce" in chunks[3].content
     assert KnowledgeSplitter.policy_for(KnowledgeDocumentType.REGULATORY_DRUG_LABEL) == ChunkingPolicy(
-        target_min_tokens=250,
-        hard_max_tokens=600,
+        target_min_tokens=300,
+        hard_max_tokens=500,
         overlap_tokens=40,
     )
+
+
+def test_release_chunk_policy_targets_300_to_500_tokens_for_large_embeddings() -> None:
+    policy = KnowledgeSplitter.policy_for(KnowledgeDocumentType.REGULATORY_DRUG_LABEL)
+
+    assert policy.target_min_tokens == 300
+    assert policy.hard_max_tokens == 500
+    assert policy.overlap_tokens == 40
+
+
+def test_split_keeps_evidence_content_and_sanitizes_only_embedding_text() -> None:
+    page = build_page(
+        "효능·효과\n\n\ufeff타이레놀정500mg (아세트아미노펜)\u200b | 통증 완화",
+        document_type=KnowledgeDocumentType.DRUG_ENCYCLOPEDIA,
+        title="타이레놀정500mg",
+    )
+
+    chunk = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])[0]
+
+    assert "\u200b" in chunk.content
+    assert "\u200b" not in chunk.embedding_text
+    assert "타이레놀정500mg (아세트아미노펜)" in chunk.embedding_text
+    assert "통증 완화" in chunk.embedding_text
 
 
 def test_split_regulatory_subsections_keep_heading_with_its_body() -> None:
@@ -1538,7 +1584,7 @@ def test_split_research_vitamin_subheadings_before_recursive_fallback() -> None:
     chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
 
     assert len(chunks) > 1
-    assert all(chunk.token_count <= 800 for chunk in chunks)
+    assert all(chunk.token_count <= 500 for chunk in chunks)
     assert all(chunk.metadata.section_title == "Water-Soluble Vitamins" for chunk in chunks)
     assert any(chunk.content.startswith("Cobalamins (B12)") for chunk in chunks)
     assert any("Ascorbic Acid (C)" in chunk.content for chunk in chunks)
@@ -2336,6 +2382,28 @@ def test_repair_levothyroxine_calcium_review_uses_verified_semantic_boundaries()
     assert not any("Acknowledgments" in chunk.content or "References" in chunk.content for chunk in repaired)
 
 
+def test_repair_levothyroxine_calcium_review_rebounds_oversized_semantic_sections() -> None:
+    results = "Evidence supports separate administration. " * 140
+    content = "\n".join(
+        [
+            "Results",
+            results,
+            "One possible limitation of this study",
+            "The conclusion recommends separation from all of these calcium products.",
+        ]
+    )
+    splitter = KnowledgeSplitter(token_counter=WordTokenCounter())
+
+    repaired = splitter._repair_verified_document_chunks(
+        [build_levothyroxine_calcium_review_chunk(content, chunk_index=0)]
+    )
+
+    hard_max = splitter.policy_for(KnowledgeDocumentType.RESEARCH_ARTICLE).hard_max_tokens
+    assert all(chunk.token_count <= hard_max for chunk in repaired)
+    assert len(repaired) > 1
+    assert "Evidence supports separate administration." in " ".join(chunk.content for chunk in repaired)
+
+
 def test_repair_primary_care_herb_drug_review_uses_verified_semantic_boundaries() -> None:
     content = "\n".join(
         [
@@ -3006,9 +3074,9 @@ def test_repair_aspirin_warfarin_regroups_oversized_table_rows() -> None:
 
     repaired = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks([table])
 
-    assert len(repaired) == 2
-    assert all(chunk.token_count <= 800 for chunk in repaired)
-    assert [chunk.metadata.chunk_index for chunk in repaired] == [0, 1]
+    assert len(repaired) == 3
+    assert all(chunk.token_count <= 500 for chunk in repaired)
+    assert [chunk.metadata.chunk_index for chunk in repaired] == [0, 1, 2]
 
 
 def test_split_uses_korean_label_for_drug_food_interaction() -> None:

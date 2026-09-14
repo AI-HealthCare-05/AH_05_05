@@ -80,11 +80,46 @@ async def test_generator_rewrites_draft_and_preserves_grounding_metadata() -> No
     assert outcome.result.answer.startswith("정해진 용법")
     assert outcome.result.sources == build_result().sources
     assert outcome.result.model_name == "gpt-4o-mini"
-    assert outcome.result.prompt_version == "medication-chat-prompt-v7"
+    assert outcome.result.prompt_version == "medication-chat-prompt-v8"
     assert outcome.observation.status == MedicationAnswerRewriteStatus.REWRITTEN
     assert outcome.observation.fallback_used is False
     assert outcome.observation.fallback_reason is None
     assert client.messages is not None
+
+
+async def test_generator_uses_accurate_model_for_interaction_answer_when_enabled() -> None:
+    fast_client = FakeAnswerClient(error=AssertionError("빠른 모델을 호출하면 안 됩니다."))
+    accurate_client = FakeAnswerClient(
+        response={
+            "answer": "🔁 **질문 상호작용**\n\n**[타이레놀-비타민 D]**\n- 직접 근거를 확인합니다.",
+            "section_types": ["INTERACTION"],
+        }
+    )
+    result = build_result().model_copy(
+        update={
+            "evidence_coverage": MedicationEvidenceCoverage(
+                requested_section_types=[KnowledgeSectionType.INTERACTION],
+                covered_section_types=[KnowledgeSectionType.INTERACTION],
+            )
+        }
+    )
+    generator = OpenAIMedicationAnswerGenerator(
+        model="gpt-4o-mini",
+        client=fast_client,
+        accurate_model="gpt-4o-2024-11-20",
+        accurate_client=accurate_client,
+        high_accuracy_routing_enabled=True,
+    )
+
+    outcome = await generator.generate(
+        request=build_request(),
+        context=ActiveIntakeContext(user_id=1),
+        result=result,
+    )
+
+    assert fast_client.messages is None
+    assert accurate_client.messages is not None
+    assert outcome.result.model_name == "gpt-4o-2024-11-20"
 
 
 def test_generator_preserves_warning_and_contraindication_section_markdown() -> None:

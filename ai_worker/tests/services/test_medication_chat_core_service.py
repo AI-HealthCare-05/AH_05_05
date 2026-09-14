@@ -26,6 +26,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatResult,
     MedicationChatRoute,
 )
+from ai_worker.services import medication_chat_core_service
 from ai_worker.services.medication_chat_core_service import (
     MedicationChatCoreService,
     build_medication_chat_core_service,
@@ -164,6 +165,61 @@ def test_builder_wires_interaction_evidence_reasoning_only_when_enabled() -> Non
     )
 
     assert service._use_case._interaction_evidence_reasoning_chain is not None
+
+
+def test_builder_uses_accurate_model_only_for_enabled_interpretation_and_evidence_reasoning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: dict[str, str] = {}
+
+    monkeypatch.setattr(
+        medication_chat_core_service,
+        "build_conditional_question_interpretation_chain",
+        lambda **kwargs: observed.setdefault("conditional", kwargs["model"]),
+    )
+    monkeypatch.setattr(
+        medication_chat_core_service,
+        "build_interaction_evidence_reasoning_chain",
+        lambda **kwargs: observed.setdefault("reasoning", kwargs["model"]),
+    )
+    monkeypatch.setattr(
+        medication_chat_core_service,
+        "build_conversation_gate_chain",
+        lambda **kwargs: observed.setdefault("gate", kwargs["model"]),
+    )
+    monkeypatch.setattr(
+        medication_chat_core_service,
+        "build_conversation_response_generator",
+        lambda **kwargs: observed.setdefault("response", kwargs["model"]),
+    )
+    monkeypatch.setattr(
+        medication_chat_core_service,
+        "build_medication_note_summary_generator",
+        lambda **kwargs: observed.setdefault("note", kwargs["model"]),
+    )
+
+    service = build_medication_chat_core_service(
+        settings=Config(
+            OPENAI_API_KEY="test-key",
+            OPENAI_FAST_CHAT_MODEL="gpt-4o-mini",
+            OPENAI_ACCURATE_CHAT_MODEL="gpt-4o-2024-11-20",
+            OPENAI_HIGH_ACCURACY_ROUTING_ENABLED=True,
+            CONDITIONAL_QUESTION_INTERPRETATION_ENABLED=True,
+            INTERACTION_EVIDENCE_REASONING_ENABLED=True,
+            CONVERSATION_GATE_ENABLED=True,
+            _env_file=None,
+        ),
+        qdrant_client=object(),
+    )
+
+    assert observed == {
+        "conditional": "gpt-4o-2024-11-20",
+        "reasoning": "gpt-4o-2024-11-20",
+        "gate": "gpt-4o-mini",
+        "response": "gpt-4o-mini",
+        "note": "gpt-4o-mini",
+    }
+    assert service._use_case._answer_generator.model_name == "gpt-4o-mini"
 
 
 def test_builder_wires_semantic_router_only_when_enabled() -> None:

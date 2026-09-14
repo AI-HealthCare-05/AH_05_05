@@ -6,6 +6,9 @@ from typing import Protocol
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+from ai_worker.rag.embeddings.embedding_text_builder import (
+    sanitize_embedding_content,
+)
 from ai_worker.rag.metadata.interaction_annotation_registry import (
     KnowledgeInteractionAnnotationRegistry,
 )
@@ -61,15 +64,15 @@ class ChunkingPolicy:
 
 
 _POLICIES = {
-    KnowledgeDocumentType.REGULATORY_DRUG_LABEL: ChunkingPolicy(250, 600, 40),
-    KnowledgeDocumentType.DRUG_FOOD_INTERACTION_GUIDE: ChunkingPolicy(150, 450, 0),
-    KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE: ChunkingPolicy(250, 600, 40),
-    KnowledgeDocumentType.SUPPLEMENT_CODE: ChunkingPolicy(200, 500, 0),
-    KnowledgeDocumentType.DRUG_ENCYCLOPEDIA: ChunkingPolicy(250, 600, 50),
-    KnowledgeDocumentType.ADVERSE_CASE_REPORT: ChunkingPolicy(300, 700, 0),
-    KnowledgeDocumentType.PHARM_REVIEW: ChunkingPolicy(400, 750, 80),
-    KnowledgeDocumentType.RESEARCH_ARTICLE: ChunkingPolicy(400, 800, 100),
-    KnowledgeDocumentType.SUPPLEMENT_INTERACTION_MONOGRAPH: ChunkingPolicy(150, 450, 0),
+    KnowledgeDocumentType.REGULATORY_DRUG_LABEL: ChunkingPolicy(300, 500, 40),
+    KnowledgeDocumentType.DRUG_FOOD_INTERACTION_GUIDE: ChunkingPolicy(300, 500, 0),
+    KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE: ChunkingPolicy(300, 500, 40),
+    KnowledgeDocumentType.SUPPLEMENT_CODE: ChunkingPolicy(300, 500, 0),
+    KnowledgeDocumentType.DRUG_ENCYCLOPEDIA: ChunkingPolicy(300, 500, 40),
+    KnowledgeDocumentType.ADVERSE_CASE_REPORT: ChunkingPolicy(300, 500, 0),
+    KnowledgeDocumentType.PHARM_REVIEW: ChunkingPolicy(300, 500, 40),
+    KnowledgeDocumentType.RESEARCH_ARTICLE: ChunkingPolicy(300, 500, 40),
+    KnowledgeDocumentType.SUPPLEMENT_INTERACTION_MONOGRAPH: ChunkingPolicy(300, 500, 0),
 }
 
 
@@ -652,7 +655,29 @@ class KnowledgeSplitter:
         repaired = self._verified_document_repair_registry().repair(chunks)
         if repaired is chunks:
             return chunks
-        return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
+        bounded = self._enforce_repaired_chunk_hard_limits(repaired)
+        return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(bounded)]
+
+    def _enforce_repaired_chunk_hard_limits(
+        self,
+        chunks: list[KnowledgeChunk],
+    ) -> list[KnowledgeChunk]:
+        """문서별 의미 보정 뒤에도 문서 유형별 hard max를 지킵니다."""
+        bounded: list[KnowledgeChunk] = []
+        for chunk in chunks:
+            policy = self.policy_for(chunk.metadata.document_type)
+            if self._token_counter.count(chunk.content) <= policy.hard_max_tokens:
+                bounded.append(chunk)
+                continue
+            bounded.extend(
+                chunk.model_copy(update={"content": content})
+                for content, _, _ in self._split_section_content(
+                    chunk.content,
+                    policy,
+                    document_type=chunk.metadata.document_type,
+                )
+            )
+        return bounded
 
     def _verified_document_repair_registry(self) -> DocumentChunkRepairRegistry:
         return DocumentChunkRepairRegistry(
@@ -2718,31 +2743,19 @@ class KnowledgeSplitter:
             end = matches[index + 1].start() if index + 1 < len(matches) else len(content)
             units.append((start, end))
 
-        grouped: list[tuple[str, int, int]] = []
-        group_start, group_end = units[0]
-        for unit_start, unit_end in units[1:]:
-            candidate = content[group_start:unit_end].strip()
-            if self._token_counter.count(candidate) <= policy.hard_max_tokens:
-                group_end = unit_end
-                continue
-            grouped.extend(
-                self._bounded_semantic_group(
-                    content,
-                    group_start,
-                    group_end,
-                    policy,
-                )
-            )
-            group_start, group_end = unit_start, unit_end
-        grouped.extend(
-            self._bounded_semantic_group(
+        # 영양소별 소제목은 질문 대상의 직접 관계 범위를 나타낸다.
+        # 작은 단락이라도 이웃 영양소의 근거와 합치지 않아, 검색 결과에서
+        # 서로 다른 성분의 결론이 한 청크로 섞이는 일을 막는다.
+        return [
+            chunk
+            for unit_start, unit_end in units
+            for chunk in self._bounded_semantic_group(
                 content,
-                group_start,
-                group_end,
+                unit_start,
+                unit_end,
                 policy,
             )
-        )
-        return grouped
+        ]
 
     def _bounded_semantic_group(
         self,
@@ -2823,19 +2836,30 @@ class KnowledgeSplitter:
         policy: ChunkingPolicy,
     ) -> list[tuple[str, int, int]]:
         merged: list[tuple[str, int, int]] = []
-
-        for content, start, end in chunks:
-            if merged and self._token_counter.count(content) < policy.target_min_tokens:
-                _, previous_start, _ = merged[-1]
-                combined = source[previous_start:end].strip()
-                if self._token_counter.count(combined) <= policy.hard_max_tokens:
-                    merged[-1] = (
-                        combined,
-                        previous_start,
-                        end,
-                    )
-                    continue
+        index = 0
+        while index < len(chunks):
+            content, start, end = chunks[index]
+            if self._token_counter.count(content) < policy.target_min_tokens:
+                if merged:
+                    _, previous_start, _ = merged[-1]
+                    combined = source[previous_start:end].strip()
+                    if self._token_counter.count(combined) <= policy.hard_max_tokens:
+                        merged[-1] = (
+                            combined,
+                            previous_start,
+                            end,
+                        )
+                        index += 1
+                        continue
+                if index + 1 < len(chunks):
+                    _, _, following_end = chunks[index + 1]
+                    combined = source[start:following_end].strip()
+                    if self._token_counter.count(combined) <= policy.hard_max_tokens:
+                        merged.append((combined, start, following_end))
+                        index += 2
+                        continue
             merged.append((content, start, end))
+            index += 1
 
         return merged
 
@@ -2959,7 +2983,7 @@ class KnowledgeSplitter:
             prefixes.append(f"[표 제목] {metadata.table_title}")
         if metadata.table_super_headers:
             prefixes.append(f"[표 설명] {', '.join(metadata.table_super_headers)}")
-        return "\n".join([*prefixes, "[원문]", content])
+        return "\n".join([*prefixes, "[원문]", sanitize_embedding_content(content)])
 
     @staticmethod
     def _page_range_for(

@@ -24,6 +24,9 @@ class Config(BaseSettings):
 
     OPENAI_API_KEY: SecretStr | None = None
     OPENAI_CHAT_MODEL: str = "gpt-4o-mini"
+    OPENAI_FAST_CHAT_MODEL: str = "gpt-4o-mini"
+    OPENAI_ACCURATE_CHAT_MODEL: str = "gpt-4o-2024-11-20"
+    OPENAI_HIGH_ACCURACY_ROUTING_ENABLED: bool = False
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     OPENAI_EMBEDDING_DIMENSIONS: int = Field(default=1536, gt=0)
     OPENAI_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0)
@@ -59,6 +62,9 @@ class Config(BaseSettings):
     KNOWLEDGE_DATASET_VERSION: str = "knowledge-full-v1"
     KNOWLEDGE_SEARCH_MODE: KnowledgeSearchMode = KnowledgeSearchMode.DENSE
     KNOWLEDGE_VECTOR_DISTANCE: KnowledgeVectorDistance = KnowledgeVectorDistance.COSINE
+    KNOWLEDGE_CHUNKING_VERSION: str = "semantic-structure-v2"
+    KNOWLEDGE_EMBEDDING_TEXT_VERSION: str = "medical-retrieval-v2"
+    KNOWLEDGE_TOKENIZER_ENCODING: str = "cl100k_base"
     INTERACTION_RULE_DATASET_VERSION: str = "interaction-pilot-v1"
     THERAPEUTIC_CLASS_DATASET_VERSION: str = "therapeutic-class-v1"
     MEDICATION_SAFETY_RULE_DATASET_VERSION: str = "medication-safety-v1"

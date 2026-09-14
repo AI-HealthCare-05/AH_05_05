@@ -31,6 +31,14 @@ def test_config_limits_openai_and_qdrant_calls_to_ten_seconds() -> None:
     assert settings.QDRANT_TIMEOUT_SECONDS == 10.0
 
 
+def test_config_exposes_fast_and_accurate_chat_model_policy_settings() -> None:
+    settings = Config(_env_file=None)
+
+    assert settings.OPENAI_FAST_CHAT_MODEL == "gpt-4o-mini"
+    assert settings.OPENAI_ACCURATE_CHAT_MODEL == "gpt-4o-2024-11-20"
+    assert settings.OPENAI_HIGH_ACCURACY_ROUTING_ENABLED is False
+
+
 def test_config_defaults_to_dense_knowledge_search() -> None:
     settings = Config(_env_file=None)
 

@@ -71,6 +71,9 @@ class OpenAIMedicationAnswerGenerator:
         model: str,
         api_key: SecretStr | None = None,
         client: AsyncMedicationAnswerClient | None = None,
+        accurate_model: str | None = None,
+        accurate_client: AsyncMedicationAnswerClient | None = None,
+        high_accuracy_routing_enabled: bool = False,
         timeout_seconds: float = 30.0,
         max_retries: int = 2,
     ) -> None:
@@ -78,14 +81,54 @@ class OpenAIMedicationAnswerGenerator:
         if not normalized_model:
             raise ValueError("LLM 모델명은 비어 있을 수 없습니다.")
         self._model_name = normalized_model
+        self._accurate_model_name: str | None = None
+        self._accurate_chain: Runnable | None = None
+        self._high_accuracy_routing_enabled = high_accuracy_routing_enabled
+        self._chain = self._build_chain(
+            model_name=normalized_model,
+            api_key=api_key,
+            client=client,
+            timeout_seconds=timeout_seconds,
+            max_retries=max_retries,
+            run_name_prefix="medication.answer",
+        )
+        normalized_accurate_model = (accurate_model or "").strip()
+        if (
+            high_accuracy_routing_enabled
+            and normalized_accurate_model
+            and normalized_accurate_model != normalized_model
+        ):
+            # 테스트에서 fast client만 주어진 경우 상위 모델을 흉내 내지 않는다.
+            # 런타임에서는 client가 없으므로 별도 ChatOpenAI 체인이 만들어진다.
+            if client is None or accurate_client is not None:
+                self._accurate_model_name = normalized_accurate_model
+                self._accurate_chain = self._build_chain(
+                    model_name=normalized_accurate_model,
+                    api_key=api_key,
+                    client=accurate_client,
+                    timeout_seconds=timeout_seconds,
+                    max_retries=max_retries,
+                    run_name_prefix="medication.answer.accurate",
+                )
+
+    @staticmethod
+    def _build_chain(
+        *,
+        model_name: str,
+        api_key: SecretStr | None,
+        client: AsyncMedicationAnswerClient | None,
+        timeout_seconds: float,
+        max_retries: int,
+        run_name_prefix: str,
+    ) -> Runnable:
         response_runnable: Runnable
         if client is not None:
             response_runnable = RunnableLambda(client.ainvoke).with_config(
-                run_name="medication.answer.client",
+                run_name=f"{run_name_prefix}.client",
             )
         else:
             chat_model = ChatOpenAI(
-                model=normalized_model,
+                model=model_name,
                 temperature=0,
                 api_key=api_key,
                 timeout=timeout_seconds,
@@ -95,14 +138,30 @@ class OpenAIMedicationAnswerGenerator:
                 MedicationAnswerPayload,
                 method="json_schema",
                 strict=True,
-            ).with_config(run_name="medication.answer.model")
-        self._chain = build_medication_answer_chain(
+            ).with_config(run_name=f"{run_name_prefix}.model")
+        return build_medication_answer_chain(
             response_runnable=response_runnable,
         )
 
     @property
     def model_name(self) -> str:
         return self._model_name
+
+    def _chain_for_result(
+        self,
+        result: MedicationChatResult,
+    ) -> tuple[Runnable, str]:
+        requested_sections = set(
+            result.evidence_coverage.requested_section_types if result.evidence_coverage is not None else []
+        )
+        if (
+            self._high_accuracy_routing_enabled
+            and self._accurate_chain is not None
+            and self._accurate_model_name is not None
+            and (KnowledgeSectionType.INTERACTION in requested_sections or len(requested_sections) > 1)
+        ):
+            return self._accurate_chain, self._accurate_model_name
+        return self._chain, self._model_name
 
     async def generate(
         self,
@@ -130,8 +189,9 @@ class OpenAIMedicationAnswerGenerator:
                 draft_hash=draft_hash,
                 reason=MedicationAnswerFallbackReason.PATIENT_CONTEXT_ONLY,
             )
+        chain, selected_model_name = self._chain_for_result(result)
         try:
-            payload = await self._chain.ainvoke(
+            payload = await chain.ainvoke(
                 MedicationAnswerChainInput(
                     request=request,
                     context=context,
@@ -139,7 +199,7 @@ class OpenAIMedicationAnswerGenerator:
                 ),
                 config={
                     "metadata": {
-                        "model_name": self._model_name,
+                        "model_name": selected_model_name,
                         "prompt_version": MEDICATION_CHAT_PROMPT_VERSION,
                         "route": result.route.value,
                         "source_count": len(result.sources),
@@ -169,7 +229,7 @@ class OpenAIMedicationAnswerGenerator:
         if fallback_reason is not None:
             fallback_result = result.model_copy(
                 update={
-                    "model_name": self._model_name,
+                    "model_name": selected_model_name,
                     "prompt_version": MEDICATION_CHAT_PROMPT_VERSION,
                 },
             )
@@ -187,7 +247,7 @@ class OpenAIMedicationAnswerGenerator:
         rewritten = result.model_copy(
             update={
                 "answer": generated_answer,
-                "model_name": self._model_name,
+                "model_name": selected_model_name,
                 "prompt_version": MEDICATION_CHAT_PROMPT_VERSION,
             },
         )

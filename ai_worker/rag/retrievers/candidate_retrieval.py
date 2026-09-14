@@ -5,6 +5,9 @@ from typing import Protocol
 from langchain_core.runnables import RunnableLambda, RunnableParallel
 
 from ai_worker.domain.interfaces import EmbeddingProvider
+from ai_worker.rag.embeddings.embedding_text_builder import (
+    build_medical_retrieval_query_text,
+)
 from ai_worker.rag.errors import (
     GuidelineRetrievalError,
     RetrievalFailureStage,
@@ -86,9 +89,19 @@ class MedicationKnowledgeCandidateRetriever:
         plan = execution_plan.query_plan
         candidate_limit = min(50, max(20, execution_plan.limit * 4))
         queries = list(dict.fromkeys([plan.expanded_query, *plan.alternate_queries]))
+        embedding_queries = [
+            self._embedding_query_text(
+                query=query,
+                plan=plan,
+            )
+            for query in queries
+        ]
         try:
             query_vectors_by_key = await RunnableParallel(
-                **{f"query_{index}": self._embedding_runnable(query=query) for index, query in enumerate(queries)},
+                **{
+                    f"query_{index}": self._embedding_runnable(query=query)
+                    for index, query in enumerate(embedding_queries)
+                },
             ).ainvoke({})
             query_vectors = [query_vectors_by_key[f"query_{index}"] for index in range(len(queries))]
         except Exception as error:
@@ -169,6 +182,19 @@ class MedicationKnowledgeCandidateRetriever:
             selected_search_tier=selected_search_tier,
             entity_filtered_count=entity_filtered_count,
             broad_candidate_count=broad_candidate_count,
+        )
+
+    @staticmethod
+    def _embedding_query_text(
+        *,
+        query: str,
+        plan: MedicationKnowledgeQueryPlan,
+    ) -> str:
+        return build_medical_retrieval_query_text(
+            question=(plan.original_query if query == plan.expanded_query else query),
+            entity_names=plan.entity_names,
+            section_types=plan.section_types,
+            pair_names=[f"{pair.left_name}-{pair.right_name}" for pair in plan.interaction_pairs],
         )
 
     @staticmethod
