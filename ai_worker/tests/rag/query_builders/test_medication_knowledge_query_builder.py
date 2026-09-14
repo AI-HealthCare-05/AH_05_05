@@ -49,6 +49,45 @@ def test_build_treats_generic_supplement_about_question_as_function_request() ->
     assert "효능" in plan.expanded_query
 
 
+def test_build_limits_entity_free_functional_goal_to_supplement_documents() -> None:
+    plan = MedicationKnowledgeQueryBuilder(catalog_entities=[]).build(
+        "수면의 질 개선과 관련된 건강기능식품 기능 정보가 있나요?",
+    )
+
+    assert plan.entity_names == []
+    assert plan.section_types == [KnowledgeSectionType.FUNCTION]
+    assert plan.document_types == [
+        KnowledgeDocumentType.SUPPLEMENT_CODE,
+        KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+    ]
+
+
+def test_build_treats_natural_wellness_goal_as_supplement_function_request() -> None:
+    plan = MedicationKnowledgeQueryBuilder(catalog_entities=[]).build(
+        "잠 잘자려면 뭘 먹어야해?",
+    )
+
+    assert plan.entity_names == []
+    assert plan.section_types == [KnowledgeSectionType.FUNCTION]
+    assert plan.document_types == [
+        KnowledgeDocumentType.SUPPLEMENT_CODE,
+        KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+    ]
+
+
+def test_build_ignores_generic_words_for_supplement_function_goal() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "수면의 질 개선과 관련된 건강기능식품 기능 정보가 있나요?",
+    )
+
+    assert plan.entity_names == []
+    assert plan.entities == []
+    assert plan.document_types == [
+        KnowledgeDocumentType.SUPPLEMENT_CODE,
+        KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+    ]
+
+
 def test_build_does_not_treat_unregistered_general_words_as_drug_entities() -> None:
     plan = MedicationKnowledgeQueryBuilder(catalog_entities=[]).build(
         "피곤할 때 가장 좋은 영양제 하나 추천해줘",

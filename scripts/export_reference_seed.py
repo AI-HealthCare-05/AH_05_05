@@ -58,7 +58,7 @@ EXPORT_SPECS: dict[str, ExportSpec] = {
     "medication_product_guides": ExportSpec(
         _fields(
             "id item_seq product_name manufacturer_name efficacy usage_instructions pre_use_warning precautions "
-            "drug_food_interactions adverse_reactions storage_instructions created_at updated_at item_image_url"
+            "drug_food_interactions adverse_reactions storage_instructions created_at updated_at"
         ),
         ("item_seq",),
     ),
@@ -104,7 +104,7 @@ EXPORT_SPECS: dict[str, ExportSpec] = {
         ("entity_kind", "normalized_name"),
     ),
     "interaction_entity_aliases": ExportSpec(
-        _fields("id alias_type alias normalized_alias is_preferred created_at interaction_entity_id"),
+        _fields("id alias_type alias normalized_alias created_at interaction_entity_id"),
         ("interaction_entity_id", "normalized_alias"),
     ),
     "interaction_entity_identifiers": ExportSpec(

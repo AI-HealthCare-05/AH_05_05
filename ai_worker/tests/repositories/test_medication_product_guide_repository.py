@@ -34,16 +34,39 @@ async def initialized_db() -> None:
 
 
 async def _create_guide(item_seq: str, product_name: str) -> MedicationProductGuide:
+    values = {
+        "item_seq": item_seq,
+        "product_name": product_name,
+        "manufacturer_name": "테스트제약",
+        "efficacy": "통증과 발열을 완화합니다.",
+        "usage_instructions": "제품 설명서와 전문가의 안내를 따릅니다.",
+        "pre_use_warning": "성분을 확인합니다.",
+        "precautions": "정해진 용법을 지킵니다.",
+        "drug_food_interactions": "다른 약 복용 시 전문가에게 알립니다.",
+        "adverse_reactions": "이상반응 발생 시 전문가와 상담합니다.",
+        "storage_instructions": "실온에 보관합니다.",
+    }
+    return await MedicationProductGuide.create(**values)
+
+
+async def _create_guide_with_cautions(
+    item_seq: str,
+    product_name: str,
+    *,
+    pre_use_warning: str,
+    precautions: str,
+    adverse_reactions: str,
+) -> MedicationProductGuide:
     return await MedicationProductGuide.create(
         item_seq=item_seq,
         product_name=product_name,
         manufacturer_name="테스트제약",
         efficacy="통증과 발열을 완화합니다.",
         usage_instructions="제품 설명서와 전문가의 안내를 따릅니다.",
-        pre_use_warning="성분을 확인합니다.",
-        precautions="정해진 용법을 지킵니다.",
+        pre_use_warning=pre_use_warning,
+        precautions=precautions,
         drug_food_interactions="다른 약 복용 시 전문가에게 알립니다.",
-        adverse_reactions="이상반응 발생 시 전문가와 상담합니다.",
+        adverse_reactions=adverse_reactions,
         storage_instructions="실온에 보관합니다.",
     )
 
@@ -61,6 +84,43 @@ async def test_product_guide_repository_returns_exact_match(
     assert result.is_ambiguous is False
     assert result.guide is not None
     assert result.guide.medication_guide_id == guide.id
+
+
+@pytest.mark.asyncio
+async def test_product_guide_repository_groups_cautions_for_requested_magnesium_forms(
+    initialized_db: None,
+) -> None:
+    """제형별 여러 제품의 중복 경고를 한 번씩만 반환한다."""
+
+    await _create_guide_with_cautions(
+        "100",
+        "마그밀정(수산화마그네슘)",
+        pre_use_warning="신장 질환이 있으면 복용 전 상담합니다.",
+        precautions="다른 약과의 복용 간격을 확인합니다.",
+        adverse_reactions="설사가 나타날 수 있습니다.",
+    )
+    await _create_guide_with_cautions(
+        "101",
+        "신일엠정(수산화마그네슘)",
+        pre_use_warning="신장 질환이 있으면 복용 전 상담합니다.",
+        precautions="다른 약과의 복용 간격을 확인합니다.",
+        adverse_reactions="설사가 나타날 수 있습니다.",
+    )
+    await _create_guide_with_cautions(
+        "200",
+        "마그오캡슐500mg(산화마그네슘)",
+        pre_use_warning="신장 질환이 있으면 복용 전 상담합니다.",
+        precautions="정해진 용법을 지킵니다.",
+        adverse_reactions="묽은 변이 나타날 수 있습니다.",
+    )
+
+    result = await DbMedicationProductGuideRepository().find_caution_guides_by_ingredient_names(
+        ["수산화마그네슘", "산화마그네슘"],
+    )
+
+    assert list(result) == ["수산화마그네슘", "산화마그네슘"]
+    assert [guide.product_name for guide in result["수산화마그네슘"]] == ["마그밀정(수산화마그네슘)"]
+    assert [guide.product_name for guide in result["산화마그네슘"]] == ["마그오캡슐500mg(산화마그네슘)"]
 
 
 @pytest.mark.asyncio

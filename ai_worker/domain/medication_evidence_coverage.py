@@ -85,6 +85,17 @@ class MedicationEvidenceCoverageEvaluator:
                 )
             ):
                 available.add(KnowledgeSectionType.CAUTION)
+        if any(
+            self._has_value(value)
+            for guides in guide_lookup.form_caution_guides.values()
+            for guide in guides
+            for value in (
+                guide.pre_use_warning,
+                guide.precautions,
+                guide.adverse_reactions,
+            )
+        ):
+            available.add(KnowledgeSectionType.CAUTION)
 
         return [
             section for section in requested if section != KnowledgeSectionType.INTERACTION and section in available

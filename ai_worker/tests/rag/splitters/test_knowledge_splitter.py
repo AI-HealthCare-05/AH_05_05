@@ -13,11 +13,6 @@ from ai_worker.rag.splitters.knowledge_splitter import (
     KnowledgeSplitter,
     WordTokenCounter,
 )
-from ai_worker.schemas.interaction import (
-    InteractionEntity,
-    InteractionEntityKind,
-    build_interaction_pair_key,
-)
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeBoundingBox,
@@ -329,70 +324,57 @@ def test_split_preserves_manifest_aliases_with_detected_official_ingredient_name
     ]
 
 
-def test_split_uses_reviewed_annotation_boundaries_to_scope_warfarin_vitamin_k_pair(
-    tmp_path: Path,
-) -> None:
-    annotation_path = tmp_path / "interaction-annotations.yaml"
-    annotation_path.write_text(
-        """
-schema_version: knowledge-interaction-annotations-v1
-documents:
-  - document_id: reviewed-warfarin
-    section_boundaries: ["1.차", "2.캐모마일"]
-    pairs:
-      - pair_type: DRUG_SUPPLEMENT
-        evidence_phrases: ["비타민 K를 다량 함유"]
-        left:
-          kind: DRUG
-          display_name: 와파린
-          aliases: [와파린, warfarin]
-        right:
-          kind: SUPPLEMENT
-          display_name: 비타민 K
-          aliases: [비타민 K, vitamin K]
-""".strip(),
-        encoding="utf-8",
-    )
-    registry = KnowledgeInteractionAnnotationRegistry.from_yaml(annotation_path)
+def test_split_function_guide_creates_named_chunks_from_numbered_function_rows() -> None:
     page = build_page(
-        """1.차
-와파린은 비타민 K를 다량 함유한 녹차와 함께 복용할 때 주의가 필요합니다.
-2.캐모마일
-와파린 치료와 함께 캐모마일차를 복용한 환자에게 출혈 위험이 증가했다는 보고가 있습니다.
+        """
+기능성 내용
+1 감태추출물
+수면의 질 개선에 도움을 줄 수 있음
+수면의 일반적인 생리와 생활 습관에 관한 긴 배경 설명입니다.
+2 유단백가수분해물(락티움)
+수면 건강에 도움을 줄 수 있음
+3 미강주정추출물
+수면에 도움을 줄 수 있음
 """,
-        document_type=KnowledgeDocumentType.PHARM_REVIEW,
-        title="와파린과 생약 및 식품의 상호작용",
-        source_id="kpicia_pharm_review",
+        document_type=KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+        title="건강기능식품 기능별 정보집",
     ).model_copy(
         update={
             "metadata": build_page(
                 "placeholder",
-                document_type=KnowledgeDocumentType.PHARM_REVIEW,
-                title="와파린과 생약 및 식품의 상호작용",
-                source_id="kpicia_pharm_review",
-            ).metadata.model_copy(
-                update={
-                    "document_id": "reviewed-warfarin",
-                    "drug_names": ["와파린"],
-                    "ingredient_names": ["비타민 K"],
-                }
-            )
+                document_type=KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+                title="건강기능식품 기능별 정보집",
+            ).metadata.model_copy(update={"ingredient_names": []})
         }
     )
-    pair_key = build_interaction_pair_key(
-        InteractionEntity(kind=InteractionEntityKind.DRUG, display_name="와파린"),
-        InteractionEntity(kind=InteractionEntityKind.SUPPLEMENT, display_name="비타민 K"),
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert [chunk.metadata.ingredient_names for chunk in chunks] == [
+        ["감태추출물"],
+        ["유단백가수분해물(락티움)"],
+        ["미강주정추출물"],
+    ]
+    assert [chunk.content for chunk in chunks] == [
+        "감태추출물\n수면의 질 개선에 도움을 줄 수 있음",
+        "유단백가수분해물(락티움)\n수면 건강에 도움을 줄 수 있음",
+        "미강주정추출물\n수면에 도움을 줄 수 있음",
+    ]
+
+
+def test_clean_function_content_removes_report_numbers_labels_and_duplicate_claims() -> None:
+    content = (
+        "(제2023-44호) 분류: 기능성 내용 기능성 내용: 관절 및 연골 건강에 도움을 줄 수 있음"
+        "·( 2024-12 ) 분류: 기능성 내용 기능성 내용: ·관절 및 연골 건강에 도움을 줄 수 있음"
+        "·(제2022-12호) 분류: 기능성 내용 기능성 내용: ·관절 및 연골 건강에 도움을 줄 수 있음"
     )
 
-    chunks = KnowledgeSplitter(
-        token_counter=WordTokenCounter(),
-        interaction_annotations=registry,
-    ).split([page])
+    cleaned = KnowledgeSplitter._clean_section_content(
+        content,
+        title="기능성 내용",
+    )
 
-    vitamin_k_chunk = next(chunk for chunk in chunks if "비타민 K" in chunk.content)
-    chamomile_chunk = next(chunk for chunk in chunks if "캐모마일" in chunk.content)
-    assert pair_key in vitamin_k_chunk.metadata.interaction_pair_keys
-    assert pair_key not in chamomile_chunk.metadata.interaction_pair_keys
+    assert cleaned == "관절 및 연골 건강에 도움을 줄 수 있음"
 
 
 def build_research_page_with_table(
@@ -1106,6 +1088,29 @@ def test_recursive_split_merges_tiny_tail_when_union_fits_hard_limit() -> None:
     assert merged == [(content, 0, len(content))]
 
 
+def test_recursive_split_merges_leading_short_fragment_with_following_chunk() -> None:
+    heading = "Results"
+    body = " ".join(f"evidence{index}" for index in range(300))
+    content = f"{heading} {body}"
+    body_start = len(heading) + 1
+    splitter = KnowledgeSplitter(token_counter=WordTokenCounter())
+
+    merged = splitter._merge_small_fragments(
+        content,
+        [
+            (heading, 0, len(heading)),
+            (body, body_start, len(content)),
+        ],
+        ChunkingPolicy(
+            target_min_tokens=250,
+            hard_max_tokens=500,
+            overlap_tokens=40,
+        ),
+    )
+
+    assert merged == [(content, 0, len(content))]
+
+
 def test_split_atomic_case_does_not_add_overlap() -> None:
     words = [f"사례{index}" for index in range(900)]
     page = build_page(
@@ -1164,10 +1169,33 @@ def test_split_regulatory_drug_label_preserves_safety_sections() -> None:
     ]
     assert "Calcium may reduce" in chunks[3].content
     assert KnowledgeSplitter.policy_for(KnowledgeDocumentType.REGULATORY_DRUG_LABEL) == ChunkingPolicy(
-        target_min_tokens=250,
-        hard_max_tokens=600,
+        target_min_tokens=300,
+        hard_max_tokens=500,
         overlap_tokens=40,
     )
+
+
+def test_release_chunk_policy_targets_300_to_500_tokens_for_large_embeddings() -> None:
+    policy = KnowledgeSplitter.policy_for(KnowledgeDocumentType.REGULATORY_DRUG_LABEL)
+
+    assert policy.target_min_tokens == 300
+    assert policy.hard_max_tokens == 500
+    assert policy.overlap_tokens == 40
+
+
+def test_split_keeps_evidence_content_and_sanitizes_only_embedding_text() -> None:
+    page = build_page(
+        "효능·효과\n\n\ufeff타이레놀정500mg (아세트아미노펜)\u200b | 통증 완화",
+        document_type=KnowledgeDocumentType.DRUG_ENCYCLOPEDIA,
+        title="타이레놀정500mg",
+    )
+
+    chunk = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])[0]
+
+    assert "\u200b" in chunk.content
+    assert "\u200b" not in chunk.embedding_text
+    assert "타이레놀정500mg (아세트아미노펜)" in chunk.embedding_text
+    assert "통증 완화" in chunk.embedding_text
 
 
 def test_split_regulatory_subsections_keep_heading_with_its_body() -> None:
@@ -1609,7 +1637,7 @@ def test_split_research_vitamin_subheadings_before_recursive_fallback() -> None:
     chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
 
     assert len(chunks) > 1
-    assert all(chunk.token_count <= 800 for chunk in chunks)
+    assert all(chunk.token_count <= 500 for chunk in chunks)
     assert all(chunk.metadata.section_title == "Water-Soluble Vitamins" for chunk in chunks)
     assert any(chunk.content.startswith("Cobalamins (B12)") for chunk in chunks)
     assert any("Ascorbic Acid (C)" in chunk.content for chunk in chunks)
@@ -2407,6 +2435,28 @@ def test_repair_levothyroxine_calcium_review_uses_verified_semantic_boundaries()
     assert not any("Acknowledgments" in chunk.content or "References" in chunk.content for chunk in repaired)
 
 
+def test_repair_levothyroxine_calcium_review_rebounds_oversized_semantic_sections() -> None:
+    results = "Evidence supports separate administration. " * 140
+    content = "\n".join(
+        [
+            "Results",
+            results,
+            "One possible limitation of this study",
+            "The conclusion recommends separation from all of these calcium products.",
+        ]
+    )
+    splitter = KnowledgeSplitter(token_counter=WordTokenCounter())
+
+    repaired = splitter._repair_verified_document_chunks(
+        [build_levothyroxine_calcium_review_chunk(content, chunk_index=0)]
+    )
+
+    hard_max = splitter.policy_for(KnowledgeDocumentType.RESEARCH_ARTICLE).hard_max_tokens
+    assert all(chunk.token_count <= hard_max for chunk in repaired)
+    assert len(repaired) > 1
+    assert "Evidence supports separate administration." in " ".join(chunk.content for chunk in repaired)
+
+
 def test_repair_primary_care_herb_drug_review_uses_verified_semantic_boundaries() -> None:
     content = "\n".join(
         [
@@ -3077,9 +3127,9 @@ def test_repair_aspirin_warfarin_regroups_oversized_table_rows() -> None:
 
     repaired = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks([table])
 
-    assert len(repaired) == 2
-    assert all(chunk.token_count <= 800 for chunk in repaired)
-    assert [chunk.metadata.chunk_index for chunk in repaired] == [0, 1]
+    assert len(repaired) == 3
+    assert all(chunk.token_count <= 500 for chunk in repaired)
+    assert [chunk.metadata.chunk_index for chunk in repaired] == [0, 1, 2]
 
 
 def test_split_uses_korean_label_for_drug_food_interaction() -> None:

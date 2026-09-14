@@ -86,6 +86,18 @@ async def test_embed_query_returns_vector() -> None:
 
 
 @pytest.mark.asyncio
+async def test_rejects_non_unit_query_vector_before_dot_product_search() -> None:
+    provider = OpenAIEmbeddingProvider(
+        model="text-embedding-3-large",
+        dimensions=3,
+        client=FakeEmbeddingClient(query_vector=[3.0, 4.0, 0.0]),
+    )
+
+    with pytest.raises(ValueError, match="단위 벡터"):
+        await provider.embed_query("타이레놀과 술을 같이 먹어도 돼?")
+
+
+@pytest.mark.asyncio
 async def test_rejects_non_unit_document_vector_before_qdrant_indexing() -> None:
     client = FakeEmbeddingClient(
         document_vectors=[[3.0, 4.0, 0.0]],

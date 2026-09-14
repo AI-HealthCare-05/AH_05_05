@@ -10,6 +10,9 @@ from qdrant_client import AsyncQdrantClient
 
 from ai_worker.core.config import Config
 from ai_worker.domain.errors import AIConfigurationError
+from ai_worker.rag.embeddings.embedding_release_contract import (
+    EmbeddingReleaseContract,
+)
 from ai_worker.rag.embeddings.openai_embedding_provider import (
     OpenAIEmbeddingProvider,
 )
@@ -99,6 +102,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "embedding_text가 완전히 같은 청크의 벡터만 재사용합니다."
         ),
     )
+    parser.add_argument(
+        "--release-manifest",
+        type=Path,
+        default=None,
+        help="새 release의 임베딩 계약을 저장할 불변 JSON manifest 경로입니다.",
+    )
+    parser.add_argument(
+        "--baseline-release-manifest",
+        type=Path,
+        default=None,
+        help="벡터 재사용 기준 release의 임베딩 계약 JSON manifest 경로입니다.",
+    )
     args = parser.parse_args(argv)
     if args.embedding_batch_size <= 0:
         parser.error("--embedding-batch-size는 1 이상이어야 합니다.")
@@ -114,6 +129,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--baseline-chunks-dir에는 --baseline-dataset-version이 필요합니다.")
     if args.reuse_vectors_from_collection is not None and args.baseline_chunks_dir is None:
         parser.error("--reuse-vectors-from-collection에는 --baseline-chunks-dir이 필요합니다.")
+    if args.reuse_vectors_from_collection is not None and args.baseline_release_manifest is None:
+        parser.error("--reuse-vectors-from-collection에는 --baseline-release-manifest가 필요합니다.")
     return args
 
 
@@ -168,6 +185,65 @@ def require_api_key(settings: Config) -> SecretStr:
     return api_key
 
 
+def build_embedding_release_contract(
+    *,
+    settings: Config,
+    distance: KnowledgeVectorDistance,
+) -> EmbeddingReleaseContract:
+    return EmbeddingReleaseContract(
+        model_name=settings.OPENAI_EMBEDDING_MODEL,
+        dimensions=settings.OPENAI_EMBEDDING_DIMENSIONS,
+        distance=distance,
+        tokenizer_encoding=settings.KNOWLEDGE_TOKENIZER_ENCODING,
+        chunking_version=settings.KNOWLEDGE_CHUNKING_VERSION,
+        embedding_text_version=settings.KNOWLEDGE_EMBEDDING_TEXT_VERSION,
+    )
+
+
+def ensure_embedding_reuse_contract(
+    *,
+    target_contract: EmbeddingReleaseContract,
+    baseline_contract: EmbeddingReleaseContract,
+) -> None:
+    target_contract.assert_reuse_compatible(baseline_contract)
+
+
+def load_embedding_release_contract(
+    manifest_path: Path,
+) -> EmbeddingReleaseContract:
+    payload = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    try:
+        return EmbeddingReleaseContract(
+            model_name=str(payload["embedding_model"]),
+            dimensions=int(payload["embedding_dimensions"]),
+            distance=KnowledgeVectorDistance(payload["distance"]),
+            tokenizer_encoding=str(payload["tokenizer_encoding"]),
+            chunking_version=str(payload["chunking_version"]),
+            embedding_text_version=str(payload["embedding_text_version"]),
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("release manifest의 임베딩 계약이 올바르지 않습니다.") from error
+
+
+def write_embedding_release_manifest(
+    *,
+    manifest_path: Path,
+    contract: EmbeddingReleaseContract,
+    collection_name: str,
+    dataset_version: str,
+) -> None:
+    path = Path(manifest_path)
+    payload = contract.to_manifest(
+        collection_name=collection_name,
+        dataset_version=dataset_version,
+    )
+    serialized = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    if path.exists() and path.read_text(encoding="utf-8") != serialized:
+        raise ValueError("기존 release manifest는 다른 계약으로 덮어쓸 수 없습니다.")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(serialized, encoding="utf-8")
+
+
 def load_release_chunks(args: argparse.Namespace) -> list[KnowledgeChunk]:
     return KnowledgeChunkLoader().load(
         args.chunks_dir,
@@ -215,6 +291,7 @@ async def load_reusable_vectors_from_collection(
         raise ValueError("벡터 재사용 기준 청크가 없습니다.")
 
     reused_vectors: dict[str, list[float]] = {}
+    conflicting_texts: set[str] = set()
     offset = None
     while True:
         points, next_offset = await client.scroll(
@@ -225,28 +302,49 @@ async def load_reusable_vectors_from_collection(
             with_vectors=True,
         )
         for point in points:
-            payload = point.payload or {}
-            embedding_text = payload.get("embedding_text")
-            if not isinstance(embedding_text, str) or embedding_text not in expected_texts:
-                continue
-            vector = point.vector
-            if not isinstance(vector, list) or not all(isinstance(value, (int, float)) for value in vector):
-                raise ValueError("벡터 재사용 원본은 단일 Dense 벡터 구조여야 합니다.")
-            normalized_vector = [float(value) for value in vector]
-            previous_vector = reused_vectors.get(embedding_text)
-            if previous_vector is not None and previous_vector != normalized_vector:
-                raise ValueError("같은 embedding_text에 서로 다른 원본 벡터가 있습니다.")
-            reused_vectors[embedding_text] = normalized_vector
+            _record_reusable_vector(
+                point=point,
+                expected_texts=expected_texts,
+                reused_vectors=reused_vectors,
+                conflicting_texts=conflicting_texts,
+            )
         if next_offset is None:
             break
         offset = next_offset
 
-    missing_texts = expected_texts - reused_vectors.keys()
+    missing_texts = expected_texts - reused_vectors.keys() - conflicting_texts
     if missing_texts:
         raise ValueError(
             f"벡터 재사용 원본 컬렉션에 baseline embedding_text가 없습니다: missing_count={len(missing_texts)}"
         )
     return reused_vectors
+
+
+def _record_reusable_vector(
+    *,
+    point: object,
+    expected_texts: set[str],
+    reused_vectors: dict[str, list[float]],
+    conflicting_texts: set[str],
+) -> None:
+    payload = getattr(point, "payload", None) or {}
+    embedding_text = payload.get("embedding_text")
+    if not isinstance(embedding_text, str) or embedding_text not in expected_texts:
+        return
+
+    vector = getattr(point, "vector", None)
+    if not isinstance(vector, list) or not all(isinstance(value, (int, float)) for value in vector):
+        raise ValueError("벡터 재사용 원본은 단일 Dense 벡터 구조여야 합니다.")
+    if embedding_text in conflicting_texts:
+        return
+
+    normalized_vector = [float(value) for value in vector]
+    previous_vector = reused_vectors.get(embedding_text)
+    if previous_vector is not None and previous_vector != normalized_vector:
+        conflicting_texts.add(embedding_text)
+        reused_vectors.pop(embedding_text)
+        return
+    reused_vectors[embedding_text] = normalized_vector
 
 
 def ensure_preprocessing_approved(
@@ -449,6 +547,11 @@ async def run_cli(
     settings: Config | None = None,
 ) -> KnowledgeReleaseCommandResult:
     resolved_settings = settings or Config()
+    target_contract = build_embedding_release_contract(
+        settings=resolved_settings,
+        distance=getattr(args, "distance", resolved_settings.KNOWLEDGE_VECTOR_DISTANCE),
+    )
+    release_manifest = getattr(args, "release_manifest", None)
     chunks = load_release_chunks(args)
     ensure_preprocessing_approved(
         chunks,
@@ -500,6 +603,13 @@ async def run_cli(
         if reuse_collection is not None:
             if baseline_chunks is None:
                 raise ValueError("벡터 재사용에는 baseline 청크가 필요합니다.")
+            baseline_manifest_path = getattr(args, "baseline_release_manifest", None)
+            if baseline_manifest_path is None:
+                raise ValueError("벡터 재사용에는 baseline release manifest가 필요합니다.")
+            ensure_embedding_reuse_contract(
+                target_contract=target_contract,
+                baseline_contract=load_embedding_release_contract(baseline_manifest_path),
+            )
             reusable_vectors_by_embedding_text = await load_reusable_vectors_from_collection(
                 client=qdrant_client,
                 collection_name=reuse_collection,
@@ -517,10 +627,18 @@ async def run_cli(
             args=args,
             qdrant_client=qdrant_client,
         )
-        return await indexer.index_release(
+        result = await indexer.index_release(
             chunks,
             reusable_vectors_by_embedding_text=reusable_vectors_by_embedding_text,
         )
+        if release_manifest is not None:
+            write_embedding_release_manifest(
+                manifest_path=release_manifest,
+                contract=target_contract,
+                collection_name=args.collection,
+                dataset_version=args.dataset_version,
+            )
+        return result
     finally:
         await qdrant_client.close()
 

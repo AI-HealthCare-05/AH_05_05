@@ -30,13 +30,10 @@ CSV_FIELD_MAP = {
     "이 약을 사용하는 동안 주의해야 할 약 또는 음식은 무엇입니까?": ("drug_food_interactions"),
     "이 약은 어떤 이상반응이 나타날 수 있습니까?": "adverse_reactions",
     "이 약은 어떻게 보관해야 합니까?": "storage_instructions",
-    "낱알이미지": "item_image_url",
 }
 
-OPTIONAL_FIELD_NAMES = frozenset({"item_image_url"})
-DUPLICATE_COMPARISON_FIELDS = tuple(
-    field_name for field_name in CSV_FIELD_MAP.values() if field_name != "item_image_url"
-)
+OPTIONAL_FIELD_NAMES = frozenset()
+DUPLICATE_COMPARISON_FIELDS = tuple(CSV_FIELD_MAP.values())
 
 
 class ImportValidationError(ValueError):
@@ -92,8 +89,6 @@ def parse_csv(path: Path) -> MedicationProductGuideDataset:
                 raise ImportValidationError(
                     f"품목일련번호 {item_seq}의 중복 행 내용이 충돌합니다: " + ", ".join(different_fields)
                 )
-            if previous["item_image_url"] is None:
-                previous["item_image_url"] = record["item_image_url"]
             duplicate_row_count += 1
 
     records = list(records_by_item_seq.values())

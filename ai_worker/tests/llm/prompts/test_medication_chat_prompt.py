@@ -6,10 +6,6 @@ from ai_worker.llm.prompts.medication_chat_prompt import (
     SYSTEM_PROMPT,
     build_medication_chat_messages,
 )
-from ai_worker.llm.prompts.prompt_assets import (
-    MedicationPromptStage,
-    load_prompt_chain_stage,
-)
 from ai_worker.schemas.chat import ChatHistoryMessage
 from ai_worker.schemas.enums import ChatRole, SafetyStatus
 from ai_worker.schemas.evidence_reasoning import EvidenceClaim, EvidenceReasoningOutput
@@ -54,13 +50,6 @@ def test_prompt_document_parser_extracts_runtime_sections() -> None:
     assert document.system == "시스템 지침"
     assert document.user == "질문: {payload_json}"
     assert document.assistant_example == ("근거가 확인된 내용만 답변합니다.")
-
-
-def test_evidence_reasoning_prompt_limits_claims_to_the_requested_pair() -> None:
-    prompt = load_prompt_chain_stage(MedicationPromptStage.EVIDENCE_REASONING)
-
-    assert "질문 pair 밖의 제3 성분·식품·약물" in prompt.compiled_system
-    assert "질문 pair의 직접 관계" in prompt.compiled_system
 
 
 def test_build_messages_applies_markdown_user_template() -> None:
@@ -231,19 +220,16 @@ def test_build_messages_keeps_history_for_confirmed_session_reference() -> None:
 def test_system_prompt_requires_limited_markdown_product_answer() -> None:
     assert "✅ **효능**" in SYSTEM_PROMPT
     assert "🚨 **이상반응**" in SYSTEM_PROMPT
-    assert "🍗 **함께 주의할 약·음식**" in SYSTEM_PROMPT
     assert "`- ` 목록" in SYSTEM_PROMPT
-    assert "굵은 제품명만" in SYSTEM_PROMPT
+    assert "초안에 있는 이름만 독립한 굵은 줄" in SYSTEM_PROMPT
     assert "값이 없는 항목은 출력하지" in SYSTEM_PROMPT
     assert "질문과 직접 관계있는 섹션" in SYSTEM_PROMPT
-    assert "각 섹션은 최대 3개 bullet" in SYSTEM_PROMPT
-    assert "10어절 이내의 단문 1~2개" in SYSTEM_PROMPT
-    assert "문자 수 기준으로 잘라 `…`를 붙이지" in SYSTEM_PROMPT
-    assert "목 염증으로 인한 통증과 불편감 완화에 사용함" in SYSTEM_PROMPT
+    assert "각 섹션은 최대 5개 bullet" in SYSTEM_PROMPT
+    assert "10어절 이내" in SYSTEM_PROMPT
 
 
-def test_system_prompt_uses_v7_six_element_contract_and_private_checklist() -> None:
-    assert MEDICATION_CHAT_PROMPT_VERSION == "medication-chat-prompt-v7"
+def test_system_prompt_uses_v8_six_element_contract_and_private_checklist() -> None:
+    assert MEDICATION_CHAT_PROMPT_VERSION == "medication-chat-prompt-v8"
     for heading in (
         "역할(Role)",
         "작업(Task)",
@@ -255,25 +241,27 @@ def test_system_prompt_uses_v7_six_element_contract_and_private_checklist() -> N
         assert heading in SYSTEM_PROMPT
     assert "내부적으로 점검" in SYSTEM_PROMPT
     assert "점검 과정이나 숨겨진 추론문은 출력하지" in SYSTEM_PROMPT
-    assert "covered section만 출력" in SYSTEM_PROMPT
+    assert "covered section 밖의 항목은 추가하지" in SYSTEM_PROMPT
     assert "초안에 포함된 의료 면책 문구를 유지" not in SYSTEM_PROMPT
     assert "✉️ **안내사항**" in SYSTEM_PROMPT
     assert "📭 **공식 확인 경로**" in SYSTEM_PROMPT
     assert "의료진·약사에게 확인할 내용" not in SYSTEM_PROMPT
 
 
-def test_system_prompt_forbids_claiming_an_unverified_interaction_is_safe_or_risky() -> None:
-    assert "직접 근거가 없는 조합을 안전하거나 위험하다고 단정하지 마세요" in SYSTEM_PROMPT
+def test_system_prompt_forbids_repeating_unverified_interaction_notice() -> None:
+    assert "확인하지 못한 조합은 한 번만 표시" in SYSTEM_PROMPT
+
+
+def test_system_prompt_preserves_merged_answer_constraints() -> None:
+    assert "🍗 **함께 주의할 약·음식**" in SYSTEM_PROMPT
+    assert "직접 근거가 없는 조합을 안전하거나 위험하다고 단정하지" in SYSTEM_PROMPT
+    assert "`|`, `(`, `)`" in SYSTEM_PROMPT
+    assert "rewrite_instruction" in SYSTEM_PROMPT
 
 
 def test_system_prompt_limits_each_requested_section_to_short_bullets() -> None:
-    assert "각 bullet은 한 가지 핵심을 10어절 이내의 단문 1~2개로" in SYSTEM_PROMPT
-    assert "각 섹션은 최대 3개 bullet" in SYSTEM_PROMPT
-    assert "`|`, `(`, `)`는 사용하지 마세요" in SYSTEM_PROMPT
-
-
-def test_system_prompt_limits_an_adverse_reaction_question_to_that_section() -> None:
-    assert "이상반응만 질문하면 `🚨 **이상반응**`만 출력하세요" in SYSTEM_PROMPT
+    assert "각 bullet은 한 가지 핵심만 10어절 이내" in SYSTEM_PROMPT
+    assert "각 섹션은 최대 5개 bullet" in SYSTEM_PROMPT
 
 
 def test_prompt_limits_product_output_to_requested_sections() -> None:
@@ -311,7 +299,7 @@ def test_prompt_limits_product_output_to_requested_sections() -> None:
     assert isinstance(user_content, str)
     payload = json.loads(user_content.removeprefix("입력 데이터(JSON)\n"))
     assert payload["requested_section_types"] == ["FUNCTION", "CAUTION"]
-    assert "covered section만 출력" in SYSTEM_PROMPT
+    assert "covered section 밖의 항목은 추가하지" in SYSTEM_PROMPT
 
 
 def test_system_prompt_treats_active_intake_as_requested_sections() -> None:

@@ -94,6 +94,7 @@ class OpenAIEmbeddingProvider:
         vector = await self._client.aembed_query(normalized_query)
 
         self._validate_vector(vector)
+        self._validate_document_vector_norm(vector)
         return vector
 
     def _validate_vector(

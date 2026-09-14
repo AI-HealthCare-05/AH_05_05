@@ -5,6 +5,9 @@ from collections import Counter
 from typing import NamedTuple, Protocol
 
 from ai_worker.domain.interaction_question_detector import is_interaction_question
+from ai_worker.domain.supplement_function_goal_detector import (
+    is_supplement_function_goal_question,
+)
 from ai_worker.rag.metadata.supplement_ingredient_family_registry import (
     find_supplement_ingredient_family,
 )
@@ -87,6 +90,10 @@ class RuleBasedMedicationQuestionResolver:
     _CANONICAL_RELATION_ENDING = "돼"
     _RELATION_INTAKE_MAX_JAMO_DISTANCE = 2
     _TRAILING_PRODUCT_INGREDIENT = re.compile(r"\((?P<ingredient>[^()]+)\)\s*$")
+    _PRODUCT_STRENGTH_SUFFIX = re.compile(
+        r"(?:\d+(?:[.,]\d+)?\s*(?:mg|mcg|μg|㎍|g|mL|ml|밀리그램|마이크로그램|그램)).*$",
+        flags=re.IGNORECASE,
+    )
     _NON_ENTITY_TOKENS = {
         "같이",
         "관련",
@@ -223,7 +230,10 @@ class RuleBasedMedicationQuestionResolver:
             )
         catalog = catalog_index.catalog
 
-        tokens = self._question_tokens(normalized_question)
+        tokens = self._question_tokens(
+            normalized_question,
+            catalog_index=catalog_index,
+        )
         spacing_resolution = self._spacing_resolution(
             question=normalized_question,
             catalog=catalog,
@@ -391,25 +401,13 @@ class RuleBasedMedicationQuestionResolver:
         entries_by_expression: dict[str, list[MedicationCatalogEntry]] = {}
         catalog: dict[str, str] = {}
         for entry in entries:
-            for expression in entry.expressions:
+            for expression in [*entry.expressions, *cls._derived_product_stem_aliases(entry)]:
                 for normalized_expression in cls._expression_keys(expression):
                     catalog.setdefault(normalized_expression, expression)
                     entries_by_expression.setdefault(
                         normalized_expression,
                         [],
                     ).append(entry)
-
-        existing_expression_keys = set(entries_by_expression)
-        for entry in entries:
-            alias = cls._particle_stripped_product_alias(entry)
-            if alias is None:
-                continue
-            normalized_alias = cls._normalize_expression(alias)
-            if not normalized_alias or normalized_alias in existing_expression_keys:
-                continue
-            catalog[normalized_alias] = alias
-            entries_by_expression[normalized_alias] = [entry]
-            existing_expression_keys.add(normalized_alias)
 
         normalized_entries = {
             key: tuple(
@@ -440,22 +438,14 @@ class RuleBasedMedicationQuestionResolver:
         )
 
     @classmethod
-    def _particle_stripped_product_alias(
-        cls,
-        entry: MedicationCatalogEntry,
-    ) -> str | None:
-        """조사처럼 끝나는 제품명의 본문 일치를 위한 충돌 없는 보조 별칭이다."""
+    def _derived_product_stem_aliases(cls, entry: MedicationCatalogEntry) -> list[str]:
+        """RDB 제품명에서만 용량·괄호 성분을 뺀 짧은 제품명을 보강한다."""
 
-        if entry.entity_type not in cls._PRODUCT_ENTITY_TYPES:
-            return None
-        candidate = cls._TRAILING_PRODUCT_INGREDIENT.sub("", entry.canonical_name).strip()
-        previous = ""
-        while previous != candidate:
-            previous = candidate
-            candidate = cls._TRAILING_PARTICLE.sub("", candidate)
-        if candidate == entry.canonical_name or len(candidate) < 3:
-            return None
-        return candidate
+        if entry.source is not MedicationQueryEntitySource.RDBMS or entry.entity_type not in cls._PRODUCT_ENTITY_TYPES:
+            return []
+        without_ingredient = cls._TRAILING_PRODUCT_INGREDIENT.sub("", entry.canonical_name).strip()
+        stem = cls._PRODUCT_STRENGTH_SUFFIX.sub("", without_ingredient).strip()
+        return [stem] if len(cls._normalize_expression(stem)) >= 3 and stem != entry.canonical_name else []
 
     @classmethod
     def _entry_selection_priority(
@@ -860,7 +850,10 @@ class RuleBasedMedicationQuestionResolver:
         question: str,
         catalog_index: _CatalogIndex,
     ) -> MedicationExpressionNormalizationStrategy:
-        tokens = cls._question_tokens(question)
+        tokens = cls._question_tokens(
+            question,
+            catalog_index=catalog_index,
+        )
         for start, end, key in cls._matching_spans(
             question=question,
             tokens=tokens,
@@ -912,7 +905,10 @@ class RuleBasedMedicationQuestionResolver:
         question: str,
         catalog_index: _CatalogIndex,
     ) -> list[MedicationQueryEntity]:
-        tokens = cls._question_tokens(question)
+        tokens = cls._question_tokens(
+            question,
+            catalog_index=catalog_index,
+        )
         matches = cls._matching_spans(
             question=question,
             tokens=tokens,
@@ -1053,14 +1049,30 @@ class RuleBasedMedicationQuestionResolver:
         ]
 
     @classmethod
-    def _question_tokens(cls, question: str) -> list[_QuestionToken]:
+    def _question_tokens(
+        cls,
+        question: str,
+        *,
+        catalog_index: _CatalogIndex,
+    ) -> list[_QuestionToken]:
         tokens: list[_QuestionToken] = []
         for match in cls._TOKEN.finditer(question):
-            surface = match.group()
+            original_surface = match.group()
+            surface = original_surface
             previous = ""
             while previous != surface:
                 previous = surface
                 surface = cls._TRAILING_PARTICLE.sub("", surface)
+            if not surface or cls._has_catalog_expression(
+                original_surface,
+                catalog_index=catalog_index,
+            ):
+                surface = original_surface
+            elif original_surface.endswith("이") and not cls._has_catalog_expression(
+                surface,
+                catalog_index=catalog_index,
+            ):
+                surface = original_surface
             if surface:
                 tokens.append(
                     _QuestionToken(
@@ -1070,6 +1082,15 @@ class RuleBasedMedicationQuestionResolver:
                     )
                 )
         return tokens
+
+    @classmethod
+    def _has_catalog_expression(
+        cls,
+        surface: str,
+        *,
+        catalog_index: _CatalogIndex,
+    ) -> bool:
+        return any(key in catalog_index.entries_by_expression for key in cls._expression_keys(surface))
 
     @classmethod
     def _candidate_surfaces(
@@ -1428,7 +1449,11 @@ class RuleBasedMedicationQuestionResolver:
 
     @classmethod
     def _is_domain_related(cls, question: str) -> bool:
-        return bool(cls._DOMAIN_CUE.search(question) or cls._PRODUCT_FORM_CUE.search(question))
+        return bool(
+            cls._DOMAIN_CUE.search(question)
+            or cls._PRODUCT_FORM_CUE.search(question)
+            or is_supplement_function_goal_question(question)
+        )
 
     @staticmethod
     def _result(

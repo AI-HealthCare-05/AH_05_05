@@ -27,6 +27,39 @@ def test_v7_prompt_pack_loads_only_requested_stage() -> None:
     assert "예시(Example)" in document.compiled_system
 
 
+def test_v8_prompt_pack_is_the_runtime_default_and_keeps_all_chain_stages() -> None:
+    prompt_assets = _prompt_assets_module()
+
+    assert prompt_assets.MEDICATION_CHAT_PROMPT_CHAIN_ASSET == "medication_chat_prompt_v8.md"
+    for stage in prompt_assets.MedicationPromptStage:
+        document = prompt_assets.load_prompt_chain_stage(stage)
+        assert document.system
+        assert document.user
+        assert document.examples
+
+
+def test_v8_conversation_gate_limits_note_summary_to_explicit_requests() -> None:
+    prompt_assets = _prompt_assets_module()
+
+    document = prompt_assets.load_prompt_chain_stage(
+        prompt_assets.MedicationPromptStage.CONVERSATION_GATE,
+    )
+
+    assert "복약메모·복약기록을 정리·요약" in document.system
+    assert "잠 잘자려면 뭘 먹어야해?" in document.system
+
+
+def test_v8_answer_generation_preserves_functional_goal_ingredient_lists() -> None:
+    prompt_assets = _prompt_assets_module()
+
+    document = prompt_assets.load_prompt_chain_stage(
+        prompt_assets.MedicationPromptStage.ANSWER_GENERATION,
+    )
+
+    assert "🧬 **성분**" in document.system
+    assert "기능 설명 문장" in document.system
+
+
 @pytest.mark.parametrize(
     ("stage_name", "uses_directional_stimulus"),
     [

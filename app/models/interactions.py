@@ -30,7 +30,6 @@ class MedicationProductGuide(models.Model):
     drug_food_interactions = fields.TextField()
     adverse_reactions = fields.TextField()
     storage_instructions = fields.TextField()
-    item_image_url = fields.TextField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
@@ -63,7 +62,6 @@ class InteractionEntityAlias(models.Model):
     alias_type = fields.CharEnumField(InteractionAliasType)
     alias = fields.CharField(max_length=255)
     normalized_alias = fields.CharField(max_length=255)
-    is_preferred = fields.BooleanField(default=False)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:

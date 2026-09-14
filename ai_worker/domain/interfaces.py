@@ -34,6 +34,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationAnswerGenerationOutcome,
     MedicationChatRequest,
     MedicationChatResult,
+    MedicationGuideFact,
     MedicationGuideLookup,
     TherapeuticClassSelection,
 )
@@ -157,6 +158,11 @@ class MedicationGuideRepository(Protocol):
         self,
         product_name: str,
     ) -> MedicationGuideLookup: ...
+
+    async def find_caution_guides_by_ingredient_names(
+        self,
+        ingredient_names: list[str],
+    ) -> dict[str, list[MedicationGuideFact]]: ...
 
 
 class MedicationQuestionResolver(Protocol):

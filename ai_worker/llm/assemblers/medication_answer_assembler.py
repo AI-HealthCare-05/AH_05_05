@@ -1,5 +1,7 @@
-from ai_worker.schemas.evidence_reasoning import EvidenceReasoningOutput
+import re
+
 from ai_worker.schemas.knowledge import (
+    KnowledgeDocumentType,
     KnowledgeSectionType,
     RetrievedKnowledgeChunk,
 )
@@ -26,6 +28,13 @@ class MedicationAnswerAssembler:
         "자료 없음",
         "정보 없음",
     }
+    _GUIDE_PARENTHETICAL_GLOSS = re.compile(r"\s*\([^()]*\)")
+    _GUIDE_RDB_SPACING = (
+        ("감기로인한", "감기로 인한 "),
+        ("발열및", "발열 및 "),
+        ("에사용합니다", "에 사용합니다"),
+        ("동통", "통증"),
+    )
 
     def assemble(
         self,
@@ -43,20 +52,20 @@ class MedicationAnswerAssembler:
         question_interaction_pairs: list[MedicationInteractionQueryPair] | None = None,
         active_intake_interaction: bool = False,
         evidence_coverage: MedicationEvidenceCoverage | None = None,
-        evidence_reasoning: EvidenceReasoningOutput | None = None,
-        adverse_reaction_only: bool = False,
-        include_drug_food_guidance: bool = False,
+        response_subject: str | None = None,
+        adverse_reaction_question: bool = False,
+        functional_goal_title: str | None = None,
+        form_caution_guides: dict[str, list[MedicationGuideFact]] | None = None,
     ) -> str:
         intake_sections = self._patient_intake_sections(context)
         sections: list[str] = []
-        interaction_sections = self._interaction_sections(
+        interaction_sections, has_unverified_interaction_notice = self._interaction_sections(
             rules=rules,
             chunks=chunks,
             interaction_question=interaction_question,
             question_interaction_pairs=question_interaction_pairs or [],
             active_intake_interaction=active_intake_interaction,
             evidence_coverage=evidence_coverage,
-            evidence_reasoning=evidence_reasoning,
         )
         sections.extend(interaction_sections)
         if guide is not None:
@@ -65,50 +74,241 @@ class MedicationAnswerAssembler:
                     guide=guide,
                     family_reference=family_reference,
                     evidence_coverage=evidence_coverage,
-                    adverse_reaction_only=adverse_reaction_only,
-                    include_drug_food_guidance=include_drug_food_guidance,
+                    adverse_reaction_question=adverse_reaction_question,
                 )
             )
-        if chunks and not question_interaction_pairs:
-            public_lines = [f"- {chunk.content}" for chunk in chunks[:4]]
-            if interaction_question:
-                section_title = "검색된 상호작용 연구 근거"
-            elif ingredient_family_reference:
-                section_title = "성분 계열 일반 정보"
-                public_lines.insert(
-                    0,
-                    (
-                        "- 아래 내용은 단일제의 일반 정보입니다. 정확한 제품의 "
-                        "성분·함량·제형에 따라 제품·복합제별 안내가 다를 수 "
-                        "있으므로 제품명을 함께 확인하세요."
-                    ),
-                )
-            else:
-                section_title = "공공자료 추가 설명"
-            sections.append(section_title + "\n" + "\n".join(public_lines))
+        form_caution_section = self._form_caution_section(
+            form_caution_guides or {},
+            response_subject=response_subject,
+        )
+        if form_caution_section:
+            sections.append(form_caution_section)
+        if chunks and not question_interaction_pairs and not form_caution_section:
+            public_section = self._functional_goal_section(
+                chunks=chunks,
+                functional_goal_title=functional_goal_title,
+            ) or self._public_knowledge_section(
+                chunks=chunks,
+                interaction_question=interaction_question,
+                ingredient_family_reference=ingredient_family_reference,
+                response_subject=response_subject,
+                adverse_reaction_question=adverse_reaction_question,
+                functional_goal_title=functional_goal_title,
+            )
+            sections.append(public_section)
         ingredient_family_section = self._ingredient_family_section(
             ingredient_family,
         )
         sections.extend(
             [ingredient_family_section] if ingredient_family_section else [],
         )
+        unsupported_section = self._unsupported_pairs_section(
+            unsupported_pairs or [],
+        )
+        if unsupported_section and not has_unverified_interaction_notice and not active_intake_interaction:
+            sections.append(unsupported_section)
+            has_unverified_interaction_notice = True
         missing_section = self._missing_evidence_section(
             evidence_coverage,
-            exclude_interaction=True,
+            exclude_interaction=has_unverified_interaction_notice,
         )
         sections.extend([missing_section] if missing_section else [])
         if not sections:
-            if interaction_question:
-                sections.append("질문한 조합에 대한 직접 근거를 찾지 못했습니다.")
-            else:
-                sections.append(
-                    "현재 보유한 RDBMS와 공공자료에서 질문에 답할 근거를 "
-                    "찾지 못했습니다. 자료가 없다는 사실이 해당 제품이나 조합이 "
-                    "안전하다는 뜻은 아닙니다."
-                )
+            sections.append(
+                "현재 보유한 RDBMS와 공공자료에서 질문에 답할 근거를 "
+                "찾지 못했습니다. 자료가 없다는 사실이 해당 제품이나 조합이 "
+                "안전하다는 뜻은 아닙니다."
+            )
         if intake_sections and sections:
             return "\n\n".join([*intake_sections, "---", *sections])
         return "\n\n".join([*intake_sections, *sections])
+
+    @classmethod
+    def _form_caution_section(
+        cls,
+        form_caution_guides: dict[str, list[MedicationGuideFact]],
+        *,
+        response_subject: str | None,
+    ) -> str | None:
+        if not form_caution_guides:
+            return None
+        sections = [f"**{response_subject or '성분'}**", "⚠️ **주의사항**"]
+        for ingredient_name, guides in form_caution_guides.items():
+            warnings = list(
+                dict.fromkeys(
+                    cls._clean_guide_value(value)
+                    for guide in guides
+                    for value in (
+                        guide.pre_use_warning,
+                        guide.precautions,
+                        guide.adverse_reactions,
+                    )
+                    if cls._has_guide_value(value)
+                )
+            )
+            if warnings:
+                sections.append(
+                    f"**{ingredient_name}**\n" + "\n".join(f"- {warning}" for warning in warnings[:3]),
+                )
+        return "\n\n".join(sections) if len(sections) > 2 else None
+
+    @staticmethod
+    def _functional_goal_section(
+        *,
+        chunks: list[RetrievedKnowledgeChunk],
+        functional_goal_title: str | None,
+    ) -> str | None:
+        if functional_goal_title is None:
+            return None
+        return MedicationAnswerAssembler._named_functional_ingredient_sections(
+            chunks,
+            functional_goal_title=functional_goal_title,
+        )
+
+    @staticmethod
+    def _public_knowledge_section(
+        *,
+        chunks: list[RetrievedKnowledgeChunk],
+        interaction_question: bool,
+        ingredient_family_reference: bool,
+        response_subject: str | None,
+        adverse_reaction_question: bool,
+        functional_goal_title: str | None,
+    ) -> str:
+        public_lines = [f"- {chunk.content}" for chunk in chunks[:4]]
+        if interaction_question:
+            return "검색된 상호작용 연구 근거\n" + "\n".join(public_lines)
+        adverse_case_chunks = [
+            chunk for chunk in chunks if chunk.metadata.document_type is KnowledgeDocumentType.ADVERSE_CASE_REPORT
+        ]
+        if adverse_reaction_question and adverse_case_chunks:
+            return MedicationAnswerAssembler._adverse_case_report_section(
+                adverse_case_chunks,
+            )
+        if ingredient_family_reference:
+            public_lines.insert(
+                0,
+                (
+                    "- 아래 내용은 단일제의 일반 정보입니다. 정확한 제품의 "
+                    "성분·함량·제형에 따라 제품·복합제별 안내가 다를 수 "
+                    "있으므로 제품명을 함께 확인하세요."
+                ),
+            )
+            return "성분 계열 일반 정보\n" + "\n".join(public_lines)
+        if not response_subject:
+            if named_function_sections := MedicationAnswerAssembler._named_functional_ingredient_sections(
+                chunks,
+                functional_goal_title=functional_goal_title,
+            ):
+                return named_function_sections
+            return "공공자료 추가 설명\n" + "\n".join(public_lines)
+
+        sections = [f"**{response_subject}**"]
+        section_headings = {
+            KnowledgeSectionType.FUNCTION: "✅ **효능**",
+            KnowledgeSectionType.DAILY_INTAKE: "✅ **복용법**",
+            KnowledgeSectionType.CAUTION: ("🚨 **이상반응**" if adverse_reaction_question else "⚠️ **주의사항**"),
+        }
+        for section_type in (
+            KnowledgeSectionType.FUNCTION,
+            KnowledgeSectionType.DAILY_INTAKE,
+            KnowledgeSectionType.CAUTION,
+        ):
+            section_lines = [
+                f"- {chunk.content}" for chunk in chunks[:4] if chunk.metadata.section_type is section_type
+            ]
+            if section_lines:
+                sections.append(section_headings[section_type] + "\n" + "\n".join(section_lines))
+        if len(sections) == 1:
+            sections.append("✉️ **안내사항**\n" + "\n".join(public_lines))
+        return "\n\n".join(sections)
+
+    @staticmethod
+    def _named_functional_ingredient_sections(
+        chunks: list[RetrievedKnowledgeChunk],
+        *,
+        functional_goal_title: str | None = None,
+    ) -> str | None:
+        """목표형 영양제 질문에는 검색된 성분명을 답변의 식별자로 남긴다."""
+
+        ingredient_names: list[str] = []
+        seen_names: set[str] = set()
+        for chunk in chunks:
+            if chunk.metadata.section_type is not KnowledgeSectionType.FUNCTION:
+                continue
+            for ingredient_name in chunk.metadata.ingredient_names:
+                normalized_name = ingredient_name.strip()
+                if not normalized_name or normalized_name.casefold() in seen_names:
+                    continue
+                seen_names.add(normalized_name.casefold())
+                ingredient_names.append(normalized_name)
+                if len(ingredient_names) == (3 if functional_goal_title == "건강 증진" else 4):
+                    break
+            if len(ingredient_names) == (3 if functional_goal_title == "건강 증진" else 4):
+                break
+        if not ingredient_names:
+            return None
+        if functional_goal_title:
+            if functional_goal_title == "건강 증진":
+                return "\n\n".join(
+                    [
+                        f"**{functional_goal_title}**",
+                        "🧬 **성분**\n"
+                        + "\n".join(
+                            f"- {name}: {MedicationAnswerAssembler._function_for_ingredient(chunks, name)}"
+                            for name in ingredient_names
+                        ),
+                    ]
+                )
+            return "\n\n".join(
+                [
+                    f"**{functional_goal_title}**",
+                    "🧬 **성분**\n" + "\n".join(f"- {name}" for name in ingredient_names),
+                ]
+            )
+        return "\n\n".join(f"**{name}**" for name in ingredient_names)
+
+    @staticmethod
+    def _function_for_ingredient(chunks: list[RetrievedKnowledgeChunk], ingredient_name: str) -> str:
+        for chunk in chunks:
+            if ingredient_name not in chunk.metadata.ingredient_names:
+                continue
+            content = re.sub(rf"^{re.escape(ingredient_name)}(?:은|는|이|가)?\s*", "", chunk.content.strip())
+            return re.sub(r"습니다\.?$", "음", content).rstrip(".")
+        return "기능 정보를 확인함"
+
+    @staticmethod
+    def _adverse_case_report_section(
+        chunks: list[RetrievedKnowledgeChunk],
+    ) -> str:
+        """이상사례 문서를 질문용 짧은 보고서 구조로 재배열한다."""
+
+        sections = ["🩻 **부작용 보고서**"]
+        section_definitions = (
+            (
+                "**이상사례**",
+                {KnowledgeSectionType.ADVERSE_EVENT},
+                2,
+            ),
+            (
+                "**상세 사항**",
+                {
+                    KnowledgeSectionType.CASE_SUMMARY,
+                    KnowledgeSectionType.ASSESSMENT,
+                },
+                3,
+            ),
+        )
+        for heading, section_types, limit in section_definitions:
+            lines = list(
+                dict.fromkeys(f"- {chunk.content}" for chunk in chunks if chunk.metadata.section_type in section_types)
+            )[:limit]
+            if lines:
+                sections.append(heading + "\n" + "\n".join(lines))
+
+        if len(sections) == 1:
+            sections.append("**이상사례**\n" + "\n".join(f"- {chunk.content}" for chunk in chunks[:2]))
+        return "\n\n".join(sections)
 
     def _product_guide_section(
         self,
@@ -116,8 +316,7 @@ class MedicationAnswerAssembler:
         guide: MedicationGuideFact,
         family_reference: bool,
         evidence_coverage: MedicationEvidenceCoverage | None,
-        adverse_reaction_only: bool,
-        include_drug_food_guidance: bool,
+        adverse_reaction_question: bool,
     ) -> str:
         if family_reference:
             guide_lines = [f"- 기준 제품: {guide.product_name} ({guide.manufacturer_name})"]
@@ -135,7 +334,7 @@ class MedicationAnswerAssembler:
 
         covered = self._covered_sections(evidence_coverage)
         guide_sections = [f"**{guide.product_name}**"]
-        if adverse_reaction_only:
+        if adverse_reaction_question:
             self._append_allowed_guide_section(
                 guide_sections,
                 heading="🚨 **이상반응**",
@@ -175,24 +374,23 @@ class MedicationAnswerAssembler:
             guide_sections.append(
                 "⚠️ **주의사항**\n" + "\n".join(self._guide_line("", value) for value in caution_values)
             )
+        if evidence_coverage is None or not evidence_coverage.requested_section_types:
+            self._append_allowed_guide_section(
+                guide_sections,
+                heading="🚨 **이상반응**",
+                value=guide.adverse_reactions,
+                section_type=KnowledgeSectionType.CAUTION,
+                evidence_coverage=evidence_coverage,
+                covered=covered,
+            )
         self._append_allowed_guide_section(
             guide_sections,
-            heading="🚨 **이상반응**",
-            value=guide.adverse_reactions,
-            section_type=KnowledgeSectionType.CAUTION,
+            heading="🔁 **함께 주의할 약·음식**",
+            value=guide.drug_food_interactions,
+            section_type=KnowledgeSectionType.INTERACTION,
             evidence_coverage=evidence_coverage,
             covered=covered,
         )
-        if self._has_guide_value(guide.drug_food_interactions) and (
-            include_drug_food_guidance
-            or self._guide_value_is_allowed(
-                guide.drug_food_interactions,
-                KnowledgeSectionType.INTERACTION,
-                coverage=evidence_coverage,
-                covered=covered,
-            )
-        ):
-            guide_sections.append("🍗 **함께 주의할 약·음식**\n" + self._guide_line("", guide.drug_food_interactions))
         return "\n\n".join(guide_sections)
 
     def _append_allowed_guide_section(
@@ -223,8 +421,7 @@ class MedicationAnswerAssembler:
         question_interaction_pairs: list[MedicationInteractionQueryPair],
         active_intake_interaction: bool,
         evidence_coverage: MedicationEvidenceCoverage | None,
-        evidence_reasoning: EvidenceReasoningOutput | None,
-    ) -> list[str]:
+    ) -> tuple[list[str], bool]:
         sections: list[str] = []
         question_pair_keys = {pair.pair_key for pair in question_interaction_pairs}
         question_rules = [rule for rule in rules if rule.pair_key in question_pair_keys]
@@ -239,14 +436,23 @@ class MedicationAnswerAssembler:
             rules=question_rules,
             chunks=chunks,
             evidence_coverage=evidence_coverage,
-            evidence_reasoning=evidence_reasoning,
         )
         if question_section:
             sections.append(question_section)
-        elif interaction_question and not rules:
-            heading = "🔁 **복약정보와 상호작용**" if active_intake_interaction else "🔁 **질문 상호작용**"
-            sections.append(heading + "\n- 질문한 조합에 대한 직접 근거를 찾지 못했습니다.")
-        return sections
+            return (
+                sections,
+                cls._has_unverified_question_interaction(
+                    pairs=question_interaction_pairs,
+                    rules=question_rules,
+                    evidence_coverage=evidence_coverage,
+                ),
+            )
+        if interaction_question and not chunks and not rules:
+            if active_intake_interaction:
+                return sections, False
+            sections.append(cls._unverified_interaction_section())
+            return sections, True
+        return sections, False
 
     @staticmethod
     def _rule_lines(rules: list[InteractionRuleFact]) -> list[str]:
@@ -259,7 +465,20 @@ class MedicationAnswerAssembler:
     @staticmethod
     def _guide_line(label: str, value: str) -> str:
         prefix = f"{label}: " if label else ""
-        return f"- {prefix}{value.strip()}"
+        return f"- {prefix}{MedicationAnswerAssembler._clean_guide_value(value)}"
+
+    @classmethod
+    def _clean_guide_value(cls, value: str) -> str:
+        """RDB의 구분 기호와 짧은 괄호 풀이를 읽기 쉬운 문장으로 정리한다."""
+
+        parts = [part.strip() for part in value.split("|") if part.strip()]
+        cleaned_parts = []
+        for part in parts:
+            cleaned = cls._GUIDE_PARENTHETICAL_GLOSS.sub("", part)
+            for original, replacement in cls._GUIDE_RDB_SPACING:
+                cleaned = cleaned.replace(original, replacement)
+            cleaned_parts.append(re.sub(r"\s+", " ", cleaned).strip())
+        return ", ".join(cleaned_parts) if cleaned_parts else value.strip()
 
     @classmethod
     def _guide_value_is_allowed(
@@ -318,6 +537,20 @@ class MedicationAnswerAssembler:
             f"- {labels[section]}: 현재 근거에서 확인하지 못했습니다." for section in missing_sections
         )
 
+    @staticmethod
+    def _unsupported_pairs_section(pairs: list[str]) -> str:
+        if not pairs:
+            return ""
+        return MedicationAnswerAssembler._unverified_interaction_section()
+
+    @staticmethod
+    def _unverified_interaction_section() -> str:
+        return (
+            "☑️ **확인하지 못한 조합**\n"
+            "현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 "
+            "못했습니다. 확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다."
+        )
+
     @classmethod
     def _question_interaction_section(
         cls,
@@ -326,63 +559,52 @@ class MedicationAnswerAssembler:
         rules: list[InteractionRuleFact],
         chunks: list[RetrievedKnowledgeChunk],
         evidence_coverage: MedicationEvidenceCoverage | None,
-        evidence_reasoning: EvidenceReasoningOutput | None,
     ) -> str:
         if not pairs:
             return ""
 
         verified_pair_keys = set(evidence_coverage.verified_interaction_pair_keys if evidence_coverage else [])
-        reasoning_lines_by_pair = cls._reasoning_lines_by_pair(evidence_reasoning)
         verified_pairs = [
             pair
             for pair in pairs
-            if (
-                any(rule.pair_key == pair.pair_key for rule in rules)
-                or pair.pair_key in verified_pair_keys
-                or pair.pair_key in reasoning_lines_by_pair
-            )
+            if any(rule.pair_key == pair.pair_key for rule in rules) or pair.pair_key in verified_pair_keys
         ]
-        if not verified_pairs:
-            if len(pairs) > 1:
-                return "🔁 **질문 상호작용**\n- 질문한 조합에 대한 직접 근거를 찾지 못했습니다."
-            pair = pairs[0]
-            return "\n".join(
-                [
-                    "🔁 **질문 상호작용**",
-                    "",
-                    f"**[{pair.left_name}-{pair.right_name}]**",
-                    "- 질문한 조합에 대한 직접 근거를 찾지 못했습니다.",
-                ]
-            )
+        if len(pairs) > 1 and not verified_pairs:
+            return cls._unverified_interaction_section()
 
         lines = ["🔁 **질문 상호작용**"]
-        for pair in verified_pairs:
+        for pair in verified_pairs or pairs:
             lines.extend(["", f"**[{pair.left_name}-{pair.right_name}]**"])
             pair_rules = [rule for rule in rules if rule.pair_key == pair.pair_key]
             if pair_rules:
                 lines.extend(f"- {' '.join(rule.effect_texts)}" for rule in pair_rules)
-            elif pair.pair_key in reasoning_lines_by_pair:
-                lines.extend(f"- {statement}" for statement in reasoning_lines_by_pair[pair.pair_key])
             elif pair.pair_key in verified_pair_keys:
                 lines.extend(
                     f"- {chunk.content}"
                     for chunk in chunks[:4]
                     if pair.pair_key in chunk.metadata.interaction_pair_keys
                 )
+            else:
+                lines.append(
+                    "- 현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 "
+                    "못했습니다. 확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다."
+                )
+        if verified_pairs and len(verified_pairs) != len(pairs):
+            lines.extend(["", cls._unverified_interaction_section()])
         return "\n".join(lines)
 
     @staticmethod
-    def _reasoning_lines_by_pair(
-        evidence_reasoning: EvidenceReasoningOutput | None,
-    ) -> dict[str, list[str]]:
-        if evidence_reasoning is None:
-            return {}
-        lines_by_pair: dict[str, list[str]] = {}
-        for claim in evidence_reasoning.claims:
-            if claim.section_type is not KnowledgeSectionType.INTERACTION or claim.pair_key is None:
-                continue
-            lines_by_pair.setdefault(claim.pair_key, []).append(claim.statement)
-        return lines_by_pair
+    def _has_unverified_question_interaction(
+        *,
+        pairs: list[MedicationInteractionQueryPair],
+        rules: list[InteractionRuleFact],
+        evidence_coverage: MedicationEvidenceCoverage | None,
+    ) -> bool:
+        if not pairs:
+            return False
+        verified_pair_keys = set(evidence_coverage.verified_interaction_pair_keys if evidence_coverage else [])
+        rule_pair_keys = {rule.pair_key for rule in rules}
+        return any(pair.pair_key not in rule_pair_keys and pair.pair_key not in verified_pair_keys for pair in pairs)
 
     @staticmethod
     def _ingredient_family_section(

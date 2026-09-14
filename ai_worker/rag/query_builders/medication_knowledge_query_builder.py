@@ -9,6 +9,9 @@ from ai_worker.domain.interaction_question_detector import (
 from ai_worker.domain.medication_expression_vocabulary import (
     SUPPORTED_SUPPLEMENT_NAMES,
 )
+from ai_worker.domain.supplement_function_goal_detector import (
+    is_supplement_function_goal_question,
+)
 from ai_worker.rag.metadata.supplement_ingredient_family_registry import (
     find_supplement_ingredient_family,
 )
@@ -385,11 +388,17 @@ class MedicationKnowledgeQueryBuilder:
         if not normalized:
             raise ValueError("약·영양제 검색 질문은 비어 있을 수 없습니다.")
 
+        supplement_function_goal = self._is_supplement_function_goal(normalized)
         entities = (
             self._entity_normalizer.normalize(normalized)
             if self._catalog_entities is None
             else self._catalog_entities.copy()
         )
+        if supplement_function_goal and not any(entity.kind is InteractionEntityKind.SUPPLEMENT for entity in entities):
+            # "수면", "개선", "건강기능식품"은 제품·성분명이 아니라 목표를
+            # 설명하는 일반어다. 이 경우에는 특정 약물 검색이 아니라 기능성
+            # 원료 문서의 의미 검색으로 보낸다.
+            entities = []
         entity_names = [entity.canonical_name for entity in entities]
         registered_pair = find_supplement_interaction_pair(normalized)
         interaction_pair = (
@@ -410,6 +419,7 @@ class MedicationKnowledgeQueryBuilder:
         section_types, expansion_terms = self._intent(
             normalized,
             has_interaction_intent=has_interaction_intent,
+            supplement_function_goal=supplement_function_goal,
         )
         interaction_question = KnowledgeSectionType.INTERACTION in section_types
         if interaction_question and self._catalog_entities is None:
@@ -471,15 +481,21 @@ class MedicationKnowledgeQueryBuilder:
                 ]
             )
         )
+        document_types = self._document_types(
+            entities=entities,
+            section_types=section_types,
+        )
+        if not entities and supplement_function_goal:
+            document_types = [
+                KnowledgeDocumentType.SUPPLEMENT_CODE,
+                KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+            ]
         return MedicationKnowledgeQueryPlan(
             original_query=normalized,
             expanded_query=expanded_query,
             entity_names=entity_names,
             entities=entities,
-            document_types=self._document_types(
-                entities=entities,
-                section_types=section_types,
-            ),
+            document_types=document_types,
             section_types=section_types,
             alternate_queries=alternate_queries,
             interaction_pair=interaction_pair,
@@ -536,6 +552,10 @@ class MedicationKnowledgeQueryBuilder:
             )
         )
         return list(dict.fromkeys(candidate for candidate in candidates if candidate))
+
+    @staticmethod
+    def _is_supplement_function_goal(question: str) -> bool:
+        return is_supplement_function_goal_question(question)
 
     @staticmethod
     def _document_types(
@@ -650,13 +670,15 @@ class MedicationKnowledgeQueryBuilder:
         question: str,
         *,
         has_interaction_intent: bool = False,
+        supplement_function_goal: bool = False,
     ) -> tuple[list[KnowledgeSectionType], list[str]]:
         if has_interaction_intent:
             return [KnowledgeSectionType.INTERACTION], ["상호작용", "병용 주의"]
         section_types: list[KnowledgeSectionType] = []
         expansion_terms: list[str] = []
         if (
-            any(keyword in question for keyword in ("효능", "효과", "기능", "역할", "왜 먹"))
+            supplement_function_goal
+            or any(keyword in question for keyword in ("효능", "효과", "기능", "역할", "왜 먹"))
             or _FUNCTION_INTENT_PATTERN.search(question)
             or _GENERAL_EXPLANATION_INTENT_PATTERN.search(question)
         ):

@@ -439,6 +439,13 @@ class ChatRepository:
         for message in reversed(history):
             if message.role != ChatMessageRole.ASSISTANT:
                 continue
+            if message.session_reference:
+                try:
+                    stored_reference = MedicationChatSessionReference.model_validate(message.session_reference)
+                except ValueError:
+                    stored_reference = MedicationChatSessionReference()
+                if stored_reference.entities:
+                    return stored_reference
             entities = entities_by_message_id.get(message.id, [])
             if not entities:
                 continue
@@ -655,6 +662,7 @@ class ChatRepository:
             message.model_version = result.model_version
             message.prompt_version = result.prompt_version
             message.schema_version = result.schema_version
+            message.session_reference = self._session_reference_payload(result)
             message.patient_context_hash = result.context_hash
             message.langsmith_trace_id = langsmith_trace_id
             message.duration_ms = duration_ms
@@ -672,6 +680,7 @@ class ChatRepository:
                     "model_version",
                     "prompt_version",
                     "schema_version",
+                    "session_reference",
                     "patient_context_hash",
                     "langsmith_trace_id",
                     "duration_ms",
@@ -705,6 +714,32 @@ class ChatRepository:
                 )
             )
         return await ChatMessage.get(id=assistant_message_id)
+
+    @staticmethod
+    def _session_reference_payload(result: MedicationChatResult) -> dict[str, object] | None:
+        """다음 턴의 지시어 해석에 쓸 직전 질문의 확정 대상을 저장한다."""
+
+        interpretation = result.question_interpretation
+        if interpretation is None:
+            return None
+        allowed_types = {
+            MedicationQueryEntityType.PRODUCT_NAME,
+            MedicationQueryEntityType.BRAND_ALIAS,
+            MedicationQueryEntityType.INGREDIENT_NAME,
+            MedicationQueryEntityType.INGREDIENT_FAMILY,
+        }
+        entities = [
+            MedicationChatSessionReferenceEntity(
+                name=entity.canonical_name,
+                entity_type=entity.entity_type,
+                kind=entity.kind,
+            )
+            for entity in interpretation.normalized_entities
+            if entity.entity_type in allowed_types
+        ]
+        if not entities:
+            return None
+        return MedicationChatSessionReference(entities=entities).model_dump(mode="json")
 
     async def fail_request(
         self,

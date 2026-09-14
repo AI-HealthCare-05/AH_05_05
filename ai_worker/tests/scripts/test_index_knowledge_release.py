@@ -6,6 +6,9 @@ from types import SimpleNamespace
 import pytest
 from pydantic import SecretStr
 
+from ai_worker.rag.embeddings.embedding_release_contract import (
+    EmbeddingReleaseContract,
+)
 from ai_worker.rag.indexers.knowledge_indexer import (
     KnowledgeIndexResult,
 )
@@ -53,6 +56,83 @@ class FakeIndexer:
     ) -> KnowledgeIndexResult:
         self.received_chunks = chunks
         return self.result
+
+
+def build_embedding_contract(**overrides) -> EmbeddingReleaseContract:
+    values = {
+        "model_name": "text-embedding-3-large",
+        "dimensions": 3072,
+        "distance": KnowledgeVectorDistance.DOT,
+        "tokenizer_encoding": "cl100k_base",
+        "chunking_version": "semantic-structure-v2",
+        "embedding_text_version": "medical-retrieval-v2",
+    }
+    values.update(overrides)
+    return EmbeddingReleaseContract(**values)
+
+
+def test_release_manifest_is_idempotent_and_rejects_a_different_contract(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "release-manifest.json"
+    target = build_embedding_contract()
+
+    module.write_embedding_release_manifest(
+        manifest_path=manifest_path,
+        contract=target,
+        collection_name="medication_knowledge_full_v16_te3large_3072_dot",
+        dataset_version="knowledge-full-v16",
+    )
+    module.write_embedding_release_manifest(
+        manifest_path=manifest_path,
+        contract=target,
+        collection_name="medication_knowledge_full_v16_te3large_3072_dot",
+        dataset_version="knowledge-full-v16",
+    )
+
+    with pytest.raises(ValueError, match="덮어쓸 수 없습니다"):
+        module.write_embedding_release_manifest(
+            manifest_path=manifest_path,
+            contract=build_embedding_contract(dimensions=1536),
+            collection_name="medication_knowledge_full_v16_te3large_3072_dot",
+            dataset_version="knowledge-full-v16",
+        )
+
+
+def test_reuse_requires_matching_embedding_release_contract() -> None:
+    with pytest.raises(ValueError, match="벡터 재사용"):
+        module.ensure_embedding_reuse_contract(
+            target_contract=build_embedding_contract(),
+            baseline_contract=build_embedding_contract(
+                embedding_text_version="medical-retrieval-v1",
+            ),
+        )
+
+
+def test_build_indexer_does_not_request_manual_vector_normalization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    received: dict[str, object] = {}
+
+    class FakeEmbeddingProvider:
+        def __init__(self, **kwargs) -> None:
+            received.update(kwargs)
+
+    monkeypatch.setattr(module, "OpenAIEmbeddingProvider", FakeEmbeddingProvider)
+
+    module.build_indexer(
+        settings=module.Config(
+            OPENAI_API_KEY=SecretStr("test-key"),
+            _env_file=None,
+        ),
+        args=Namespace(
+            distance=KnowledgeVectorDistance.DOT,
+            collection="knowledge-v16",
+            embedding_batch_size=64,
+            upsert_batch_size=64,
+        ),
+        qdrant_client=object(),
+    )
+
+    assert "normalize_vectors" not in received
 
 
 async def test_run_cli_loads_release_and_closes_client(
@@ -130,6 +210,46 @@ async def test_run_cli_loads_release_and_closes_client(
     assert fake_client.closed is True
     assert received["client"] is fake_client
     assert received["load_args"] is args
+
+
+async def test_run_cli_writes_release_manifest_only_after_successful_indexing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class FailingIndexer:
+        async def index_release(self, *args, **kwargs) -> KnowledgeIndexResult:
+            raise RuntimeError("Qdrant upsert failed")
+
+    manifest_path = tmp_path / "release-manifest.json"
+    args = Namespace(
+        chunks_dir=tmp_path,
+        quality_report=tmp_path / "preprocessing-quality.json",
+        dataset_version="knowledge-full-v16",
+        collection="medication_knowledge_full_v16",
+        embedding_batch_size=64,
+        upsert_batch_size=64,
+        allow_demo_restricted=False,
+        interaction_annotations=None,
+        release_manifest=manifest_path,
+    )
+    fake_client = FakeClient()
+    monkeypatch.setattr(module, "create_qdrant_client", lambda settings: fake_client)
+    monkeypatch.setattr(module, "load_release_chunks", lambda args: [])
+    monkeypatch.setattr(module, "build_indexer", lambda **kwargs: FailingIndexer())
+    monkeypatch.setattr(module, "ensure_preprocessing_approved", lambda chunks, **kwargs: None)
+    monkeypatch.setattr(module, "ensure_interaction_annotations_applied", lambda chunks, **kwargs: None)
+
+    with pytest.raises(RuntimeError, match="Qdrant upsert failed"):
+        await module.run_cli(
+            args=args,
+            settings=module.Config(
+                _env_file=None,
+                OPENAI_API_KEY=SecretStr("test-key"),
+            ),
+        )
+
+    assert manifest_path.exists() is False
+    assert fake_client.closed is True
 
 
 def test_parse_args_rejects_zero_batch_size() -> None:
@@ -476,6 +596,31 @@ async def test_loads_reusable_vectors_only_for_verified_baseline_embedding_texts
             "with_vectors": True,
         }
     ]
+
+
+async def test_skips_conflicting_baseline_vectors_and_requires_reembedding() -> None:
+    class ConflictingVectorReuseClient:
+        async def scroll(self, **_kwargs):
+            return [
+                SimpleNamespace(
+                    vector=[0.1, 0.2, 0.3],
+                    payload={"embedding_text": "[문서] 중복 근거\n[원문] 내용"},
+                ),
+                SimpleNamespace(
+                    vector=[0.4, 0.5, 0.6],
+                    payload={"embedding_text": "[문서] 중복 근거\n[원문] 내용"},
+                ),
+            ], None
+
+    reusable = await module.load_reusable_vectors_from_collection(
+        client=ConflictingVectorReuseClient(),
+        collection_name="medication_knowledge_full_v16",
+        baseline_chunks=[
+            SimpleNamespace(embedding_text="[문서] 중복 근거\n[원문] 내용"),
+        ],
+    )
+
+    assert reusable == {}
 
 
 def test_rejects_chunks_from_source_without_completed_approval(

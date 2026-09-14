@@ -32,7 +32,6 @@ def build_row(
     item_seq: str = "197900277",
     *,
     efficacy: str = "두통과 치통의 통증 완화",
-    item_image_url: str = "https://example.com/first.png",
 ) -> dict[str, str]:
     return {
         "품목일련번호": item_seq,
@@ -46,12 +45,11 @@ def build_row(
         "이 약은 어떤 이상반응이 나타날 수 있습니까?": "발진이 나타날 수 있습니다.",
         "이 약은 어떻게 보관해야 합니까?": "실온에서 보관하십시오.",
         "공개일자": "2020-12-24",
-        "낱알이미지": item_image_url,
     }
 
 
 def write_csv(path: Path, rows: list[dict[str, str]]) -> None:
-    fieldnames = list(dict.fromkeys([*CSV_FIELD_MAP, "공개일자", "낱알이미지", ""]))
+    fieldnames = list(dict.fromkeys([*CSV_FIELD_MAP, "공개일자", ""]))
     with path.open("w", encoding="utf-8-sig", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
@@ -64,7 +62,6 @@ def test_parse_csv_keeps_requested_fields_and_merges_safe_duplicates(
     path = tmp_path / "e약은요.csv"
     first = build_row()
     duplicate = build_row()
-    duplicate["낱알이미지"] = "https://example.com/second.png"
     write_csv(path, [first, duplicate, build_row("202000001")])
 
     dataset = parse_csv(path)
@@ -83,36 +80,7 @@ def test_parse_csv_keeps_requested_fields_and_merges_safe_duplicates(
         "drug_food_interactions": ("다른 해열진통제와 함께 복용하지 마십시오."),
         "adverse_reactions": "발진이 나타날 수 있습니다.",
         "storage_instructions": "실온에서 보관하십시오.",
-        "item_image_url": "https://example.com/first.png",
     }
-
-
-def test_parse_csv_converts_empty_item_image_url_to_none(
-    tmp_path: Path,
-) -> None:
-    path = tmp_path / "e약은요.csv"
-    write_csv(path, [build_row(item_image_url="")])
-
-    dataset = parse_csv(path)
-
-    assert dataset.records[0]["item_image_url"] is None
-
-
-def test_parse_csv_uses_non_empty_image_from_duplicate(
-    tmp_path: Path,
-) -> None:
-    path = tmp_path / "e약은요.csv"
-    write_csv(
-        path,
-        [
-            build_row(item_image_url=""),
-            build_row(item_image_url="https://example.com/second.png"),
-        ],
-    )
-
-    dataset = parse_csv(path)
-
-    assert dataset.records[0]["item_image_url"] == ("https://example.com/second.png")
 
 
 def test_parse_csv_rejects_conflicting_duplicate_product(
@@ -159,7 +127,6 @@ async def test_upsert_records_is_idempotent_and_updates_changed_content(
     second = await upsert_records(records)
     changed = [dict(records[0]), dict(records[1])]
     changed[0]["efficacy"] = "변경된 공공데이터 효능"
-    changed[0]["item_image_url"] = "https://example.com/changed.png"
     third = await upsert_records(changed)
 
     assert (first.created, first.updated, first.unchanged) == (2, 0, 0)
@@ -168,7 +135,6 @@ async def test_upsert_records_is_idempotent_and_updates_changed_content(
     assert await MedicationProductGuide.all().count() == 2
     guide = await MedicationProductGuide.get(item_seq="197900277")
     assert guide.efficacy == "변경된 공공데이터 효능"
-    assert guide.item_image_url == "https://example.com/changed.png"
 
 
 def parse_csv_from_rows(
@@ -176,10 +142,5 @@ def parse_csv_from_rows(
 ) -> list[dict[str, str | None]]:
     parsed: list[dict[str, str | None]] = []
     for row in rows:
-        parsed.append(
-            {
-                field_name: row[source_header] or None if field_name == "item_image_url" else row[source_header]
-                for source_header, field_name in CSV_FIELD_MAP.items()
-            }
-        )
+        parsed.append({field_name: row[source_header] for source_header, field_name in CSV_FIELD_MAP.items()})
     return parsed

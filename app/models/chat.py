@@ -5,14 +5,12 @@ from tortoise.validators import MaxValueValidator, MinValueValidator
 
 from app.models.enums import (
     CareEpisodeSourceField,
-    ChatConflictStatus,
     ChatMessageRole,
     ChatMessageStatus,
     ChatRouteType,
     ChatSafetyStatus,
     ChatSessionStatus,
     ChatSourceType,
-    ChatVerificationStatus,
     PatientSourceKind,
 )
 
@@ -68,15 +66,11 @@ class ChatMessage(models.Model):
     route_type = fields.CharEnumField(ChatRouteType, null=True)
     safety_status = fields.CharEnumField(ChatSafetyStatus, default=ChatSafetyStatus.PENDING)
     safety_reason_code = fields.CharField(max_length=100, null=True)
-    verification_status = fields.CharEnumField(
-        ChatVerificationStatus,
-        default=ChatVerificationStatus.NOT_REQUIRED,
-    )
-    conflict_status = fields.CharEnumField(ChatConflictStatus, default=ChatConflictStatus.NOT_APPLICABLE)
     model_name = fields.CharField(max_length=100, null=True)
     model_version = fields.CharField(max_length=100, null=True)
     prompt_version = fields.CharField(max_length=100, null=True)
     schema_version = fields.CharField(max_length=50, null=True)
+    session_reference = fields.JSONField(null=True)
     patient_context_hash = fields.CharField(max_length=64, null=True)
     langsmith_trace_id = fields.CharField(max_length=100, null=True)
     error_code = fields.CharField(max_length=100, null=True)

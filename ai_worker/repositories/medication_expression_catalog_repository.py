@@ -26,7 +26,7 @@ class DbMedicationExpressionCatalog:
     _INGREDIENT_SUFFIX = re.compile(r"\([^()]+\)\s*$")
     PRODUCT_DOSAGE_FORM_BOUNDARY = re.compile(
         r"(?:구강붕해정|연질캡슐|경질캡슐|현탁액|서방정|장용정|"
-        r"시럽|과립|캡슐|정|산|액)(?=\d|$)",
+        r"시럽|과립|캡슐|정|액)(?=\d|$)",
     )
 
     def __init__(

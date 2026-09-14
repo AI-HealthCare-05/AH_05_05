@@ -77,6 +77,9 @@ from ai_worker.domain.medication_evidence_coverage import (
 from ai_worker.domain.medication_question_retrieval_policy import (
     should_execute_source_backed_retrieval,
 )
+from ai_worker.domain.supplement_function_goal_detector import (
+    is_supplement_function_goal_question,
+)
 from ai_worker.domain.urgent_health_signal_policy import UrgentHealthSignalPolicy
 from ai_worker.llm.assemblers.medication_answer_assembler import (
     MedicationAnswerAssembler,
@@ -108,11 +111,12 @@ from ai_worker.schemas.conversation_gate import (
     ConversationIntent,
     ConversationSafetySignal,
 )
-from ai_worker.schemas.enums import ChatRole, SafetyStatus
+from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.evidence_reasoning import (
     EvidenceItem,
     EvidenceReasoningInput,
     EvidenceReasoningOutput,
+    InteractionEvidenceDecision,
 )
 from ai_worker.schemas.interaction import (
     InteractionEntity,
@@ -146,7 +150,6 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatSource,
     MedicationChatSourceKind,
     MedicationEvidenceCoverage,
-    MedicationGuideFact,
     MedicationGuideLookup,
     TherapeuticClassSelection,
     TherapeuticClassSelectionStatus,
@@ -217,38 +220,6 @@ class _QuestionRoutingOutcome:
 
 
 class AnswerMedicationQuestionUseCase:
-    _CLARIFICATION_CANDIDATE_PREFIX = (
-        "입력하신 이름만으로는 제품이나 성분을 정확히 확인하기 어렵습니다. "
-        "제품명 또는 복용 목적(의약품/영양제)을 알려주세요:"
-    )
-    _ADVERSE_REACTION_ONLY_CUES = ("이상반응", "부작용")
-    _NON_ADVERSE_SECTION_CUES = ("효능", "효과", "주의사항", "복용법", "용량", "상호작용", "음식")
-    _CANDIDATE_TRAILING_PARTICLES = (
-        "으로",
-        "에서",
-        "부터",
-        "까지",
-        "처럼",
-        "보다",
-        "에게",
-        "한테",
-        "하고",
-        "이며",
-        "이나",
-        "이랑",
-        "은",
-        "는",
-        "이",
-        "가",
-        "을",
-        "를",
-        "과",
-        "와",
-        "도",
-        "의",
-        "에",
-        "로",
-    )
     _MAX_PRODUCT_NAME_CANDIDATES = 12
     _ENTITY_FREE_CONVERSATION_INTENTS = frozenset(
         {
@@ -262,6 +233,14 @@ class AnswerMedicationQuestionUseCase:
         }
     )
     _PARENTHETICAL_DESCRIPTION_PATTERN = re.compile(r"\s*[\(（][^()（）]*[\)）]")
+    _FUNCTIONAL_SUPPLEMENT_GOAL_TITLES = (
+        (re.compile(r"피부\s*보습"), "피부 보습"),
+        (re.compile(r"장\s*건강"), "장 건강"),
+        (re.compile(r"혈행"), "혈행 개선"),
+        (re.compile(r"눈\s*건강"), "눈 건강"),
+        (re.compile(r"관절\s*건강"), "관절 건강"),
+        (re.compile(r"숙면|수면|잠\s*잘"), "숙면"),
+    )
     _EXACT_PRODUCT_REQUIRED_PATTERN = re.compile(
         r"복용법|사용법|어떻게\s*(?:먹|복용)|"
         r"몇\s*(?:정|캡슐|포)|용량|횟수|간격|"
@@ -277,6 +256,12 @@ class AnswerMedicationQuestionUseCase:
     )
     _ACTIVE_INTAKE_INTERACTION_CUE_PATTERN = re.compile(
         r"상호작용|병용|같이|함께|조심|주의|영향|피해야|중복",
+    )
+    _INTERACTION_RELATION_CUE_PATTERN = re.compile(
+        r"상호작용|흡수|생체이용률|병용|동시|함께|영향|"
+        r"interaction|absorption|bioavailability|coadministr|"
+        r"inhibit|reduce|increase|affect",
+        flags=re.IGNORECASE,
     )
     _PERSONALIZED_GUIDANCE_CUE_PATTERN = re.compile(
         r"(?:나|저|내)\s*(?:게|는|의)?\s*(?:추천|권장)|"
@@ -535,6 +520,11 @@ class AnswerMedicationQuestionUseCase:
                 request=request,
                 guide_lookup=guide_lookup,
             )
+            guide_lookup = await self._with_magnesium_form_cautions(
+                query_plan=query_plan,
+                guide_lookup=guide_lookup,
+                interaction_question=interaction_question,
+            )
             guide_span.end(
                 {
                     "guide_found": guide_lookup.guide is not None,
@@ -573,6 +563,10 @@ class AnswerMedicationQuestionUseCase:
                 has_supplement_evidence and not query_plan.has_medication_product_cue and not interaction_question
             ),
         )
+        answer_chunks = self._functional_supplement_answer_chunks(
+            question=request.question,
+            chunks=answer_chunks,
+        )
         coverage_retry = await self._retry_for_missing_coverage(
             retrieval=retrieval,
             query_plan=query_plan,
@@ -609,6 +603,16 @@ class AnswerMedicationQuestionUseCase:
         answer_chunks = list(evidence.answer_chunks)
         interaction_question = evidence.interaction_question
         ingredient_family_reference = guide_lookup.guide is None and self._has_drug_encyclopedia_evidence(answer_chunks)
+        evidence_reasoning = await self._reason_about_interaction_evidence(
+            request=request,
+            evidence=evidence,
+        )
+        evidence_coverage, answer_chunks = self._apply_evidence_reasoning_coverage(
+            query_plan=query_plan,
+            evidence_coverage=evidence_coverage,
+            answer_chunks=answer_chunks,
+            evidence_reasoning=evidence_reasoning,
+        )
         if terminal_result := await self._evidence_gap_terminal_result(
             request=request,
             context=context,
@@ -624,10 +628,6 @@ class AnswerMedicationQuestionUseCase:
             progress_callback=progress_callback,
         ):
             return terminal_result
-        evidence_reasoning = await self._reason_about_interaction_evidence(
-            request=request,
-            evidence=evidence,
-        )
         unsupported_pairs = self._unsupported_interaction_pairs(
             query_plan=query_plan,
             rules=rules,
@@ -692,10 +692,26 @@ class AnswerMedicationQuestionUseCase:
                         )
                         else []
                     ),
+                    active_intake_interaction=self._is_active_intake_interaction_question(
+                        question=request.question,
+                        context=context,
+                    ),
                     evidence_coverage=evidence_coverage,
-                    evidence_reasoning=evidence_reasoning,
-                    adverse_reaction_only=self._is_adverse_reaction_only_question(request.question),
-                    include_drug_food_guidance=(guide_lookup.guide is not None and not interaction_question),
+                    response_subject=self._response_subject(
+                        query_plan=query_plan,
+                        guide_lookup=guide_lookup,
+                        interaction_question=interaction_question,
+                    ),
+                    adverse_reaction_question=self._is_adverse_reaction_question(
+                        question=request.question,
+                        query_plan=query_plan,
+                        chunks=answer_chunks,
+                        interaction_question=interaction_question,
+                    ),
+                    functional_goal_title=self._functional_supplement_goal_title(
+                        request.question,
+                    ),
+                    form_caution_guides=guide_lookup.form_caution_guides,
                 ),
                 route=route,
                 safety_status=safety_status,
@@ -718,7 +734,7 @@ class AnswerMedicationQuestionUseCase:
                 evidence_coverage=evidence_coverage,
                 evidence_reasoning=evidence_reasoning,
                 official_warning_texts=self._official_warning_texts(
-                    guide_lookup.guide,
+                    guide_lookup,
                 ),
             )
             draft = self._apply_risk_policy(
@@ -764,7 +780,10 @@ class AnswerMedicationQuestionUseCase:
             )
             generated = generated.model_copy(
                 update={
-                    "answer": self._compact_final_answer(generated),
+                    "answer": compact_chat_content(
+                        generated.answer,
+                        marker=ANSWER_COMPACTION_MARKER,
+                    )
                 }
             )
             generated = self._apply_risk_policy(
@@ -819,6 +838,7 @@ class AnswerMedicationQuestionUseCase:
         interaction_chunks = self._interaction_evidence_chunks(
             answer_chunks=list(evidence.answer_chunks),
             interaction_pair_keys=execution_plan.interaction_pair_keys,
+            interaction_pairs=query_plan.interaction_pairs,
         )
         entity_names = list(
             dict.fromkeys(
@@ -833,7 +853,17 @@ class AnswerMedicationQuestionUseCase:
             chain is None
             or not evidence.interaction_question
             or len(entity_names) < 2
-            or (not rules and not interaction_chunks)
+            or (
+                not rules
+                and not any(
+                    self._direct_interaction_pair_keys_for_chunk(
+                        chunk=chunk,
+                        interaction_pairs=query_plan.interaction_pairs,
+                        requested_pair_keys=execution_plan.interaction_pair_keys,
+                    )
+                    for chunk in interaction_chunks
+                )
+            )
         ):
             return None
 
@@ -855,9 +885,13 @@ class AnswerMedicationQuestionUseCase:
                 evidence_items = [
                     EvidenceItem(
                         evidence_id=f"chunk:{chunk.chunk_id}",
-                        content=chunk.content,
-                        section_types=[chunk.metadata.section_type],
-                        pair_keys=chunk.metadata.interaction_pair_keys,
+                        content=self._evidence_item_content(chunk),
+                        section_types=[KnowledgeSectionType.INTERACTION],
+                        pair_keys=self._direct_interaction_pair_keys_for_chunk(
+                            chunk=chunk,
+                            interaction_pairs=query_plan.interaction_pairs,
+                            requested_pair_keys=execution_plan.interaction_pair_keys,
+                        ),
                         study_scope=chunk.metadata.study_population.value,
                     )
                     for chunk in interaction_chunks
@@ -896,13 +930,176 @@ class AnswerMedicationQuestionUseCase:
         *,
         answer_chunks: list[RetrievedKnowledgeChunk],
         interaction_pair_keys: list[str],
+        interaction_pairs: list[MedicationInteractionQueryPair] | None = None,
     ) -> list[RetrievedKnowledgeChunk]:
         requested_pair_keys = set(interaction_pair_keys)
-        if not requested_pair_keys:
-            return []
         return [
-            chunk for chunk in answer_chunks if requested_pair_keys.intersection(chunk.metadata.interaction_pair_keys)
+            chunk
+            for chunk in answer_chunks
+            if (
+                chunk.metadata.section_type is KnowledgeSectionType.INTERACTION
+                or bool(requested_pair_keys.intersection(chunk.metadata.interaction_pair_keys))
+                or bool(
+                    interaction_pairs
+                    and AnswerMedicationQuestionUseCase._direct_interaction_pair_keys_for_chunk(
+                        chunk=chunk,
+                        interaction_pairs=interaction_pairs,
+                        requested_pair_keys=interaction_pair_keys,
+                    )
+                )
+            )
         ]
+
+    @classmethod
+    def _direct_interaction_pair_keys_for_chunk(
+        cls,
+        *,
+        chunk: RetrievedKnowledgeChunk,
+        interaction_pairs: list[MedicationInteractionQueryPair],
+        requested_pair_keys: list[str],
+    ) -> list[str]:
+        requested_pair_key_set = set(requested_pair_keys)
+        metadata_keys = requested_pair_key_set.intersection(
+            chunk.metadata.interaction_pair_keys,
+        )
+        direct_keys = {
+            pair.pair_key
+            for pair in interaction_pairs
+            if pair.pair_key in requested_pair_key_set
+            and cls._chunk_directly_supports_interaction_pair(
+                chunk=chunk,
+                pair=pair,
+            )
+        }
+        return [pair_key for pair_key in requested_pair_keys if pair_key in metadata_keys or pair_key in direct_keys]
+
+    @staticmethod
+    def _evidence_item_content(chunk: RetrievedKnowledgeChunk) -> str:
+        """Keep the source title while respecting EvidenceItem's 4,000-character boundary."""
+        title = chunk.metadata.title.strip()
+        if not title:
+            return chunk.content[:4000]
+        available_content_length = max(0, 4000 - len(title) - 1)
+        return f"{title}\n{chunk.content[:available_content_length]}"
+
+    @classmethod
+    def _chunk_directly_supports_interaction_pair(
+        cls,
+        *,
+        chunk: RetrievedKnowledgeChunk,
+        pair: MedicationInteractionQueryPair,
+    ) -> bool:
+        left_name = cls._normalize_entity_name(pair.left_name)
+        right_name = cls._normalize_entity_name(pair.right_name)
+        if any(
+            left_name in cls._normalize_entity_name(sentence) and right_name in cls._normalize_entity_name(sentence)
+            for sentence in re.split(r"[.!?。！？\n]+", chunk.content)
+            if sentence.strip()
+        ):
+            return True
+        metadata_names = {
+            cls._normalize_entity_name(name)
+            for name in [
+                *chunk.metadata.drug_names,
+                *chunk.metadata.ingredient_names,
+                *chunk.metadata.food_names,
+            ]
+        }
+        # 메타데이터와 제목은 Chain 3에 후보를 전달하기 위한 조건일 뿐,
+        # 직접 상호작용 claim 확정은 Evidence Reasoning의 본문 판정에 맡긴다.
+        return bool(
+            {left_name, right_name}.issubset(metadata_names)
+            and cls._INTERACTION_RELATION_CUE_PATTERN.search(
+                f"{chunk.metadata.title}\n{chunk.content}",
+            )
+        )
+
+    @classmethod
+    def _apply_evidence_reasoning_coverage(
+        cls,
+        *,
+        query_plan: MedicationKnowledgeQueryPlan,
+        evidence_coverage: MedicationEvidenceCoverage,
+        answer_chunks: list[RetrievedKnowledgeChunk],
+        evidence_reasoning: EvidenceReasoningOutput | None,
+    ) -> tuple[MedicationEvidenceCoverage, list[RetrievedKnowledgeChunk]]:
+        if (
+            evidence_reasoning is None
+            or evidence_reasoning.interaction_decision is not InteractionEvidenceDecision.INTERACTION_CONFIRMED
+        ):
+            return evidence_coverage, answer_chunks
+        requested_pair_keys = set(query_plan.interaction_pair_keys)
+        confirmed_pair_keys = {
+            claim.pair_key
+            for claim in evidence_reasoning.claims
+            if (
+                claim.section_type is KnowledgeSectionType.INTERACTION
+                and claim.pair_key is not None
+                and claim.pair_key in requested_pair_keys
+            )
+        }
+        if not confirmed_pair_keys:
+            return evidence_coverage, answer_chunks
+
+        bound_chunks: list[RetrievedKnowledgeChunk] = []
+        for chunk in answer_chunks:
+            direct_keys = set(
+                cls._direct_interaction_pair_keys_for_chunk(
+                    chunk=chunk,
+                    interaction_pairs=query_plan.interaction_pairs,
+                    requested_pair_keys=query_plan.interaction_pair_keys,
+                )
+            )
+            keys_to_bind = direct_keys.intersection(confirmed_pair_keys)
+            if not keys_to_bind:
+                bound_chunks.append(chunk)
+                continue
+            metadata = chunk.metadata.model_copy(
+                update={
+                    "interaction_pair_keys": list(
+                        dict.fromkeys(
+                            [
+                                *chunk.metadata.interaction_pair_keys,
+                                *(
+                                    pair_key
+                                    for pair_key in query_plan.interaction_pair_keys
+                                    if pair_key in keys_to_bind
+                                ),
+                            ]
+                        )
+                    )
+                }
+            )
+            bound_chunks.append(chunk.model_copy(update={"metadata": metadata}))
+
+        verified_pair_keys = list(
+            dict.fromkeys(
+                [
+                    *evidence_coverage.verified_interaction_pair_keys,
+                    *(pair_key for pair_key in query_plan.interaction_pair_keys if pair_key in confirmed_pair_keys),
+                ]
+            )
+        )
+        covered_sections = list(evidence_coverage.covered_section_types)
+        if (
+            KnowledgeSectionType.INTERACTION in evidence_coverage.requested_section_types
+            and KnowledgeSectionType.INTERACTION not in covered_sections
+        ):
+            covered_sections.append(KnowledgeSectionType.INTERACTION)
+        return (
+            evidence_coverage.model_copy(
+                update={
+                    "covered_section_types": covered_sections,
+                    "missing_section_types": [
+                        section
+                        for section in evidence_coverage.missing_section_types
+                        if section is not KnowledgeSectionType.INTERACTION
+                    ],
+                    "verified_interaction_pair_keys": verified_pair_keys,
+                }
+            ),
+            bound_chunks,
+        )
 
     async def current_medication_names(
         self,
@@ -956,19 +1153,14 @@ class AnswerMedicationQuestionUseCase:
         return validated
 
     @staticmethod
-    def _compact_final_answer(result: MedicationChatResult) -> str:
-        """의료 사실을 문자 수만으로 자르지 않고 전체 답변 길이만 제한한다."""
-
-        return compact_chat_content(result.answer, marker=ANSWER_COMPACTION_MARKER)
-
-    @staticmethod
     def _official_warning_texts(
-        guide: MedicationGuideFact | None,
+        guide_lookup: MedicationGuideLookup,
     ) -> list[str]:
-        if guide is None:
-            return []
+        guides = [guide_lookup.guide] if guide_lookup.guide is not None else []
+        guides.extend(guide for form_guides in guide_lookup.form_caution_guides.values() for guide in form_guides)
         return [
             warning
+            for guide in guides
             for warning in (
                 guide.pre_use_warning,
                 guide.precautions,
@@ -1619,6 +1811,10 @@ class AnswerMedicationQuestionUseCase:
                 resolution=None,
                 early_result=None,
             )
+        resolution = self._bypass_supplement_function_goal_clarification(
+            question=request.question,
+            resolution=resolution,
+        )
         if self._requires_qdrant_conversation_safety_preflight(resolution):
             conversation_result = await self._conversation_terminal_result(
                 request=request,
@@ -1633,7 +1829,6 @@ class AnswerMedicationQuestionUseCase:
                 )
         request = await self._with_symptom_interaction_follow_up(
             request=request,
-            context=context,
             resolution=resolution,
         )
         request, resolution = await self._with_conversation_interaction_references(
@@ -1641,7 +1836,9 @@ class AnswerMedicationQuestionUseCase:
             context=context,
             resolution=resolution,
         )
-        if self._is_entity_free_conversation_candidate(resolution):
+        if self._is_entity_free_conversation_candidate(resolution) and not self._is_supplement_function_goal_question(
+            request.question
+        ):
             conversation_result = await self._conversation_terminal_result(
                 request=request,
                 context=context,
@@ -1695,7 +1892,6 @@ class AnswerMedicationQuestionUseCase:
         self,
         *,
         request: MedicationChatRequest,
-        context: ActiveIntakeContext,
         resolution: MedicationQuestionResolution,
     ) -> MedicationChatRequest:
         """최근 증상 대화 뒤의 제품명만 상호작용 확인으로 제한 전환한다."""
@@ -1705,12 +1901,9 @@ class AnswerMedicationQuestionUseCase:
             or not request.history
             or resolution.scope is not MedicationQuestionScope.IN_SCOPE
             or not resolution.entities
-            or len(resolution.entities) != 1
             or self._is_explicit_entity_guide_request(
                 question=request.question,
-                context=context,
                 resolution=resolution,
-                history=request.history,
             )
         ):
             return request
@@ -1757,34 +1950,10 @@ class AnswerMedicationQuestionUseCase:
     def _is_explicit_entity_guide_request(
         *,
         question: str,
-        context: ActiveIntakeContext,
         resolution: MedicationQuestionResolution,
-        history: list[ChatHistoryMessage],
     ) -> bool:
-        if (
-            history
-            and history[-1].role is ChatRole.ASSISTANT
-            and history[-1].content.startswith(AnswerMedicationQuestionUseCase._CLARIFICATION_CANDIDATE_PREFIX)
-            and any(
-                entity.source is MedicationQueryEntitySource.SESSION_MEMORY
-                and entity.entity_type is MedicationQueryEntityType.PRODUCT_NAME
-                for entity in resolution.entities
-            )
-        ):
-            return True
         if is_interaction_question(question):
             return False
-        registered_product_names = {
-            AnswerMedicationQuestionUseCase._normalize_entity_name(medication.name)
-            for medication in context.medications
-        }
-        if any(
-            entity.kind is InteractionEntityKind.DRUG
-            and AnswerMedicationQuestionUseCase._normalize_entity_name(entity.canonical_name)
-            in registered_product_names
-            for entity in resolution.entities
-        ):
-            return True
         query_plan = MedicationKnowledgeQueryBuilder(
             catalog_entities=resolution.entities,
         ).build(question)
@@ -2389,7 +2558,6 @@ class AnswerMedicationQuestionUseCase:
                 resolution = await self._question_resolver.resolve(
                     question=request.question,
                     additional_entities=[
-                        *self._clarification_candidate_entities(request.history),
                         *(
                             MedicationCatalogEntry(
                                 canonical_name=entity.name,
@@ -2403,7 +2571,6 @@ class AnswerMedicationQuestionUseCase:
                         *(
                             MedicationCatalogEntry(
                                 canonical_name=item.name,
-                                aliases=self._candidate_lookup_aliases(item.name),
                                 entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
                                 kind=InteractionEntityKind.DRUG,
                                 source=MedicationQueryEntitySource.PATIENT_CONTEXT,
@@ -2448,49 +2615,6 @@ class AnswerMedicationQuestionUseCase:
             resolution_span.end(outputs)
             return resolution
 
-    @classmethod
-    def _clarification_candidate_entities(
-        cls,
-        history: list[ChatHistoryMessage],
-    ) -> list[MedicationCatalogEntry]:
-        """직전의 정형 확인 질문에서만 선택 후보를 제품명으로 재사용한다."""
-
-        if not history:
-            return []
-        message = history[-1]
-        if message.role is not ChatRole.ASSISTANT or not message.content.startswith(
-            cls._CLARIFICATION_CANDIDATE_PREFIX
-        ):
-            return []
-        candidate_text = message.content.removeprefix(cls._CLARIFICATION_CANDIDATE_PREFIX).strip()
-        return [
-            MedicationCatalogEntry(
-                canonical_name=name,
-                aliases=cls._candidate_lookup_aliases(name),
-                entity_type=MedicationQueryEntityType.PRODUCT_NAME,
-                kind=InteractionEntityKind.DRUG,
-                source=MedicationQueryEntitySource.SESSION_MEMORY,
-            )
-            for name in (item.strip() for item in candidate_text.split(","))
-            if name
-        ]
-
-    @classmethod
-    def _candidate_lookup_aliases(cls, name: str) -> list[str]:
-        """확인 후보 끝 글자가 조사로 오인돼도 정식 제품명으로 재진입한다."""
-
-        return [
-            name[: -len(particle)]
-            for particle in cls._CANDIDATE_TRAILING_PARTICLES
-            if len(name) > len(particle) and name.endswith(particle)
-        ]
-
-    @classmethod
-    def _is_adverse_reaction_only_question(cls, question: str) -> bool:
-        return any(cue in question for cue in cls._ADVERSE_REACTION_ONLY_CUES) and not any(
-            cue in question for cue in cls._NON_ADVERSE_SECTION_CUES
-        )
-
     @staticmethod
     def _apply_session_reference(
         request: MedicationChatRequest,
@@ -2517,6 +2641,44 @@ class AnswerMedicationQuestionUseCase:
         if KnowledgeSectionType.DAILY_INTAKE in evidence_coverage.requested_section_types:
             return f"{product_name}의 복용법"
         return f"{product_name} 안내"
+
+    @staticmethod
+    def _response_subject(
+        *,
+        query_plan: MedicationKnowledgeQueryPlan,
+        guide_lookup: MedicationGuideLookup,
+        interaction_question: bool,
+    ) -> str | None:
+        """공식 제품 가이드가 없는 단일 대상의 공공 근거에만 제목을 붙인다."""
+
+        if guide_lookup.guide is not None or interaction_question:
+            return None
+        resolved_entities = [
+            entity
+            for entity in query_plan.entities
+            if (entity.kind is not None and entity.entity_type is not MedicationQueryEntityType.TOPIC)
+        ]
+        if len(resolved_entities) != 1:
+            return None
+        return resolved_entities[0].canonical_name
+
+    @staticmethod
+    def _is_adverse_reaction_question(
+        *,
+        question: str,
+        query_plan: MedicationKnowledgeQueryPlan,
+        chunks: list[RetrievedKnowledgeChunk],
+        interaction_question: bool,
+    ) -> bool:
+        if re.search(r"이상반응|부작용|복용\s*후|사용\s*후|보고된\s*사례", question):
+            return True
+        if interaction_question or query_plan.section_types:
+            return False
+        asks_about_medication_use = re.search(r"(?:복용|사용|먹)[가-힣]*", question) is not None
+        has_adverse_case_evidence = any(
+            chunk.metadata.document_type is KnowledgeDocumentType.ADVERSE_CASE_REPORT for chunk in chunks
+        )
+        return asks_about_medication_use and has_adverse_case_evidence
 
     @staticmethod
     def _preserve_reference_product_heading(
@@ -2583,7 +2745,10 @@ class AnswerMedicationQuestionUseCase:
             context=context,
         ):
             return None
-        if not should_execute_source_backed_retrieval(resolution):
+        if not (
+            should_execute_source_backed_retrieval(resolution)
+            or self._is_supplement_function_goal_question(request.question)
+        ):
             return self._unrecognized_entity_result(
                 request=request,
                 context=context,
@@ -3407,7 +3572,10 @@ class AnswerMedicationQuestionUseCase:
                 raise
             generated = outcome.result.model_copy(
                 update={
-                    "answer": self._compact_final_answer(outcome.result),
+                    "answer": compact_chat_content(
+                        outcome.result.answer,
+                        marker=ANSWER_COMPACTION_MARKER,
+                    )
                 }
             )
             llm_span.end(
@@ -3519,6 +3687,39 @@ class AnswerMedicationQuestionUseCase:
             if lookup.guide is not None or lookup.is_ambiguous:
                 return lookup
         return MedicationGuideLookup()
+
+    async def _with_magnesium_form_cautions(
+        self,
+        *,
+        query_plan: MedicationKnowledgeQueryPlan,
+        guide_lookup: MedicationGuideLookup,
+        interaction_question: bool,
+    ) -> MedicationGuideLookup:
+        """일반 마그네슘 주의사항은 두 제형의 공식 제품 가이드로 보강한다."""
+
+        if (
+            guide_lookup.guide is not None
+            or interaction_question
+            or KnowledgeSectionType.CAUTION not in query_plan.section_types
+            or not any(
+                entity.canonical_name == "마그네슘" and entity.kind is InteractionEntityKind.SUPPLEMENT
+                for entity in query_plan.entities
+            )
+        ):
+            return guide_lookup
+        find_caution_guides = getattr(
+            self._guide_repository,
+            "find_caution_guides_by_ingredient_names",
+            None,
+        )
+        if find_caution_guides is None:
+            return guide_lookup
+        form_caution_guides = await find_caution_guides(
+            ["수산화마그네슘", "산화마그네슘"],
+        )
+        return guide_lookup.model_copy(
+            update={"form_caution_guides": form_caution_guides},
+        )
 
     @staticmethod
     def _should_lookup_official_guide_for_interaction(
@@ -3818,6 +4019,32 @@ class AnswerMedicationQuestionUseCase:
             )
         ]
 
+    @classmethod
+    def _functional_supplement_answer_chunks(
+        cls,
+        *,
+        question: str,
+        chunks: list,
+    ) -> list:
+        """목표 기반 기능성 질문에는 성분이 명시된 원료 근거만 우선 보여 준다."""
+
+        if not cls._is_supplement_function_goal_question(question):
+            return chunks
+        source_backed_ingredients = [
+            chunk
+            for chunk in chunks
+            if (
+                chunk.metadata.document_type
+                in {
+                    KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+                    KnowledgeDocumentType.SUPPLEMENT_CODE,
+                }
+                and chunk.metadata.section_type is KnowledgeSectionType.FUNCTION
+                and chunk.metadata.ingredient_names
+            )
+        ]
+        return source_backed_ingredients[:3]
+
     @staticmethod
     def _has_supplement_evidence(
         question: str,
@@ -3846,6 +4073,8 @@ class AnswerMedicationQuestionUseCase:
                 return True
             if metadata.document_type not in supplement_types:
                 continue
+            if AnswerMedicationQuestionUseCase._is_supplement_function_goal_question(question):
+                return True
             if not metadata.ingredient_names:
                 return True
             if any("".join(name.casefold().split()) in question_key for name in metadata.ingredient_names):
@@ -3892,7 +4121,46 @@ class AnswerMedicationQuestionUseCase:
                 "마그네슘",
                 "유산균",
                 "프로바이오틱스",
+                "건강기능식품",
+                "기능성 원료",
             )
+        )
+
+    @staticmethod
+    def _is_supplement_function_goal_question(question: str) -> bool:
+        return is_supplement_function_goal_question(question)
+
+    @classmethod
+    def _functional_supplement_goal_title(cls, question: str) -> str | None:
+        """목표형 영양제 질문의 건강 목표를 짧은 사용자용 제목으로 정규화한다."""
+
+        normalized_question = re.sub(r"\s+", " ", question).strip()
+        for pattern, title in cls._FUNCTIONAL_SUPPLEMENT_GOAL_TITLES:
+            if pattern.search(normalized_question):
+                return title
+        if "건강" in normalized_question and re.search(r"도움|성분|영양", normalized_question):
+            return "건강 증진"
+        return None
+
+    @classmethod
+    def _bypass_supplement_function_goal_clarification(
+        cls,
+        *,
+        question: str,
+        resolution: MedicationQuestionResolution,
+    ) -> MedicationQuestionResolution:
+        """목표 기반 기능성 질문은 제품 후보 확인보다 원료 근거를 우선 검색한다."""
+
+        if (
+            resolution.status is not MedicationExpressionResolutionStatus.CLARIFICATION_REQUIRED
+            or not cls._is_supplement_function_goal_question(question)
+        ):
+            return resolution
+        return resolution.model_copy(
+            update={
+                "status": MedicationExpressionResolutionStatus.UNCHANGED,
+                "candidate_names": [],
+            }
         )
 
     @classmethod
@@ -4069,6 +4337,16 @@ class AnswerMedicationQuestionUseCase:
                     medication_guide_id=(guide_lookup.guide.medication_guide_id),
                 )
             )
+        sources.extend(
+            MedicationChatSource(
+                kind=MedicationChatSourceKind.MEDICATION_GUIDE,
+                title=f"e약은요 · {guide.product_name}",
+                organization="식품의약품안전처",
+                medication_guide_id=guide.medication_guide_id,
+            )
+            for form_guides in guide_lookup.form_caution_guides.values()
+            for guide in form_guides
+        )
         sources.extend(
             MedicationChatSource(
                 kind=MedicationChatSourceKind.INTERACTION_RULE,

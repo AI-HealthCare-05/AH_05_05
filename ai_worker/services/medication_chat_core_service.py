@@ -16,6 +16,10 @@ from ai_worker.domain.errors import AIConfigurationError
 from ai_worker.domain.medication_question_resolver import (
     RuleBasedMedicationQuestionResolver,
 )
+from ai_worker.llm.chat_model_policy import (
+    ChatModelPolicy,
+    ChatModelStage,
+)
 from ai_worker.llm.generators.conversation_response_generator import (
     build_conversation_response_generator,
 )
@@ -133,6 +137,11 @@ def build_medication_chat_core_service(
     if settings.OPENAI_API_KEY is None or not settings.OPENAI_API_KEY.get_secret_value().strip():
         raise AIConfigurationError("약·영양제 Chat Core를 구성하려면 OPENAI_API_KEY가 필요합니다.")
     chat_tracer = tracer or build_chat_tracer(settings)
+    model_policy = ChatModelPolicy(
+        fast_model=settings.OPENAI_FAST_CHAT_MODEL,
+        accurate_model=settings.OPENAI_ACCURATE_CHAT_MODEL,
+        high_accuracy_routing_enabled=settings.OPENAI_HIGH_ACCURACY_ROUTING_ENABLED,
+    )
     embedding_provider = OpenAIEmbeddingProvider(
         model=settings.OPENAI_EMBEDDING_MODEL,
         dimensions=settings.OPENAI_EMBEDDING_DIMENSIONS,
@@ -168,7 +177,9 @@ def build_medication_chat_core_service(
     )
     conditional_interpretation_chain = (
         build_conditional_question_interpretation_chain(
-            model=settings.OPENAI_CHAT_MODEL,
+            model=model_policy.model_for(
+                ChatModelStage.CONDITIONAL_QUESTION_INTERPRETATION,
+            ),
             api_key=settings.OPENAI_API_KEY,
             timeout_seconds=settings.OPENAI_TIMEOUT_SECONDS,
             max_retries=0,
@@ -178,7 +189,9 @@ def build_medication_chat_core_service(
     )
     interaction_evidence_reasoning_chain = (
         build_interaction_evidence_reasoning_chain(
-            model=settings.OPENAI_CHAT_MODEL,
+            model=model_policy.model_for(
+                ChatModelStage.INTERACTION_EVIDENCE_REASONING,
+            ),
             api_key=settings.OPENAI_API_KEY,
             timeout_seconds=settings.OPENAI_TIMEOUT_SECONDS,
             max_retries=0,
@@ -188,7 +201,7 @@ def build_medication_chat_core_service(
     )
     conversation_gate_chain = (
         build_conversation_gate_chain(
-            model=settings.CONVERSATION_GATE_MODEL,
+            model=model_policy.model_for(ChatModelStage.CONVERSATION_GATE),
             api_key=settings.OPENAI_API_KEY,
             timeout_seconds=settings.CONVERSATION_GATE_TIMEOUT_SECONDS,
             max_retries=0,
@@ -199,7 +212,7 @@ def build_medication_chat_core_service(
     )
     conversation_response_generator = (
         build_conversation_response_generator(
-            model=settings.CONVERSATION_GATE_MODEL,
+            model=model_policy.model_for(ChatModelStage.CONVERSATION_RESPONSE),
             api_key=settings.OPENAI_API_KEY,
             timeout_seconds=settings.CONVERSATION_GATE_TIMEOUT_SECONDS,
             max_retries=0,
@@ -210,7 +223,7 @@ def build_medication_chat_core_service(
     medication_note_summary_use_case = MedicationNoteSummaryUseCase(
         provider=DbMedicationNoteSummaryProvider(),
         generator=build_medication_note_summary_generator(
-            model=settings.CONVERSATION_GATE_MODEL,
+            model=model_policy.model_for(ChatModelStage.MEDICATION_NOTE_SUMMARY),
             api_key=settings.OPENAI_API_KEY,
             timeout_seconds=settings.CONVERSATION_GATE_TIMEOUT_SECONDS,
             max_retries=0,
@@ -241,7 +254,9 @@ def build_medication_chat_core_service(
             min_similarity_score=settings.RAG_MIN_SIMILARITY_SCORE,
         ),
         answer_generator=OpenAIMedicationAnswerGenerator(
-            model=settings.OPENAI_CHAT_MODEL,
+            model=settings.OPENAI_FAST_CHAT_MODEL,
+            accurate_model=settings.OPENAI_ACCURATE_CHAT_MODEL,
+            high_accuracy_routing_enabled=settings.OPENAI_HIGH_ACCURACY_ROUTING_ENABLED,
             api_key=settings.OPENAI_API_KEY,
             timeout_seconds=settings.OPENAI_TIMEOUT_SECONDS,
             max_retries=settings.OPENAI_MAX_RETRIES,

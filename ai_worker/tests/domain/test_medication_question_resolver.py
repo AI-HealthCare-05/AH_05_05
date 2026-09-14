@@ -358,6 +358,27 @@ async def test_resolver_keeps_product_name_for_non_interaction_question() -> Non
 
 
 @pytest.mark.asyncio
+async def test_resolver_derives_rdb_product_stem_alias_without_strength_or_ingredient() -> None:
+    resolver = RuleBasedMedicationQuestionResolver(
+        catalog=StaticTypedExpressionCatalog(
+            [
+                MedicationCatalogEntry(
+                    canonical_name="타이레놀산500밀리그램(아세트아미노펜)",
+                    entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                    kind=InteractionEntityKind.DRUG,
+                    source=MedicationQueryEntitySource.RDBMS,
+                )
+            ]
+        ),
+    )
+
+    result = await resolver.resolve(question="타이레놀산의 효능 알려줘")
+
+    assert result.status == MedicationExpressionResolutionStatus.UNCHANGED
+    assert [entity.canonical_name for entity in result.entities] == ["타이레놀산500밀리그램(아세트아미노펜)"]
+
+
+@pytest.mark.asyncio
 async def test_resolver_prefers_source_backed_food_over_legacy_drug_category_for_interaction() -> None:
     resolver = RuleBasedMedicationQuestionResolver(
         catalog=StaticTypedExpressionCatalog(
@@ -781,6 +802,18 @@ async def test_resolver_keeps_related_question_without_catalog_match_in_scope() 
     result = await resolver.resolve(
         question="처음 보는 약의 복용 시 주의사항을 알려줘",
     )
+
+    assert result.scope == MedicationQuestionScope.IN_SCOPE
+    assert result.status == MedicationExpressionResolutionStatus.UNRESOLVED
+
+
+@pytest.mark.asyncio
+async def test_resolver_keeps_natural_wellness_food_question_in_scope() -> None:
+    resolver = RuleBasedMedicationQuestionResolver(
+        catalog=StaticExpressionCatalog([]),
+    )
+
+    result = await resolver.resolve(question="잠 잘자려면 뭘 먹어야해?")
 
     assert result.scope == MedicationQuestionScope.IN_SCOPE
     assert result.status == MedicationExpressionResolutionStatus.UNRESOLVED

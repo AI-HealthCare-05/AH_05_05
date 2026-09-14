@@ -3,11 +3,12 @@ from enum import StrEnum
 from functools import cache
 from importlib.resources import files
 
-MEDICATION_CHAT_PROMPT_CHAIN_ASSET = "medication_chat_prompt_v7.md"
+MEDICATION_CHAT_PROMPT_CHAIN_ASSET = "medication_chat_prompt_v8.md"
 
 _ALLOWED_PROMPT_ASSETS = frozenset(
     {
         "medication_chat_prompt_v6.md",
+        "medication_chat_prompt_v7.md",
         MEDICATION_CHAT_PROMPT_CHAIN_ASSET,
         "intake_report_prompt_v1.md",
         "intake_report_prompt_v11.md",

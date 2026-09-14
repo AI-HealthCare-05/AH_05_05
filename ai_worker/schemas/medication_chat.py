@@ -373,6 +373,7 @@ class MedicationGuideFact(BaseModel):
 class MedicationGuideLookup(BaseModel):
     guide: MedicationGuideFact | None = None
     representative_guide: MedicationGuideFact | None = None
+    form_caution_guides: dict[str, list[MedicationGuideFact]] = Field(default_factory=dict)
     is_ambiguous: bool = False
     candidate_names: list[str] = Field(default_factory=list)
     original_name: str | None = None

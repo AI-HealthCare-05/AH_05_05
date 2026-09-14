@@ -1,0 +1,10 @@
+{
+  "chunking_version": "semantic-structure-v2",
+  "collection_name": "medication_knowledge_full_v16_te3large_3072_dot",
+  "dataset_version": "knowledge-full-v16-te3large",
+  "distance": "DOT",
+  "embedding_dimensions": 3072,
+  "embedding_model": "text-embedding-3-large",
+  "embedding_text_version": "medical-retrieval-v2",
+  "tokenizer_encoding": "cl100k_base"
+}

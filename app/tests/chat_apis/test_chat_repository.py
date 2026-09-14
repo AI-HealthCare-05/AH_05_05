@@ -8,7 +8,16 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatSource,
     MedicationChatSourceKind,
 )
-from ai_worker.schemas.medication_search import MedicationQueryEntityType
+from ai_worker.schemas.medication_search import (
+    MedicationExpressionResolutionStatus,
+    MedicationQueryEntity,
+    MedicationQueryEntitySource,
+    MedicationQueryEntityType,
+    MedicationQuestionConfidence,
+    MedicationQuestionIntent,
+    MedicationQuestionInterpretation,
+    MedicationQuestionScope,
+)
 from app.models.care import CareEpisode
 from app.models.chat import ChatMessage, ChatMessageSource, ChatSession
 from app.models.enums import (
@@ -17,7 +26,7 @@ from app.models.enums import (
     ChatRouteType,
     ChatSafetyStatus,
 )
-from app.models.interactions import MedicationProductGuide
+from app.models.interactions import InteractionEntityAlias, MedicationProductGuide
 from app.models.medications import Medication
 from app.models.supplement_nutrients import UserSupplementNutrient
 from app.models.users import User
@@ -28,6 +37,13 @@ from app.repositories.chat_repository import (
 )
 
 TRACE_ID = "11111111-1111-4111-8111-111111111111"
+
+
+def test_unused_chat_and_reference_fields_are_not_part_of_the_models() -> None:
+    assert "verification_status" not in ChatMessage._meta.fields_map
+    assert "conflict_status" not in ChatMessage._meta.fields_map
+    assert "is_preferred" not in InteractionEntityAlias._meta.fields_map
+    assert "item_image_url" not in MedicationProductGuide._meta.fields_map
 
 
 async def create_user(user_id: int = 1) -> User:
@@ -263,6 +279,62 @@ async def test_accept_request_recovers_drug_reference_from_prior_guide_source() 
     assert next_request.session_reference.entities[0].name == "타이레놀산500밀리그램(아세트아미노펜)"
     assert next_request.session_reference.entities[0].entity_type == MedicationQueryEntityType.PRODUCT_NAME
     assert next_request.session_reference.entities[0].kind == InteractionEntityKind.DRUG
+
+
+@pytest.mark.asyncio
+async def test_accept_request_recovers_prior_public_ingredient_from_structured_interpretation() -> None:
+    """Public RAG 성분은 인용문이 아니라 이전 질문의 확정 엔터티로 이어진다."""
+
+    user = await create_user()
+    repository = ChatRepository()
+    first = await repository.accept_request(
+        user_id=user.id,
+        care_episode_id=None,
+        conversation_id=None,
+        request_id="30100000-0000-4000-8000-000000000001",
+        content="마그네슘의 효능을 알려줘.",
+    )
+    interpretation = MedicationQuestionInterpretation(
+        original_question="마그네슘의 효능을 알려줘.",
+        resolved_question="마그네슘의 효능을 알려줘.",
+        scope=MedicationQuestionScope.IN_SCOPE,
+        resolution_status=MedicationExpressionResolutionStatus.UNCHANGED,
+        intent=MedicationQuestionIntent.SUPPLEMENT_GUIDE,
+        confidence=MedicationQuestionConfidence.HIGH,
+        normalized_entity_names=["마그네슘"],
+        normalized_entities=[
+            MedicationQueryEntity(
+                surface="마그네슘",
+                canonical_name="마그네슘",
+                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                kind=InteractionEntityKind.SUPPLEMENT,
+                source=MedicationQueryEntitySource.CATALOG,
+            )
+        ],
+        query_plan_hash="b" * 64,
+    )
+    await repository.complete_request(
+        assistant_message_id=first.assistant_message.id,
+        result=build_core_result().model_copy(
+            update={
+                "request_id": "30100000-0000-4000-8000-000000000001",
+                "question_interpretation": interpretation,
+            }
+        ),
+        duration_ms=10,
+    )
+
+    next_request = await repository.accept_request(
+        user_id=user.id,
+        care_episode_id=None,
+        conversation_id=first.session.id,
+        request_id="30100000-0000-4000-8000-000000000002",
+        content="그 성분의 주의사항도 알려줘.",
+    )
+
+    assert [(entity.name, entity.entity_type, entity.kind) for entity in next_request.session_reference.entities] == [
+        ("마그네슘", MedicationQueryEntityType.INGREDIENT_NAME, InteractionEntityKind.SUPPLEMENT),
+    ]
 
 
 @pytest.mark.asyncio
