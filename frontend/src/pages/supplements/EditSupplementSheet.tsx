@@ -207,7 +207,7 @@ export function EditSupplementSheet({
                 {supplement.productId && onProductInfo && (
                   <button
                     type="button"
-                    className="flex min-h-touch items-center justify-between rounded-control border border-border bg-card px-4 text-left text-sm font-bold text-primary-strong shadow-card"
+                    className="flex min-h-touch items-center justify-between rounded-card border border-border bg-card px-4 text-left text-sm font-bold text-primary-strong shadow-card"
                     onClick={() => onProductInfo(supplement.productId!)}
                   >
                     <span>제품 정보 보기</span>
