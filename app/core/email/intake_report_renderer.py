@@ -219,7 +219,9 @@ def render_intake_report_email(report: "IntakeReportResponse", *, standalone: bo
         source["safe_url"] = _safe_url(source.get("url"))
         source["evidence_label"] = _EVIDENCE_LABELS.get(source["evidence_level"], "근거 수준 미확인")
     nutrients = [
-        _nutrient(item, standalone=standalone) for item in data["nutrient_totals"] if _number(item.get("amount")) != 0
+        _nutrient(item, standalone=standalone)
+        for item in data["nutrient_totals"]
+        if (_number(item.get("amount")) or 0) > 0
     ]
     if standalone:
         nutrients.sort(

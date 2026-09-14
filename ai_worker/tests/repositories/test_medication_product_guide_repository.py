@@ -153,6 +153,112 @@ async def test_report_bare_typo_needs_confirmation_even_with_one_catalog_product
     assert result.candidate_names == ["타이레놀정500밀리그람"]
 
 
+@pytest.mark.parametrize(
+    "query,canonical",
+    [
+        ("타이레놀정500mg", "타이레놀정500밀리그람(아세트아미노펜)"),
+        ("써스펜8시간이알서방정650mg", "써스펜8시간이알서방정650밀리그램(아세트아미노펜)"),
+        ("아스피린프로텍트정100mg", "아스피린프로텍트정100밀리그람"),
+        ("뮤코졸 정 8 MG", "뮤코졸정8밀리그램"),
+        ("가나다정５００ｍｇ", "가나다정500밀리그램"),
+        ("가나다정500.00mg", "가나다정500밀리그램"),
+        ("가나다정1,000mg", "가나다정1000밀리그램"),
+    ],
+)
+async def test_report_equivalent_unit_spelling_matches_before_other_brand_suggestions(initialized_db, query, canonical):
+    guide = await _create_guide("100", canonical)
+    await _create_guide("200", "타세놀정500밀리그램(아세트아미노펜)")
+    result = await _report_repository().find_by_name(query)
+    assert result.guide is not None
+    assert result.guide.medication_guide_id == guide.id
+    assert not result.is_inferred
+    assert not result.is_ambiguous
+
+
+async def test_report_equivalent_spelling_does_not_select_between_distinct_product_ids(initialized_db):
+    await _create_guide("100", "가나다정10밀리그램")
+    await _create_guide("200", "가나다정10밀리그람")
+    result = await _report_repository().find_by_name("가나다정10mg")
+    assert result.guide is None
+
+
+@pytest.mark.parametrize("canonical,query", [("가나다정", "가나더정"), ("가나정10mg", "가너정10mg")])
+async def test_short_or_strengthless_brand_typo_requires_selector_confirmation(initialized_db, canonical, query):
+    from ai_worker.repositories.report_medication_guide_repository import ReportMedicationGuideRepository
+
+    guide = await _create_guide("100", canonical)
+    assert (await ReportMedicationGuideRepository().find_by_name(query)).guide is None
+    selector = _CandidateSelector(guide.id)
+    result = await ReportMedicationGuideRepository(candidate_selector=selector).find_by_name(query)
+    assert result.guide is not None
+    assert result.guide.medication_guide_id == guide.id
+    assert result.is_inferred
+
+
+async def test_short_brand_competitors_cannot_be_resolved_by_score_gap_and_llm_alone(initialized_db):
+    from ai_worker.repositories.report_medication_guide_repository import ReportMedicationGuideRepository
+
+    guide = await _create_guide("100", "알싹정(알벤다졸)")
+    await _create_guide("200", "올싹정(알벤다졸)")
+    repository = ReportMedicationGuideRepository(candidate_selector=_CandidateSelector(guide.id))
+    result = await repository.find_by_name("알쌕정")
+    assert result.guide is None
+    assert result.is_ambiguous
+
+
+@pytest.mark.parametrize(
+    "query,canonical",
+    [
+        ("가나다정10mg", "가나다정100mg"),
+        ("가나다정10mg", "가나다정10mcg"),
+        ("가나다정10,00mg", "가나다정1000mg"),
+        ("가나더정", "가나다정10mg"),
+        ("가나다서방정10mg", "가나다정10mg"),
+    ],
+)
+async def test_generic_normalization_keeps_strength_and_form_boundaries(initialized_db, query, canonical):
+    from ai_worker.repositories.report_medication_guide_repository import ReportMedicationGuideRepository
+
+    guide = await _create_guide("100", canonical)
+    result = await ReportMedicationGuideRepository(candidate_selector=_CandidateSelector(guide.id)).find_by_name(query)
+    assert result.guide is None
+
+
+@pytest.mark.parametrize("ending", ["...", "…"])
+@pytest.mark.parametrize("unit_prefix", ["", "밀", "밀리", "밀리그"])
+async def test_report_recovers_explicitly_truncated_unit_with_identity_notice(initialized_db, ending, unit_prefix):
+    guide = await _create_guide("100", "써스펜8시간이알서방정650밀리그램(아세트아미노펜)")
+    query = f"써스펜8시간이알서방정650{unit_prefix}{ending}"
+    result = await _report_repository().find_by_name(query)
+
+    assert result.guide is not None
+    assert result.guide.medication_guide_id == guide.id
+    assert result.original_name == query
+    assert result.is_inferred
+
+
+@pytest.mark.parametrize(
+    "query,candidates",
+    [
+        ("써스펜8시간이알서방정65...", ["써스펜8시간이알서방정650밀리그램"]),
+        ("오구멘틴듀오시럽22...", ["오구멘틴듀오시럽22.8그램"]),
+        ("튜란트캡슐10밀리...", ["튜란트캡슐100밀리그램(아세틸시스테인)"]),
+        ("튜란트캡...", ["튜란트캡슐100밀리그램(아세틸시스테인)"]),
+        ("튜란트캡슐100밀리...", ["튜란트캡슐100밀리그램", "튜란트캡슐100밀리리터"]),
+        ("튜란트캡슐100밀리", ["튜란트캡슐100밀리그램(아세틸시스테인)"]),
+        ("써스펜8시간이알서방정...", ["써스펜8시간이알서방정650밀리그램"]),
+        ("써스펜8시간이알서방정650", ["써스펜8시간이알서방정650밀리그램"]),
+        ("써스펜8시간이알서방정650...", ["써스펜8시간이알서방정650밀리그램", "써스펜8시간이알서방정650마이크로그램"]),
+        ("써스펜8시간이알서방정650...", ["써스펜8시간이알서방정650밀리그램", "써스펜8시간이알서방정6500밀리그램"]),
+    ],
+)
+async def test_report_truncation_never_guesses_numbers_or_ambiguous_products(initialized_db, query, candidates):
+    for index, name in enumerate(candidates):
+        await _create_guide(str(index), name)
+    result = await _report_repository().find_by_name(query)
+    assert result.guide is None
+
+
 @pytest.mark.parametrize("query", ["타이레놀", "타이레놀정500밀리그", "레놀정500", "타이레놀정50"])
 async def test_report_partial_substring_cannot_bypass_product_identity_guard(initialized_db, query):
     await _create_guide("100", "타이레놀정500밀리그람")
@@ -201,7 +307,18 @@ async def test_report_candidates_are_visible_without_changing_registered_name(in
     assert "확정되지 않아" in notice.message
 
 
-async def test_report_binds_only_confirmed_typo_and_preserves_both_registrations(initialized_db):
+@pytest.mark.parametrize(
+    "product_name,registered_name",
+    [
+        ("타이레놀정500밀리그람", "타이래놀정500밀리그람"),
+        ("써스펜8시간이알서방정650밀리그램(아세트아미노펜)", "써스펜8시간이알서방정650..."),
+        ("튜란트캡슐100밀리그램(아세틸시스테인)", "튜란트캡슐100밀리..."),
+    ],
+)
+async def test_report_binds_only_confirmed_typo_and_preserves_both_registrations(
+    initialized_db, product_name, registered_name
+):
+    from ai_worker.reports.v11_cards import build_canonical_card_plan, build_evidence_catalog, render_cards
     from ai_worker.schemas.medication_chat import ActiveIntakeContext, ActiveMedication
     from ai_worker.tests.use_cases.test_generate_intake_report import (
         FakeContextProvider,
@@ -211,8 +328,8 @@ async def test_report_binds_only_confirmed_typo_and_preserves_both_registrations
     )
     from ai_worker.use_cases.generate_intake_report import GenerateIntakeReportUseCase
 
-    guide = await _create_guide("100", "타이레놀정500밀리그람")
-    names = ["타이래놀정500밀리그람", "타이래늘"]
+    guide = await _create_guide("100", product_name)
+    names = [registered_name, "타이래늘"]
     context = ActiveIntakeContext(
         user_id=1,
         medications=[
@@ -232,6 +349,14 @@ async def test_report_binds_only_confirmed_typo_and_preserves_both_registrations
     assert [item.product_name for item in result.current_stack] == names
     assert generator.draft.guide_item_bindings == {1: guide.id}
     assert [item.product_name for item in generator.draft.guide_evidence] == [guide.product_name]
+    catalog = build_evidence_catalog(generator.draft)
+    cards = render_cards(build_canonical_card_plan(catalog), catalog, generator.draft)
+    assert cards.medications[0].product_name == registered_name
+    assert product_name in cards.medications[0].identity_notice
+    assert cards.medications[0].efficacy.text == "통증과 발열을 완화합니다."
+    assert cards.medications[0].caution.source_ids == [f"guide:{guide.id}"]
+    assert any(detail.label == "복용 방법" for detail in cards.medications[0].details)
+    assert not cards.medications[1].source_ids
 
 
 async def test_report_catalog_queries_only_products_and_reuses_snapshot(initialized_db, monkeypatch):

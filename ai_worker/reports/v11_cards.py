@@ -1154,6 +1154,17 @@ def _section(
     )
 
 
+def _nutrient_subject(name: str) -> str:
+    name = name.strip()
+    last = name[-1:]
+    if last and "가" <= last <= "힣":
+        has_final = (ord(last) - ord("가")) % 28 != 0
+    else:
+        # Sino-Korean digits and consonant-ending letter names (e.g. 비타민 B6).
+        has_final = bool(last) and last.upper() in "013678LMNR"
+    return name + ("이" if has_final else "가")
+
+
 def _overlap_cards(totals: list[IntakeReportNutrientTotal]) -> list[OverlapCard]:
     cards: list[OverlapCard] = []
     for total in totals:
@@ -1164,13 +1175,10 @@ def _overlap_cards(totals: list[IntakeReportNutrientTotal]) -> list[OverlapCard]
             summary = f"{', '.join(product_names)}에 포함돼 있지만 확인된 합계는 계산할 수 없습니다."
         else:
             summary = f"{', '.join(product_names)}의 확인된 합계는 {total.daily_total}입니다."
-        unknown_names = _unique(total.unknown_product_names)
-        if unknown_names:
-            summary += f" 함량을 확인할 수 없는 제품: {', '.join(unknown_names)}."
         cards.append(
             OverlapCard(
                 nutrient_name=total.nutrient_name,
-                title=f"{total.nutrient_name}가 {len(product_names)}개 제품에 들어 있어요",
+                title=f"{_nutrient_subject(total.nutrient_name)} {len(product_names)}개 제품에 들어 있어요",
                 summary=summary,
                 action=(
                     f"{total.nutrient_name} 제품을 더 추가하기 전에, 지금 먹는 제품의 함량과 복용량부터 확인하세요."
@@ -1198,6 +1206,7 @@ def render_cards(
             MedicationCard(
                 item_id=selection.item_id,
                 product_name=medication.product_name,
+                has_information=any(fact.source_ids for fact in medication.facts),
                 identity_notice=draft.inferred_guide_items.get(selection.item_id),
                 efficacy=_section(selection.efficacy, facts_by_id),
                 caution=_section(selection.caution, facts_by_id),
@@ -1467,6 +1476,8 @@ def render_cards_markdown(  # noqa: C901 - section projection is deliberately li
     if cards.medications:
         lines.extend(("", "## 약 정보"))
         for card in cards.medications:
+            if not card.has_information:
+                continue
             lines.extend(("", f"### {_literal(card.product_name)}"))
             if card.identity_notice:
                 lines.extend(("", _literal(card.identity_notice)))
@@ -1487,6 +1498,11 @@ def render_cards_markdown(  # noqa: C901 - section projection is deliberately li
                 if re.search(r"등록.*(?:복용|계획)|(?:복용|계획).*등록", detail.label):
                     continue
                 lines.extend(("", f"**{_literal(detail.label)}**", _clinical_literal(detail.text)))
+
+        unavailable = [card for card in cards.medications if not card.has_information]
+        if unavailable:
+            lines.extend(("", "### 확인 불가 약품", "", "제품 안내 자료를 확인하지 못한 약입니다.", ""))
+            lines.extend(f"- {_literal(card.product_name)}" for card in unavailable)
 
     supplements = [item for item in draft.current_stack if item.item_type.value == "SUPPLEMENT"]
     if supplements:

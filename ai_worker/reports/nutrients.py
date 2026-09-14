@@ -71,7 +71,7 @@ _NUTRIENT_SPECS = (
     _NutrientSpec("iron_mg", "철", "mg", "iron_mg", "iron_mg_ul"),
     _NutrientSpec("phosphorus_mg", "인", "mg", "phosphorus_mg", "phosphorus_mg_ul"),
     _NutrientSpec("potassium_mg", "칼륨", "mg", "potassium_mg", None),
-    _NutrientSpec("sodium_mg", "나트륨", "mg", "sodium_mg", None),
+    _NutrientSpec("sodium_mg", "나트륨", "mg", "sodium_mg", "sodium_mg_ul"),
     _NutrientSpec("vitamin_a_ug_rae", "비타민 A", "μg RAE", "vitamin_a_ug_rae", "vitamin_a_ug_rae_ul"),
     # These source values are intentionally kept separate from vitamin A RAE.
     _NutrientSpec("retinol_ug", "레티놀", "μg", None, None),
@@ -82,8 +82,11 @@ _NUTRIENT_SPECS = (
     _NutrientSpec("niacin_mg", "나이아신", "mg", None, None),
     _NutrientSpec("vitamin_c_mg", "비타민 C", "mg", "vitamin_c_mg", "vitamin_c_mg_ul"),
     _NutrientSpec("vitamin_d_ug", "비타민 D", "μg", "vitamin_d_ug", "vitamin_d_ug_ul"),
+    _NutrientSpec("protein_g", "단백질", "g", "protein_g", "protein_g_ul"),
+    _NutrientSpec("fat_g", "지방", "g", "fat_g", "fat_g_ul"),
+    _NutrientSpec("carb_g", "탄수화물", "g", "carb_g", "carb_g_ul"),
 )
-_MASS_RE = re.compile(r"\s*(\d+(?:\.\d+)?)\s*(mg|g|μg|µg|ug)\s*")
+_MEASUREMENT_RE = re.compile(r"\s*(\d+(?:[.,]\d+)?)\s*(kg|g|mg|μg|µg|ug|l|ml)\s*", re.IGNORECASE)
 _SERVING_RE = re.compile(r"\s*(\d+(?:[.,]\d+)?)\s*([^\d\s]+)\s*")
 _GENDER_GROUPS = {"MALE": "남자", "FEMALE": "여자"}
 _GENDER_LABELS = {"남자": "남성", "여자": "여성"}
@@ -120,32 +123,37 @@ def _display(value: Decimal | None) -> str | None:
     return text.rstrip("0").rstrip(".") if "." in text else text
 
 
-def _mass_in_mg(value: object) -> Decimal | None:
-    match = _MASS_RE.fullmatch(str(value))
+def _measurement(value: object) -> tuple[Decimal, str] | None:
+    """Use the supplement tab's unit scales without equating mass and volume."""
+    match = _MEASUREMENT_RE.fullmatch(str(value))
     if match is None:
         return None
-    amount = _positive_number(match.group(1))
+    amount = _positive_number(match.group(1).replace(",", "."))
     if amount is None:
         return None
-    return (
-        amount
-        * {
-            "g": Decimal("1000"),
-            "mg": Decimal("1"),
-            "μg": Decimal(".001"),
-            "µg": Decimal(".001"),
-            "ug": Decimal(".001"),
-        }[match.group(2)]
-    )
+    unit = match.group(2).lower()
+    factors = {
+        "kg": "1000000",
+        "g": "1000",
+        "mg": "1",
+        "μg": ".001",
+        "µg": ".001",
+        "ug": ".001",
+        "l": "1000",
+        "ml": "1",
+    }
+    return amount * Decimal(factors[unit]), "volume" if unit in {"l", "ml"} else "mass"
 
 
 def _registered_schedule(product: _ProductLike, registration: ActiveSupplement) -> tuple[Decimal, str] | None:
-    basis = _mass_in_mg(product.basis_qty)
-    serving = _mass_in_mg(product.serving_size)
+    basis = _measurement(product.basis_qty)
+    serving = _measurement(product.serving_size)
     serving_match = _SERVING_RE.fullmatch(str(product.serving_desc))
     dose = _positive_number(registration.dose_amount)
     frequency = len(set(registration.scheduled_slots))
     if basis is None or serving is None or serving_match is None or dose is None or frequency == 0:
+        return None
+    if basis[1] != serving[1]:
         return None
     serving_count = _positive_number(serving_match.group(1).replace(",", "."))
     unit = serving_match.group(2)
@@ -153,7 +161,7 @@ def _registered_schedule(product: _ProductLike, registration: ActiveSupplement) 
         return None
     daily_count = dose * frequency
     label = f"등록한 계획 · 하루 {_display(daily_count)}{unit} (1회 {_display(dose)}{unit} × {frequency}회)"
-    return serving / basis / serving_count * daily_count, label
+    return serving[0] / basis[0] / serving_count * daily_count, label
 
 
 def _profile_age(profile: object | None, *, today: date) -> int | None:

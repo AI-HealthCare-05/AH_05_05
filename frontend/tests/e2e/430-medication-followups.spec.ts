@@ -457,7 +457,13 @@ for (const width of [375, 390, 1280]) {
     await zoomOut.click();
     await expect(viewer.getByRole('status')).toHaveText('100%');
     await image.click();
+    await expect(viewer).toBeHidden();
+    await page.getByRole('button', { name: '약봉투 크게 보기' }).click();
+    await viewer.getByRole('button', { name: '원본 보기' }).click();
     await expect(viewer).toBeVisible();
+    await viewer.getByRole('img', { name: '확대한 약봉투 원본' }).click();
+    await expect(viewer).toBeHidden();
+    await page.getByRole('button', { name: '약봉투 크게 보기' }).click();
     await page.keyboard.press('Escape');
     await expect(viewer).toBeHidden();
   });

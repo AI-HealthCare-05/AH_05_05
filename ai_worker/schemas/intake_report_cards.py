@@ -33,6 +33,7 @@ class CardDetail(_CardModel):
 class MedicationCard(_CardModel):
     item_id: int = Field(ge=1)
     product_name: str = Field(min_length=1)
+    has_information: bool = True
     identity_notice: str | None = None
     efficacy: CardSection
     caution: CardSection

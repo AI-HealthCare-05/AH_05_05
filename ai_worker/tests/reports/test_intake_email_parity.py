@@ -142,6 +142,20 @@ def sample_email_report() -> IntakeReportResponse:
     return IntakeReportResponse.model_validate(data)
 
 
+@pytest.mark.parametrize("standalone", [False, True])
+def test_email_groups_unavailable_medications_without_empty_details(standalone):
+    from app.core.email.intake_report_renderer import render_intake_report_email
+
+    data = sample_email_report().model_dump()
+    missing = {**data["cards"]["medications"][0], "item_id": 99, "product_name": "스토엠정", "has_information": False}
+    data["cards"]["medications"].append(missing)
+    markup, plain = render_intake_report_email(IntakeReportResponse.model_validate(data), standalone=standalone)
+    assert "확인 불가 약품" in plain
+    assert "스토엠정" in plain
+    assert "확인 불가 약품" in markup
+    assert markup.count('<details class="medicine">') == (1 if standalone else 0)
+
+
 def test_email_uses_web_card_order_and_values_without_old_percent_or_exclusions():
     from app.core.email.intake_report_renderer import render_intake_report_email
 
@@ -373,7 +387,7 @@ def test_email_visible_notice_and_long_evidence_are_never_truncated():
     assert "마지막 문장 0.005mg" in markup
 
 
-def test_email_preserves_over_upper_unknown_and_no_reference_states():
+def test_email_preserves_over_upper_and_no_reference_but_omits_unknown_totals():
     from app.core.email.intake_report_renderer import render_intake_report_email
 
     report = sample_email_report()
@@ -382,7 +396,7 @@ def test_email_preserves_over_upper_unknown_and_no_reference_states():
     report.nutrient_totals[2].reference_value = None
     markup, plain = render_intake_report_email(report)
     assert "4,000" in plain and "상한 초과" in plain
-    assert "미확인" in plain
+    assert "미확인" not in plain
     assert "비교 기준 없음 · 확인된 합계만 표시했어요." in plain
     assert 'width="100.0%"' not in markup  # Threshold segments retained even when current amount overflows.
 
@@ -393,7 +407,7 @@ def test_email_rejects_non_displayable_numeric_magnitude_like_the_web():
     report = sample_email_report()
     report.nutrient_totals = [report.nutrient_totals[0].model_copy(update={"amount": "1e999999"})]
     markup, plain = render_intake_report_email(report)
-    assert "미확인" in plain
+    assert "미확인" not in plain
     assert "data-upper-position" not in markup
     assert len(markup) < 50_000
 

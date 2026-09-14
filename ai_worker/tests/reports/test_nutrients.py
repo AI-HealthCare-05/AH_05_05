@@ -73,6 +73,70 @@ def _registration(
     )
 
 
+def test_report_matches_supplement_tab_for_volume_sachet_and_gummy() -> None:
+    sachet = _product(
+        1,
+        "액상 식이섬유",
+        calcium=None,
+        iron=None,
+        vitamin_c=None,
+        vitamin_d=None,
+        basis_qty="16ml",
+        serving_size="16ml",
+        serving_desc="1포",
+    )
+    sachet.fiber_g, sachet.sodium_mg, sachet.carb_g, sachet.protein_g = "5", "1", "11.4", "0.08"
+    gummy = _product(
+        2,
+        "비타민 구미",
+        calcium=None,
+        iron=None,
+        vitamin_c="200",
+        vitamin_d=None,
+        basis_qty="4000mg",
+        serving_size="4000mg",
+        serving_desc="2구미",
+    )
+    gummy.carb_g, gummy.protein_g, gummy.fat_g = "6", "1", "0"
+    data = build_report_nutrient_data(
+        products=[sachet, gummy],
+        registrations=[_registration(1, unit="포"), _registration(2, unit="구미")],
+        profile=None,
+        standards=[],
+        today=date(2026, 9, 14),
+    )
+    totals = {item.nutrient_name: item for item in data.totals}
+    assert {name: totals[name].amount for name in ("식이섬유", "나트륨", "비타민 C", "탄수화물", "단백질")} == {
+        "식이섬유": "5",
+        "나트륨": "1",
+        "비타민 C": "100",
+        "탄수화물": "14.4",
+        "단백질": "0.58",
+    }
+    assert totals["식이섬유"].included_product_names == ["액상 식이섬유"]
+    assert totals["나트륨"].included_product_names == ["액상 식이섬유"]
+    assert "지방" not in totals
+
+
+@pytest.mark.parametrize(
+    ("basis", "serving", "expected"),
+    [
+        ("1L", "16ml", "1.6"),
+        ("1,0 kg", "10g", "1"),
+        ("16ml", "16g", None),
+        ("16g", "16ml", None),
+    ],
+)
+def test_report_measurements_convert_within_but_never_between_mass_and_volume(basis, serving, expected) -> None:
+    product = _product(
+        1, "제품", calcium=None, iron=None, vitamin_c="100", vitamin_d=None, basis_qty=basis, serving_size=serving
+    )
+    data = build_report_nutrient_data(
+        products=[product], registrations=[_registration(1)], profile=None, standards=[], today=date(2026, 9, 14)
+    )
+    assert data.totals[0].amount == expected
+
+
 def test_label_schedule_sums_decimal_catalog_amounts_against_actual_female_profile() -> None:
     """Would fail if a label factor, decimal total, or real-profile reference is changed."""
     products = [
@@ -345,8 +409,8 @@ def test_product_ingredient_summaries_use_each_registered_daily_dose_and_ignore_
     )
 
     assert data.product_ingredient_summaries == {
-        10: "식이섬유 3g · 칼슘 100mg · 비타민 A 700μg RAE · 베타카로틴 10μg · 티아민 0.5mg · 비타민 D 5μg",
-        20: "식이섬유 12g · 칼슘 400mg · 비타민 A 2800μg RAE · 베타카로틴 40μg · 티아민 2mg · 비타민 D 20μg",
+        10: "식이섬유 3g · 칼슘 100mg · 비타민 A 700μg RAE · 베타카로틴 10μg · 티아민 0.5mg · 비타민 D 5μg · 지방 2g · 탄수화물 8g",
+        20: "식이섬유 12g · 칼슘 400mg · 비타민 A 2800μg RAE · 베타카로틴 40μg · 티아민 2mg · 비타민 D 20μg · 지방 8g · 탄수화물 32g",
     }
 
 

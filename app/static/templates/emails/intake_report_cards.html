@@ -79,14 +79,20 @@ summary{cursor:pointer;min-height:44px;padding:10px 0}summary:focus-visible{outl
 </div>{% endfor %}
 <p style="font-size:12px;color:#59636f;margin:12px 0 0">영양제 합계 기준이며 식사는 제외됩니다. 상한은 섭취 목표가 아닙니다.</p>
 {% endcall %}{% endif %}
-{% if cards.medications %}{% call section('약 정보') %}{% for card in cards.medications %}
+{% if cards.medications %}{% call section('약 정보') %}{% for card in cards.medications if card.has_information %}
 <div style="padding:16px 0;{% if not loop.first %}border-top:1px solid #dce7e1;{% endif %}">
 {% if standalone %}<details class="medicine"><summary><span>{{ card.product_name|evidence }}</span><span class="toggle"><span class="open-label">상세 보기 ⌄</span><span class="close-label">접기 ⌃</span></span></summary>{% else %}<h3 style="margin:0 0 10px;font-size:16px">{{ card.product_name|evidence }}</h3>{% endif %}
 {% if card.identity_notice %}<p style="background:#fff7e7;padding:12px;border-radius:8px">{{ card.identity_notice|evidence }}</p>{% endif %}
 {% for label, detail in [('효능', card.efficacy), ('주의', card.caution), ('금기', card.contraindication)] %}<p style="margin:12px 0 0"><strong style="display:block;font-size:12px">{{ label }}</strong><span style="white-space:pre-line">{{ detail.text|evidence }}</span></p>{% endfor %}
 {% for detail in card.details %}<p style="margin:12px 0 0"><strong style="display:block;font-size:12px">{{ detail.label|evidence }}</strong><span style="white-space:pre-line">{{ detail.text|evidence }}</span></p>{% endfor %}
 {% if standalone %}</details>{% endif %}
-</div>{% endfor %}{% endcall %}{% endif %}
+</div>{% endfor %}
+{% set unavailable = cards.medications|rejectattr('has_information')|list %}
+{% if unavailable %}<div style="padding:16px 0;border-top:1px solid #dce7e1">
+<h3 style="margin:0 0 10px;font-size:16px">확인 불가 약품</h3>
+<p style="font-size:12px;color:#59636f">제품 안내 자료를 확인하지 못한 약입니다.</p>
+<ul style="padding-left:18px">{% for card in unavailable %}<li>{{ card.product_name|evidence }}</li>{% endfor %}</ul>
+</div>{% endif %}{% endcall %}{% endif %}
 {% if report.unverified_items %}{% call section('확인하지 못한 정보') %}{% for item in report.unverified_items %}<p><strong>{{ item.title|evidence }}</strong> · {{ item.message|evidence }} {{ item.next_step|evidence }}</p>{% endfor %}{% endcall %}{% endif %}
 {% if cards.sources %}{% call section('비교 기준과 출처') %}<ul style="padding-left:18px">{% for source in cards.sources %}<li>{% if source.safe_url %}<a href="{{ source.safe_url }}" target="_blank" rel="noopener noreferrer" style="color:#007b79">{{ source.title|evidence }}</a>{% else %}{{ source.title|evidence }}{% endif %}{% if source.organization %} · {{ source.organization|evidence }}{% endif %} · {{ source.evidence_label }}</li>{% endfor %}</ul>{% endcall %}{% endif %}
 <p style="font-size:12px;color:#59636f;margin:20px 4px 0">이 보고서는 참고용이며 진단이나 처방을 대신하지 않아요. 제품 설명서와 의료진의 지시를 우선하세요.</p>

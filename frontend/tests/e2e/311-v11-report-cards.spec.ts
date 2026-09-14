@@ -66,6 +66,27 @@ const report = {
   },
 };
 
+for (const width of [390, 1280]) {
+  test(`unavailable medicines share one list at ${width}px`, async ({ page }, testInfo) => {
+    const grouped = structuredClone(report);
+    grouped.cards.medications.push({ ...grouped.cards.medications[0], itemId: 99, productName: '스토엠정', hasInformation: false } as typeof grouped.cards.medications[number]);
+    grouped.cards.medications.push({ ...grouped.cards.medications[0], itemId: 100, productName: '자료없는약정', hasInformation: false } as typeof grouped.cards.medications[number]);
+    await page.route('**/api/v1/intake-reports', route => route.fulfill({ json: grouped }));
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/reports/new?source=medications');
+    await page.getByRole('button', { name: '보고서 생성하기', exact: true }).click();
+    const section = page.locator('#v11-medications');
+    const unavailable = section.getByRole('list', { name: '확인 불가 약품' });
+    await expect(unavailable.getByRole('listitem')).toHaveCount(2);
+    await expect(unavailable).toContainText('스토엠정');
+    await expect(unavailable).toContainText('자료없는약정');
+    await expect(section.locator('details')).toHaveCount(2);
+    await section.locator('summary').first().click();
+    await expect(section.getByText('확인된 효능 설명', { exact: true })).toBeVisible();
+    await section.screenshot({ path: testInfo.outputPath(`grouped-medicines-${width}.png`) });
+  });
+}
+
 test.beforeEach(async ({ page }) => {
   await serveStaticBuild(page);
   await page.addInitScript(() => {
@@ -179,7 +200,7 @@ test('all registered nutrient totals remain visible with honest missing-referenc
   }
 });
 
-test('v11 omits zero nutrient rows but keeps positive and unknown amounts', async ({ page }, testInfo) => {
+test('v11 shows positive nutrient totals without zero or unknown rows', async ({ page }, testInfo) => {
   await page.route('**/api/v1/intake-reports', route => route.fulfill({ json: {
     ...report, nutrientTotals: [
       ...report.nutrientTotals,
@@ -191,14 +212,12 @@ test('v11 omits zero nutrient rows but keeps positive and unknown amounts', asyn
     await page.goto('/reports/new?source=supplements');
     await page.getByRole('button', { name: '보고서 생성하기', exact: true }).click();
     const section = page.locator('#v11-nutrients');
-    await expect(section.locator('.nutrient-totals').getByRole('article')).toHaveCount(2);
+    await expect(section.locator('.nutrient-totals').getByRole('article')).toHaveCount(1);
     await expect(section).not.toContainText('나트륨');
     await expect(section).toContainText('비타민 D');
-    await expect(section).toContainText('미확인');
+    await expect(section).not.toContainText('미확인');
     const unknown = section.getByRole('article', { name: '철 성분 합계' });
-    await expect(unknown).toContainText('미확인');
-    await expect(unknown.locator('[data-nutrient-range], [data-nutrient-status]')).toHaveCount(0);
-    await expect(unknown).toContainText('함량 또는 복용량을 확인할 수 없어');
+    await expect(unknown).toHaveCount(0);
     await section.screenshot({ path: testInfo.outputPath(`positive-nutrients-${width}.png`) });
   }
 });
@@ -691,7 +710,7 @@ test('v11 renders server-owned cards once, keeps public guidance non-personal, a
     await expect(page.getByText('델타 효능', { exact: true })).toBeHidden();
     await expect(page.locator('#v11-nutrients')).not.toContainText('합산에서 제외된 제품');
     const iron = page.getByRole('article', { name: '철 성분 합계' });
-    await expect(iron.getByText('미확인', { exact: true })).toBeVisible();
+    await expect(iron).toHaveCount(0);
     await expect(iron.locator('[data-nutrient-range], [data-nutrient-status]')).toHaveCount(0);
     await expect(iron.getByText('가상 함량 미확인 제품', { exact: true })).toBeHidden();
     await expect(page.getByRole('heading', { name: '등록한 영양제 3종' })).toHaveCount(0);
