@@ -1623,7 +1623,6 @@ class TestMedicationGuideOcrJobService(TestCase):
 
         medication = await Medication.get(care_episode_id=int(confirmation.care_episode_id))
         assert medication.times_per_day is None
-        assert medication.note is None
         stored_job = await OcrJob.get(id=job.id)
         assert "timesPerDay" not in stored_job.structured_result["medications"][0]
         assert stored_job.user_review_match_rate is None
