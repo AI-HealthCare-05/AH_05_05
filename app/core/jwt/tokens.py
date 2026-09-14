@@ -45,6 +45,8 @@ class Token:
                 raise ExpiredTokenError("Token is expired") from err
             except TokenBackendError as err:
                 raise TokenError("Token is invalid") from err
+            if self.payload.get("type") != self.token_type:
+                raise TokenError("Token has an unexpected type")
         else:
             self.payload = {"type": self.token_type}
             self.set_exp(from_time=self.current_time, lifetime=self.lifetime)
@@ -145,5 +147,9 @@ class RefreshToken(Token):
             if claim in no_copy:
                 continue
             access[claim] = value
+
+        # 같은 사용자가 여러 탭/로그인 세션을 가질 수 있으므로 user id 만으로는 stale 탭을
+        # 구분할 수 없다. access token 이 어느 refresh token 에서 파생됐는지 함께 묶는다.
+        access["session_id"] = self.payload["jti"]
 
         return access

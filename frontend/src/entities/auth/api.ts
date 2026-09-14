@@ -1,5 +1,5 @@
 /** 인증 API. 화면은 이 함수들만 부릅니다. */
-import { http, mockDelay, setAccessToken } from '@/shared/api/client';
+import { endSession, http, mockDelay, setAccessToken } from '@/shared/api/client';
 import { USE_MOCK } from '@/shared/config/env';
 import { mockLogin } from './api.mock';
 import type { LoginPayload, LoginResult } from './types';
@@ -12,8 +12,8 @@ interface LoginResponseBody {
 /**
  * 로그인하고 액세스 토큰을 클라이언트에 심습니다.
  *
- * 토큰은 메모리에만 둡니다(유저플로우 v4). 새로고침하면 사라져 다시 로그인해야 합니다.
- * 리프레시 토큰은 쓰지 않습니다 — 백엔드도 기본적으로 발급하지 않습니다.
+ * 액세스 토큰은 탭의 sessionStorage에, 리프레시 토큰은 HttpOnly 쿠키에 둡니다.
+ * 웹앱에서 30분간 활동이 없으면 세션을 종료합니다.
  *
  * 실패는 ApiError 로 던져집니다. 화면은 message 를 그대로 띄웁니다.
  * 실패 코드는 INVALID_CREDENTIALS 하나뿐이라 분기할 것이 없습니다 — 계정 상태를
@@ -40,7 +40,7 @@ export async function requestPasswordReset(email: string): Promise<void> {
   await http.post('/v1/auth/password-reset', { email });
 }
 
-/** 로그아웃. 서버에 상태가 없으므로 메모리의 토큰만 비웁니다. */
+/** 로컬 인증을 즉시 종료하고 서버 리프레시 쿠키도 정리합니다. */
 export function logout(): void {
-  setAccessToken(null);
+  void endSession();
 }

@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, status
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, status
 from fastapi.responses import JSONResponse as Response
 
 from app.core import config
@@ -20,6 +20,8 @@ from app.dtos.auth import (
     SignUpResponse,
     TokenRefreshResponse,
 )
+from app.models.enums import AccountStatus
+from app.repositories.user_repository import UserRepository
 from app.services.auth import AuthService
 from app.services.email_jobs import EmailTaskScheduler
 from app.services.email_verifications import EmailVerificationService
@@ -38,6 +40,7 @@ REFRESH_COOKIE_NAME = "refresh_token"
 # path 를 지정하지 않으면 "/" 가 되어 리프레시 토큰이 모든 요청에 실려 나간다.
 # 필요한 곳은 GET /api/v1/auth/token/refresh 하나뿐이므로 그 위로 좁힌다.
 REFRESH_COOKIE_PATH = "/api/v1/auth"
+TOKEN_RESPONSE_HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 
 # AuthService 가 던지는 HTTPException 의 상태 코드 -> 프론트가 분기에 쓸 code.
 # 서비스(은미님 파일)는 {detail} 만 주므로 라우터에서 형식을 맞춘다.
@@ -61,6 +64,15 @@ def _login_error(exc: HTTPException) -> Response:
     """
     code = _LOGIN_ERROR_CODES.get(exc.status_code, "LOGIN_FAILED")
     return Response(content={"code": code, "message": str(exc.detail)}, status_code=exc.status_code)
+
+
+def _optional_bearer(authorization: str | None) -> str | None:
+    if authorization is None:
+        return None
+    scheme, separator, token = authorization.partition(" ")
+    if not separator or scheme.lower() != "bearer" or not token.strip():
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization bearer is invalid.")
+    return token.strip()
 
 
 @auth_router.post(
@@ -161,17 +173,25 @@ async def signup(
 async def login(
     request: LoginRequest,
     auth_service: Annotated[AuthService, Depends(AuthService)],
+    jwt_service: Annotated[JwtService, Depends(JwtService)],
+    refresh_token: Annotated[str | None, Cookie()] = None,
 ) -> Response:
     try:
         user = await auth_service.authenticate(request)
     except HTTPException as exc:
         return _login_error(exc)
 
-    tokens = await auth_service.login(user)
+    if config.USER_REFRESH_ENABLED:
+        tokens, refresh_max_age = jwt_service.issue_or_reuse_user_jwt_pair(user, refresh_token)
+    else:
+        tokens = await auth_service.login(user)
+        refresh_max_age = config.REFRESH_TOKEN_EXPIRE_MINUTES * 60
     resp = Response(
-        content=LoginResponse(access_token=str(tokens["access_token"])).model_dump(), status_code=status.HTTP_200_OK
+        content=LoginResponse(access_token=str(tokens["access_token"])).model_dump(),
+        status_code=status.HTTP_200_OK,
+        headers=TOKEN_RESPONSE_HEADERS,
     )
-    # 자동 로그인을 쓰지 않기로 해 기본값은 꺼짐이다. 만료되면 다시 로그인한다.
+    # 활성 세션 중 access token 을 갱신할 수 있도록 사용자 refresh 쿠키를 발급한다.
     # 관리자 콘솔은 별도 쿠키(admin_refresh_token)를 쓰며 이 플래그의 영향을 받지 않는다.
     if config.USER_REFRESH_ENABLED:
         resp.set_cookie(
@@ -183,7 +203,7 @@ async def login(
             # 저장되는데, 단일 라벨 도메인이라 클라이언트가 전송을 거부해 갱신이 통째로 깨진다.
             # 생략하면 host-only 쿠키가 되어 발급한 호스트에만 실린다(관리자 쿠키와 같은 방식).
             path=REFRESH_COOKIE_PATH,
-            max_age=config.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
+            max_age=refresh_max_age,
         )
     return resp
 
@@ -215,16 +235,49 @@ async def request_password_reset(
 )
 async def token_refresh(
     jwt_service: Annotated[JwtService, Depends(JwtService)],
+    user_repo: Annotated[UserRepository, Depends(UserRepository)],
+    authorization: Annotated[str | None, Header()] = None,
     refresh_token: Annotated[str | None, Cookie()] = None,
 ) -> Response:
-    # 자동 로그인이 꺼져 있으면 이 엔드포인트는 없는 것으로 취급한다.
+    # 사용자 세션 갱신이 꺼져 있으면 이 엔드포인트는 없는 것으로 취급한다.
     # 라우트를 조건부로 등록하지 않고 여기서 막는 이유는, 테스트가 플래그를 켜고 끄며
     # 양쪽 동작을 확인할 수 있어야 하기 때문이다(등록 시점에 정하면 재import 가 필요하다).
     if not config.USER_REFRESH_ENABLED:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
     if not refresh_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token is missing.")
-    access_token = jwt_service.refresh_jwt(refresh_token)
+    access_token, user_id = jwt_service.refresh_user_jwt(refresh_token, _optional_bearer(authorization))
+    user = await user_repo.get_user(user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User account does not exist.")
+    if user.status != AccountStatus.ACTIVE:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is not active.")
     return Response(
-        content=TokenRefreshResponse(access_token=str(access_token)).model_dump(), status_code=status.HTTP_200_OK
+        content=TokenRefreshResponse(access_token=str(access_token)).model_dump(),
+        status_code=status.HTTP_200_OK,
+        headers=TOKEN_RESPONSE_HEADERS,
     )
+
+
+@auth_router.post("/logout", status_code=status.HTTP_200_OK)
+async def logout(
+    jwt_service: Annotated[JwtService, Depends(JwtService)],
+    authorization: Annotated[str | None, Header()] = None,
+    refresh_token: Annotated[str | None, Cookie()] = None,
+) -> Response:
+    """사용자 리프레시 쿠키를 지운다.
+
+    서버가 JWT 를 저장하지 않으므로 이미 발급된 access token 은 만료 전까지 유효하다.
+    서로 다른 사용자의 bearer/cookie 조합이면 stale 탭 요청으로 보고 새 쿠키를 보존한다.
+    """
+    response = Response(content={"detail": "로그아웃되었습니다."}, status_code=status.HTTP_200_OK)
+    bearer = _optional_bearer(authorization)
+    if jwt_service.should_clear_user_refresh_cookie(refresh_token, bearer):
+        response.delete_cookie(
+            key=REFRESH_COOKIE_NAME,
+            path=REFRESH_COOKIE_PATH,
+            httponly=True,
+            secure=config.ENV == Env.PROD,
+            samesite="lax",
+        )
+    return response
