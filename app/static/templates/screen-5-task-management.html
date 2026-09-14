@@ -27,7 +27,7 @@
             <article class="card task-status-card">
                 <div class="task-status-label"><small>진행 대기</small><span class="task-status-help" tabindex="0"
                                                                          aria-describedby="task-help-queued">!</span><span
-                        class="task-status-tooltip" id="task-help-queued" role="tooltip">작업 생성 및 Redis/ARQ 큐 등록 시</span>
+                        class="task-status-tooltip" id="task-help-queued" role="tooltip">백그라운드 작업이 등록되어 실행을 기다릴 때</span>
                 </div>
                 <strong data-task-count-queued>0</strong>
             </article>
@@ -35,7 +35,7 @@
                 <div class="task-status-label"><small>진행중</small><span class="task-status-help" tabindex="0"
                                                                        aria-describedby="task-help-processing">!</span><span
                         class="task-status-tooltip" id="task-help-processing"
-                        role="tooltip">alarm-worker가 작업을 선점했을 때</span></div>
+                        role="tooltip">백그라운드 작업이 실행을 시작했을 때</span></div>
                 <strong data-task-count-processing>0</strong>
             </article>
             <article class="card task-status-card">

@@ -158,6 +158,10 @@ class WorkerSettings:
     cron_jobs = [cron(cleanup_expired_ocr_jobs, minute=set(range(0, 60, 5)))]
     max_tries = 2
     # Bound concurrent full-resolution image decoding and preprocessing memory.
-    max_jobs = 2
+    max_jobs = config.OCR_MAX_JOBS
+    # Let an in-flight OCR complete before a managed deployment cancels it.
+    job_completion_wait = 60
+    # Short-lived ARQ heartbeat lets the combined healthcheck detect a stalled worker.
+    health_check_interval = 10
     # Preserve failure evidence beyond stale-job TTL and the next cleanup tick.
     keep_result = (config.OCR_REVIEW_TTL_MINUTES + 10) * 60

@@ -113,5 +113,5 @@ class SmtpSettingsService:
     def _required(cls, name: str, value: str | SecretStr | None) -> str:
         resolved = cls._secret_value(value)
         if not resolved:
-            raise RuntimeError(f"email-worker 필수 설정이 비어 있습니다: {name}")
+            raise RuntimeError(f"이메일 발송 필수 설정이 비어 있습니다: {name}")
         return resolved

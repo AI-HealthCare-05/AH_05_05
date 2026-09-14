@@ -17,8 +17,16 @@ documents:
             - 사과주스
             - fruit juice
   - document_id: kpicia_pharm_review-c4ea8e68b35b65b3
+    section_boundaries:
+      - 1.차
+      - 2.캐모마일
+      - 3.크랜베리
+      - 4.단삼
     pairs:
       - pair_type: DRUG_SUPPLEMENT
+        evidence_phrases:
+          - 와파린은비타민의존적인응혈인자
+          - 와파린은비타민K의존적인응혈인자
         left:
           kind: DRUG
           display_name: 와파린

@@ -187,7 +187,10 @@ class VolatileOcrStorage:
         except Exception as error:
             raise OSError("OCR volatile storage is unavailable") from error
 
-    async def touch(self, manifest: dict[str, object]) -> bool:
+    async def touch(self, manifest: dict[str, object], *, ttl_seconds: int | None = None) -> bool:
+        expiry = self.ttl_seconds if ttl_seconds is None else ttl_seconds
+        if not isinstance(expiry, int) or isinstance(expiry, bool) or expiry <= 0:
+            raise ValueError("OCR volatile storage TTL must be positive")
         keys = [
             self._require_key(manifest.get(field), field=field)
             for field in ("storageKey", "processedStorageKey")
@@ -197,7 +200,7 @@ class VolatileOcrStorage:
             return False
         await self._ensure_memory_only()
         try:
-            refreshed = await asyncio.gather(*(self._client.expire(key, self.ttl_seconds) for key in keys))
+            refreshed = await asyncio.gather(*(self._client.expire(key, expiry) for key in keys))
         except Exception as error:
             raise OSError("OCR volatile storage is unavailable") from error
         return all(bool(value) for value in refreshed)

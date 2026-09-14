@@ -91,6 +91,27 @@ def test_nonpositive_malformed_or_ungrounded_each_side_spray_quantity_is_omitted
     assert "doseQuantity" not in medication
 
 
+@pytest.mark.parametrize(
+    "score,expected", [(0.0, "low"), (0.70, "low"), (0.71, "low"), (0.710001, "high"), (0.8, "high"), (1.0, "high")]
+)
+def test_review_warning_includes_71_percent_but_not_scores_above_it(score: float, expected: str) -> None:
+    name = replace(_field("테스트정", "테스트정", "name"), confidence=score)
+    empty = MedicationField(None, "", (), None, None, ())
+    row = MedicationRow(
+        "테스트정",
+        "",
+        None,
+        None,
+        score,
+        AxisAlignedBBox(0, 0, 100, 20),
+        MedicationFields(name, empty, empty, empty),
+        (),
+    )
+    review = build_project_review(MedicationRowsResult(None, (row,), ()))
+    assert review["medications"][0]["confidence"] == expected
+    assert review["lowConfidenceCount"] == (1 if expected == "low" else 0)
+
+
 def test_standard_tablet_quantity_remains_projected() -> None:
     medication = _project_dose_quantity("1정", "1")
 

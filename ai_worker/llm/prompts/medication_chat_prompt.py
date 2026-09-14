@@ -37,6 +37,7 @@ def build_medication_chat_messages(
     request: MedicationChatRequest,
     context: ActiveIntakeContext,
     result: MedicationChatResult,
+    rewrite_instruction: str | None = None,
 ) -> list[BaseMessage]:
     show_active_medication_section = bool(context.medications) and result.route in {
         MedicationChatRoute.ACTIVE_INTAKE,
@@ -76,6 +77,7 @@ def build_medication_chat_messages(
         "evidence_reasoning": (
             result.evidence_reasoning.model_dump(mode="json") if result.evidence_reasoning is not None else None
         ),
+        "rewrite_instruction": rewrite_instruction,
     }
     return [
         SystemMessage(content=SYSTEM_PROMPT),

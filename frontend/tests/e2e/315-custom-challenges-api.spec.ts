@@ -8,6 +8,7 @@ test.beforeEach(async ({ page }) => {
   await page.route('https://fonts.googleapis.com/**', route => route.abort());
   await page.route('https://fonts.gstatic.com/**', route => route.abort());
   await page.route(url => url.pathname.startsWith('/api/'), route => route.fulfill({ status: 404, json: {} }));
+  await page.route('**/api/v1/user/custom-challenges/badges', route => route.fulfill({ json: { items: [], totalCount: 0 } }));
   page.setDefaultTimeout(5_000);
   page.setDefaultNavigationTimeout(60_000);
 });
@@ -417,13 +418,62 @@ test('My lists custom participation independently and detail renders only server
   await expect(page.getByRole('progressbar', { name: '맞춤 챌린지 진행률' })).toHaveAttribute('aria-valuenow', '28.57');
   const selectedRecords = recordsForDate(page, '2026-09-09');
   await expect(selectedRecords.getByRole('listitem')).toHaveCount(2);
-  await expect(selectedRecords.getByRole('listitem').first()).toContainText('아침');
-  await expect(selectedRecords.getByRole('listitem').last()).toContainText('저녁');
+  await expect(selectedRecords.getByRole('region', { name: '아침 복용 기록', exact: true }).getByRole('listitem')).toContainText('서울의원 1차 처방');
+  await expect(selectedRecords.getByRole('region', { name: '저녁 복용 기록', exact: true }).getByRole('listitem')).toContainText('서울의원 1차 처방');
   await expect(selectedRecords.getByRole('listitem').first()).toContainText('완료');
   await expect(page.getByText('2 / 2회 완료', { exact: true })).toBeVisible();
   const detail = page.locator('main');
   await expect(detail.getByRole('button', { name: /했어요|복약|인증/ })).toHaveCount(0);
   await expect(detail.getByText(/배지/)).toHaveCount(0);
+});
+
+test('excluded supplement targets leave active summaries but remain named in calendar and terminal history', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-10T03:00:00Z'));
+  await authenticate(page);
+  await stubOfficialMy(page);
+  let item = participation({
+    challengeType: 'SUPPLEMENT',
+    challengeName: '영양제 루틴 이어가기',
+    targets: [
+      { id: 801, sourceId: 201, name: '오메가3', isExcluded: true },
+      { id: 802, sourceId: 202, name: '유산균', isExcluded: false },
+    ],
+    occurrences: [
+      { id: 901, targetId: 801, scheduledDate: '2026-09-09', slot: 'MORNING', scheduledAt: '2026-09-09T08:00:00+09:00', isCompleted: true },
+      { id: 902, targetId: 802, scheduledDate: '2026-09-10', slot: 'MORNING', scheduledAt: '2026-09-10T08:00:00+09:00', isCompleted: false },
+    ],
+  });
+  await page.route('**/api/v1/user/custom-challenge-participations', route => route.fulfill({
+    json: { items: [item], totalCount: 1 },
+  }));
+  await page.route('**/api/v1/user/custom-challenge-participations/701', route => route.fulfill({ json: item }));
+
+  await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
+  const activeCard = page.getByRole('region', { name: '진행 중인 챌린지' }).getByRole('article', { name: item.challengeName });
+  await expect(activeCard).toContainText('유산균');
+  await expect(activeCard).not.toContainText('오메가3');
+  await activeCard.getByRole('link', { name: `${item.challengeName} 자세히 보기` }).click();
+
+  const activeTargets = page.getByRole('region', { name: '참여 대상' });
+  await expect(activeTargets).toContainText('1개');
+  await expect(activeTargets).toContainText('유산균');
+  await expect(activeTargets).not.toContainText('오메가3');
+  await page.getByRole('button', { name: '2026.09.09, 모두 완료' }).click();
+  await expect(recordsForDate(page, '2026-09-09')).toContainText('오메가3');
+
+  item = { ...item, status: 'CANCELLED' };
+  await page.reload();
+  const terminalTargets = page.getByRole('region', { name: '참여 대상' });
+  await expect(terminalTargets).toContainText('2개');
+  await expect(terminalTargets).toContainText('오메가3');
+  await expect(terminalTargets).toContainText('유산균');
+
+  await page.goto('/challenges');
+  await page.getByRole('button', { name: '지난 기록 펼치기', exact: true }).click();
+  const historyCard = page.getByRole('region', { name: '지난 기록' }).getByRole('article', { name: item.challengeName });
+  await expect(historyCard).toContainText('오메가3');
+  await expect(historyCard).toContainText('유산균');
 });
 
 test('custom detail back returns through My without reopening the detail', async ({ page }) => {
@@ -728,7 +778,7 @@ test('completed medication detail keeps the server final snapshot and its awarde
   await expect(page.getByText(/7일/)).toHaveCount(0);
 });
 
-test('My badges shows official and custom awards with the same numeric badge id independently', async ({ page }) => {
+test('My badges counts a shared badge ID once while keeping official and custom history links separate', async ({ page }) => {
   await authenticate(page);
   await page.route('**/api/v1/user/challenge-catalog?*', route => route.fulfill({ json: {
     items: [{
@@ -781,9 +831,9 @@ test('My badges shows official and custom awards with the same numeric badge id 
 
   await page.goto('/challenges/badges');
 
-  await expect(page.getByText('모은 배지 2종 · 총 2회 획득')).toBeVisible();
+  await expect(page.getByText('모은 배지 1종 · 총 2회 획득')).toBeVisible();
   await expect(page.getByRole('link', { name: '공식 걷기 배지, 1회 획득' })).toHaveAttribute('href', '/challenges/badges/9');
-  await expect(page.getByRole('link', { name: '복약 루틴 배지, 1회 획득' })).toHaveAttribute('href', '/challenges/custom-participations/701');
+  await expect(page.getByRole('link', { name: '복약 루틴 배지, 1회 획득' })).toHaveAttribute('href', '/challenges/custom-badges/9');
 });
 
 test('custom badge failure is retryable without hiding official badges', async ({ page }) => {
@@ -879,6 +929,31 @@ test.describe('Asia/Seoul occurrence boundary', () => {
 });
 
 for (const kind of ['MEDICATION', 'SUPPLEMENT']) {
+  test(`${kind} detail shows the appropriate progress guidance`, async ({ page }, testInfo) => {
+    await page.clock.setFixedTime('2026-09-10T03:00:00Z');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await authenticate(page);
+    await page.route('**/api/v1/user/custom-challenge-participations/701', route => route.fulfill({
+      json: participation({
+        challengeType: kind,
+        challengeName: kind === 'SUPPLEMENT' ? '영양제 챌린지' : medicationA.challengeName,
+        targets: [{ id: 801, sourceId: 101, name: kind === 'SUPPLEMENT' ? '종합비타민' : '서울의원 1차 처방' }],
+      }),
+    }));
+    await page.goto('/challenges/custom-participations/701');
+    const progress = page.getByRole('region', { name: '내 진행률', exact: true });
+    await expect(progress).toBeVisible();
+    await expect(progress.getByText('2 / 7일', { exact: true })).toBeVisible();
+    await expect(progress.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '28.57');
+    await expect(progress.getByText(/\d+(\.\d+)?%/)).toHaveCount(0);
+    await expect(progress.getByText('오늘 할당량을 다 먹어야 기록이 인정돼요', { exact: true })).toBeVisible();
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      expect(await progress.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`${kind.toLowerCase()}-detail-${width}.png`), fullPage: true });
+    }
+  });
+
   test(`${kind} calendar groups completion and browses future records without writes`, async ({ page }, testInfo) => {
     await page.clock.setFixedTime('2026-09-10T03:00:00Z');
     await page.setViewportSize({ width: 390, height: 844 });
@@ -890,31 +965,46 @@ for (const kind of ['MEDICATION', 'SUPPLEMENT']) {
     await page.route('**/api/v1/user/custom-challenge-participations/701', route => route.fulfill({ json: participation({
       challengeType: kind,
       challengeName: kind === 'SUPPLEMENT' ? '영양제 루틴 이어가기' : '처방 일정 지키기',
-      targetCount: 4, completedCount: 1, progressRate: '25.00',
+      targetCount: 5, completedCount: 1, progressRate: '20.00',
       actualEndDate: '2026-10-02',
       targets: [
-        { id: 801, sourceId: 101, name: kind === 'SUPPLEMENT' ? '오메가3' : '서울의원 처방' },
-        ...(kind === 'SUPPLEMENT' ? [{ id: 802, sourceId: 102, name: '유산균' }] : []),
+        { id: 801, sourceId: 101, name: kind === 'SUPPLEMENT' ? '오메가3 프리미엄 알티지 캡슐' : '서울의원 소아청소년과에서 처방받은 아침 저녁 감기약' },
+        { id: 802, sourceId: 102, name: kind === 'SUPPLEMENT' ? '유산균 프로바이오틱스 데일리 밸런스' : '튼튼병원에서 처방받은 알레르기 비염약' },
       ],
       occurrences: [
         { id: 904, targetId: 801, scheduledDate: '2026-10-02', slot: 'EVENING', scheduledAt: '2026-10-02T19:00:00+09:00', isCompleted: false },
         { id: 903, targetId: 801, scheduledDate: '2026-09-11', slot: 'MORNING', scheduledAt: '2026-09-11T08:00:00+09:00', isCompleted: false },
         { id: 902, targetId: kind === 'SUPPLEMENT' ? 802 : 801, scheduledDate: '2026-09-10', slot: 'EVENING', scheduledAt: '2026-09-10T19:00:00+09:00', isCompleted: false },
+        { id: 905, targetId: 802, scheduledDate: '2026-09-10', slot: 'MORNING', scheduledAt: '2026-09-10T08:30:00+09:00', isCompleted: false },
         { id: 901, targetId: 801, scheduledDate: '2026-09-10', slot: 'MORNING', scheduledAt: '2026-09-10T08:00:00+09:00', isCompleted: true },
       ],
     }) }));
     await page.goto('/challenges/custom-participations/701');
-    await expect(page.getByRole('button', { name: '2026.09.10, 1/2 완료, 오늘' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByText('기록을 좌우로 밀어 다른 날짜를 확인해요.', { exact: true })).toHaveCount(0);
+    await expect(page.getByText(`진행률은 홈과 ${kind === 'SUPPLEMENT' ? '영양제' : '복약'} 기록을 기준으로 자동 계산돼요. 달력에서는 기록을 확인할 수 있어요.`, { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '2026.09.10, 1/3 완료, 오늘' })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByRole('button', { name: /2026.09.08/ })).toHaveCount(0);
     await expect(page.getByRole('button', { name: '2026.09.12, 목표 없음' })).toBeEnabled();
     const records = recordsForDate(page, '2026-09-10');
-    await expect(records.getByRole('listitem')).toHaveCount(2);
-    await expect(records.getByRole('listitem').first()).toContainText('아침');
+    await expect(records).not.toHaveAttribute('aria-describedby', 'custom-date-navigation-hint');
+    await expect(records.getByRole('listitem')).toHaveCount(3);
+    await expect(records.getByRole('region', { name: /복용 기록/ })).toHaveCount(2);
+    const morning = records.getByRole('region', { name: '아침 복용 기록' });
+    await expect(morning).toContainText(kind === 'SUPPLEMENT' ? '오메가3 프리미엄 알티지 캡슐' : '서울의원 소아청소년과에서 처방받은 아침 저녁 감기약');
+    await expect(morning).toContainText(kind === 'SUPPLEMENT' ? '유산균 프로바이오틱스 데일리 밸런스' : '튼튼병원에서 처방받은 알레르기 비염약');
+    await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(1);
+    await expect(morning.getByText('예정', { exact: true })).toHaveCount(1);
+    await expect(morning.locator('svg')).toHaveCount(0);
     if (kind === 'SUPPLEMENT') {
-      await expect(records).toContainText('오메가3');
-      await expect(records).toContainText('유산균');
+      await expect(records).toContainText('오메가3 프리미엄 알티지 캡슐');
+      await expect(records).toContainText('유산균 프로바이오틱스 데일리 밸런스');
     }
-    await page.getByRole('region', { name: '챌린지 달력', exact: true }).screenshot({ path: testInfo.outputPath('calendar.png') });
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+      await expect(morning).toBeVisible();
+      expect(await morning.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+      await page.getByRole('region', { name: '챌린지 달력', exact: true }).screenshot({ path: testInfo.outputPath(`calendar-${width}.png`) });
+    }
     await page.getByRole('button', { name: '2026.09.11, 예정 1회' }).click();
     await expect(recordsForDate(page, '2026-09-11')).toContainText('예정');
     await page.getByRole('button', { name: '2026.10.02, 예정 1회' }).click();
@@ -1028,10 +1118,9 @@ for (const challengeType of ['MEDICATION', 'SUPPLEMENT']) {
     await dialog.getByRole('button', { name: '취소 중...' }).evaluate((button: HTMLButtonElement) => button.click());
     expect(calls).toBe(1);
     release();
+    await expect(page).toHaveURL('/challenges');
     await expect(dialog).toHaveCount(0);
-    await expect(page.getByText('취소', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: '챌린지 참여 취소', exact: true })).toHaveCount(0);
-    await page.getByRole('banner').getByRole('button', { name: '뒤로 가기', exact: true }).click();
     await expect(page.getByRole('region', { name: '진행 중인 챌린지' }).getByRole('article')).toHaveCount(0);
     await page.getByRole('button', { name: '지난 기록 펼치기' }).click();
     await expect(page.getByRole('region', { name: '지난 기록' }).getByRole('article')).toContainText('취소');
@@ -1055,6 +1144,7 @@ test('custom cancellation errors stay retryable and ended state is reconciled on
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: '참여 취소', exact: true }).click();
   await expect(dialog.getByRole('alert')).toContainText('잠시 후 다시');
+  await expect(page).toHaveURL('/challenges/custom-participations/701');
   await dialog.getByRole('button', { name: '참여 취소', exact: true }).click();
   await expect(dialog.getByRole('alert')).toContainText('진행 중인 챌린지만');
   await expect(dialog.getByRole('button', { name: '참여 취소', exact: true })).toBeDisabled();

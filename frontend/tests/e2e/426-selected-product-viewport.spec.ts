@@ -37,7 +37,7 @@ async function openSearch(page: Page, longName?: string) {
   await page.getByRole('button', { name: '영양제 추가', exact: true }).click();
   const sheet = page.getByRole('dialog', { name: '영양제 추가' });
   await sheet.getByRole('searchbox').fill('테스트');
-  await expect(sheet.getByText('22개가 찾아졌어요.')).toBeVisible();
+  await expect(sheet.getByText('22개를 찾았어요.')).toBeVisible();
   return { sheet, products, list: sheet.getByRole('list', { name: '검색 결과', exact: true }) };
 }
 
@@ -102,7 +102,7 @@ test('selected product stays in view when the viewport shrinks', async ({ page }
   await expect(sheet.getByRole('textbox', { name: '직접 입력 제품명' })).toBeVisible();
   await sheet.getByRole('button', { name: '검색으로 돌아가기', exact: true }).click();
   await expect(sheet.getByRole('searchbox')).toHaveValue('테스트');
-  await expect(sheet.getByText('22개가 찾아졌어요.')).toBeVisible();
+  await expect(sheet.getByText('22개를 찾았어요.')).toBeVisible();
 });
 
 test('selected details remain reachable after resize and with 200% text and a very long name', async ({ page }) => {

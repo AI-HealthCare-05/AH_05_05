@@ -38,6 +38,7 @@ export interface CustomChallengeTarget {
   id: number;
   sourceId: number;
   name: string;
+  isExcluded?: boolean;
 }
 
 export interface CustomChallengeOccurrence {
@@ -87,6 +88,7 @@ export interface CustomChallengeBadgeAward {
 export interface CustomChallengeBadgeAwardListResponse {
   items: CustomChallengeBadgeAward[];
   totalCount: number;
+  availableBadges?: CustomChallengeRewardBadge[];
 }
 
 export interface CustomChallengeRewardClaimResponse {

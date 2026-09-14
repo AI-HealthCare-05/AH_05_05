@@ -4,44 +4,18 @@ import { Link, useNavigate } from 'react-router';
 
 import { useSession } from '@/app/SessionContext';
 import { getChallengeCatalog, getUserChallengeBadges } from '@/entities/challenge';
-import {
-  getCustomChallengeBadges,
-  type CustomChallengeBadgeAward,
-} from '@/entities/custom-challenge';
+import { getCustomChallengeBadges } from '@/entities/custom-challenge';
 import { Button } from '@/shared/ui/Button';
 import { Header } from '@/shared/ui/Header';
 import { LoadingState } from '@/shared/ui/LoadingState';
 import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { navigateBackOrReplace } from '@/shared/lib/navigation';
 import { officialBadgeViews, type OfficialBadgeView } from './officialBadgeViews';
+import { customBadgeViews, type CustomBadgeView } from './customBadgeViews';
 
 async function loadOfficialBadges() {
   const [catalog, badges] = await Promise.all([getChallengeCatalog(), getUserChallengeBadges()]);
   return officialBadgeViews(catalog.items, badges.items);
-}
-
-interface CustomBadgeView {
-  badgeId: number;
-  name: string;
-  imagePath: string;
-  awards: CustomChallengeBadgeAward[];
-}
-
-function customBadgeViews(awards: CustomChallengeBadgeAward[]): CustomBadgeView[] {
-  const byBadgeId = new Map<number, CustomBadgeView>();
-  for (const award of awards) {
-    const view = byBadgeId.get(award.badgeId);
-    if (view) view.awards.push(award);
-    else {
-      byBadgeId.set(award.badgeId, {
-        badgeId: award.badgeId,
-        name: award.badgeName,
-        imagePath: award.badgeImagePath,
-        awards: [award],
-      });
-    }
-  }
-  return [...byBadgeId.values()];
 }
 
 export function OfficialChallengeBadgesPage() {
@@ -80,7 +54,7 @@ export function OfficialChallengeBadgesPage() {
     setCustomError(null);
     getCustomChallengeBadges()
       .then(result => {
-        if (active) setCustomBadges(customBadgeViews(result.items));
+        if (active) setCustomBadges(customBadgeViews(result));
       })
       .catch((reason: unknown) => {
         if (active) setCustomError(reason instanceof Error ? reason.message : '맞춤 배지를 불러오지 못했어요.');
@@ -95,7 +69,10 @@ export function OfficialChallengeBadgesPage() {
   }
 
   const officialBadges = badges ?? [];
-  const earnedCount = officialBadges.filter(item => item.awards.length > 0).length + (customBadges?.length ?? 0);
+  const earnedCount = new Set([
+    ...officialBadges.filter(item => item.awards.length > 0).map(item => item.id),
+    ...(customBadges ?? []).filter(item => item.awards.length > 0).map(item => item.badgeId),
+  ]).size;
   const awardCount = officialBadges.reduce((sum, item) => sum + item.awards.length, 0)
     + (customBadges?.reduce((sum, item) => sum + item.awards.length, 0) ?? 0);
   const hasBadges = officialBadges.length > 0 || Boolean(customBadges?.length);
@@ -141,12 +118,12 @@ export function OfficialChallengeBadgesPage() {
             );
           })}
           {customBadges?.map(item => {
-            const latestAward = item.awards[0];
-            const label = `${item.awards.length}회 획득`;
+            const earned = item.awards.length > 0;
+            const label = earned ? `${item.awards.length}회 획득` : '미획득';
             return (
               <li key={`custom-${item.badgeId}`}>
-                <Link to={`/challenges/custom-participations/${latestAward.participationId}`} aria-label={`${item.name}, ${label}`} className="flex min-h-40 flex-col gap-2.5 rounded-card bg-card p-4 shadow-card">
-                  <img src={apiAssetUrl(item.imagePath)} alt={item.name} className="size-11 rounded-pill object-contain" />
+                <Link to={`/challenges/custom-badges/${item.badgeId}`} state={{ returnTo: '/challenges/badges' }} aria-label={`${item.name}, ${label}`} className="flex min-h-40 flex-col gap-2.5 rounded-card bg-card p-4 shadow-card">
+                  <img src={apiAssetUrl(item.imagePath)} alt={item.name} className={`size-11 rounded-pill object-contain ${earned ? '' : 'grayscale opacity-60'}`} />
                   <span className="line-clamp-2 text-sm font-bold text-foreground">{item.name}</span>
                   <span className="text-xs text-muted-foreground">{label}</span>
                 </Link>

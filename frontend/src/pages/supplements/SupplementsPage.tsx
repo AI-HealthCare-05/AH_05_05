@@ -1,22 +1,22 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Star } from 'lucide-react';
 import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { getMyProfile, type Gender } from '@/entities/account';
+import { getCustomChallengeParticipations, invalidateCustomChallengeProgress } from '@/entities/custom-challenge';
 import {
   addSupplement,
-  evaluateNutrientStandard,
   getSupplements,
   stopSupplement,
   summarizeNutrients,
   updateSupplement,
   type AddSupplementPayload,
   type NutrientStandards,
-  type NutrientTotal,
   type Supplement,
   type UpdateSupplementPayload,
 } from '@/entities/supplement';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
+import { NutrientTotals } from '@/entities/supplement/ui/NutrientTotals';
 import { calculateFullAge } from '@/shared/lib/birthDate';
 import { mealSlotLabel } from '@/shared/model/mealSlot';
 import { navigateBackOrReplace } from '@/shared/lib/navigation';
@@ -26,6 +26,8 @@ import {
   Card,
   ErrorDialog,
   Header,
+  SelectionActions,
+  SelectionCheckbox,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -33,6 +35,7 @@ import {
 import { AddSupplementSheet } from './AddSupplementSheet';
 import { EditSupplementSheet } from './EditSupplementSheet';
 import { SupplementsBrowseView } from './SupplementsBrowseView';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
 
 const numberFormat = new Intl.NumberFormat('ko-KR');
 
@@ -70,6 +73,14 @@ export function SupplementsPage({
   const [listEditOpen, setListEditOpen] = useState(false);
   const [selectedSupplementIds, setSelectedSupplementIds] = useState<Set<number>>(new Set());
   const [bulkStopping, setBulkStopping] = useState(false);
+  const [removalWarning, setRemovalWarning] = useState<{
+    count: number;
+    endsChallenge: boolean;
+    excludesFromChallenge: boolean;
+    stopName?: string;
+  } | null>(null);
+  const removalDecision = useRef<((confirmed: boolean) => void) | null>(null);
+  const mounted = useRef(true);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveErrorTitle, setSaveErrorTitle] = useState('영양제를 추가하지 못했어요');
   const totals = useMemo(
@@ -77,8 +88,6 @@ export function SupplementsPage({
     [standards, supplements],
   );
   const hasStandardProfile = standards !== null;
-  const exceeded = hasStandardProfile ? totals.filter((total) => total.exceeded) : [];
-  const neutral = hasStandardProfile ? totals.filter((total) => !total.exceeded) : totals;
   const registeredProductIds = useMemo(
     () =>
       new Set(
@@ -88,6 +97,52 @@ export function SupplementsPage({
       ),
     [supplements],
   );
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      removalDecision.current?.(false);
+      removalDecision.current = null;
+    };
+  }, []);
+
+  function resolveRemoval(confirmed: boolean) {
+    removalDecision.current?.(confirmed);
+    removalDecision.current = null;
+    setRemovalWarning(null);
+  }
+
+  async function confirmSupplementRemoval(ids: number[], stopName?: string): Promise<boolean> {
+    try {
+      // Read at the point of deletion so newly joined challenges are included.
+      const { items } = await getCustomChallengeParticipations();
+      if (!mounted.current) return false;
+      const selected = new Set(ids);
+      const affected = items.filter((participation) =>
+        participation.status === 'ACTIVE' && participation.challengeType === 'SUPPLEMENT' &&
+        participation.targets.some((target) => !target.isExcluded && selected.has(target.sourceId)),
+      );
+      if (affected.length === 0 && stopName === undefined) return true;
+      const endsChallenge = affected.some((participation) =>
+        participation.targets.filter((target) => !target.isExcluded)
+          .every((target) => selected.has(target.sourceId)),
+      );
+      const excludesFromChallenge = affected.some((participation) =>
+        participation.targets.some((target) => !target.isExcluded && !selected.has(target.sourceId)),
+      );
+      return await new Promise<boolean>((resolve) => {
+        removalDecision.current = resolve;
+        setRemovalWarning({ count: ids.length, endsChallenge, excludesFromChallenge, stopName });
+      });
+    } catch (error: unknown) {
+      if (mounted.current) {
+        setSaveErrorTitle('연결된 챌린지를 확인하지 못했어요');
+        setSaveError(error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.');
+      }
+      return false;
+    }
+  }
 
   useEffect(() => {
     if (routePresetProductId === null) return;
@@ -140,6 +195,7 @@ export function SupplementsPage({
     const selectedIds = [...selectedSupplementIds];
     const failedIds = new Set<number>();
     try {
+      if (!(await confirmSupplementRemoval(selectedIds))) return;
       for (const supplementId of selectedIds) {
         try {
           await stopActiveSupplement(supplementId);
@@ -217,6 +273,7 @@ export function SupplementsPage({
             (saved.productId === null || supplement.productId !== saved.productId),
         ),
       ]);
+      invalidateCustomChallengeProgress();
     } catch (error: unknown) {
       setSaveErrorTitle('영양제를 추가하지 못했어요');
       setSaveError(error instanceof Error ? error.message : '영양제를 추가하지 못했어요.');
@@ -235,6 +292,7 @@ export function SupplementsPage({
           supplement.supplementId === supplementId ? updated : supplement,
         ),
       );
+      invalidateCustomChallengeProgress();
     } catch (error: unknown) {
       setSaveErrorTitle('영양제 정보를 저장하지 못했어요');
       setSaveError(error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.');
@@ -248,6 +306,7 @@ export function SupplementsPage({
       setSupplements((current) =>
         (current ?? []).filter((supplement) => supplement.supplementId !== supplementId),
       );
+      invalidateCustomChallengeProgress();
     } catch (error: unknown) {
       setSaveErrorTitle('영양제 복용을 중단하지 못했어요');
       setSaveError(error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.');
@@ -312,10 +371,10 @@ export function SupplementsPage({
         ) : (
           <>
             <div className="flex flex-col gap-3">
-              <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+              <div className="flex items-center justify-between gap-2">
                 {supplements.length > 0 ? (
-                  <h2 id="supplement-list-title" className="text-xl font-bold text-foreground">
-                    먹고 있는 영양제 {supplements.length}개
+                  <h2 id="supplement-list-title" className="shrink-0 text-xl font-bold text-foreground">
+                    영양제 {supplements.length}개
                   </h2>
                 ) : (
                   <h2 id="supplement-list-title" className="sr-only">
@@ -323,29 +382,31 @@ export function SupplementsPage({
                   </h2>
                 )}
                 {supplements.length > 0 && (
-                  <div className="ml-auto flex flex-wrap items-center gap-2">
+                  <div className="ml-auto flex shrink-0 items-center gap-2">
                     {!listEditOpen && (
                       <Button
                         fullWidth={false}
-                        variant="secondary"
+                        variant="primary"
                         onClick={openAddSheet}
                       >
                         <Plus aria-hidden className="mr-1 size-4" />
                         영양제 추가
                       </Button>
                     )}
-                    <Button
-                      fullWidth={false}
-                      variant="secondary"
-                      onClick={toggleListEdit}
-                    >
-                      {listEditOpen ? '완료' : '삭제'}
-                    </Button>
+                    <SelectionActions
+                      aria-label="영양제 선택"
+                      selectionMode={listEditOpen}
+                      selectedCount={selectedSupplementIds.size}
+                      deletePending={bulkStopping}
+                      onStart={toggleListEdit}
+                      onCancel={toggleListEdit}
+                      onDelete={() => void stopSelectedSupplements()}
+                    />
                   </div>
                 )}
               </div>
 
-              <section aria-label="먹고 있는 영양제" aria-labelledby="supplement-list-title">
+              <section aria-label="먹고 있는 영양제">
                 {supplements.length === 0 ? (
                   <div className="flex flex-col items-center gap-3 rounded-card border border-border bg-card px-4 py-8 text-center shadow-card">
                     <h3 className="text-lg font-bold text-foreground">영양제를 등록하고 관리하기</h3>
@@ -364,12 +425,10 @@ export function SupplementsPage({
                         return (
                           <li key={supplement.supplementId} className="border-t border-border first:border-t-0">
                             <label className="flex min-h-touch min-w-0 cursor-pointer items-center gap-3 px-1 py-2">
-                              <input
-                                type="checkbox"
+                              <SelectionCheckbox
                                 aria-label={`${supplement.name} 선택`}
                                 checked={selected}
-                                onChange={() => toggleSupplementSelection(supplement.supplementId)}
-                                className="size-5 shrink-0 accent-primary"
+                                onCheckedChange={() => toggleSupplementSelection(supplement.supplementId)}
                               />
                               <span className="min-w-0 flex-1">
                                 <strong className="block [overflow-wrap:anywhere] text-base text-foreground">
@@ -383,27 +442,11 @@ export function SupplementsPage({
                                   {supplement.slots.map((slot) => mealSlotLabel(slot, 'short')).join(' · ')}
                                 </span>
                               </span>
-                              <span
-                                aria-hidden
-                                className="flex size-touch items-center justify-center text-lg text-tertiary-foreground"
-                              >
-                                ≡
-                              </span>
                             </label>
                           </li>
                         );
                       })}
                     </ul>
-                    <Button
-                      variant="danger"
-                      disabled={selectedSupplementIds.size === 0 || bulkStopping}
-                      onClick={() => void stopSelectedSupplements()}
-                    >
-                      {bulkStopping ? '중단 중...' : `선택한 ${selectedSupplementIds.size}개 삭제`}
-                    </Button>
-                    <p className="text-center text-xs text-muted-foreground">
-                      삭제해도 성분 합계에서만 빠지고 후기는 남아요.
-                    </p>
                   </div>
                 ) : (
                   <div className="overflow-hidden rounded-card border border-border bg-card shadow-card">
@@ -457,25 +500,7 @@ export function SupplementsPage({
                   <h2 id="nutrient-total-title" className="text-xl font-bold text-foreground">
                     성분 합계
                   </h2>
-                  {exceeded.map((total) => (
-                    <NutrientTotalCard
-                      key={total.nutrientId}
-                      total={total}
-                      showStandards={hasStandardProfile}
-                    />
-                  ))}
-                  {neutral.length > 0 && (
-                    <Card className="gap-0 overflow-hidden p-0">
-                      {neutral.map((total) => (
-                        <NutrientTotalCard
-                          key={total.nutrientId}
-                          total={total}
-                          showStandards={hasStandardProfile}
-                          grouped
-                        />
-                      ))}
-                    </Card>
-                  )}
+                  <NutrientTotals totals={totals} showStandards={hasStandardProfile} />
                 </section>
 
                 <div className="flex flex-col gap-1 text-sm text-muted-foreground">
@@ -524,13 +549,41 @@ export function SupplementsPage({
           if (!open) setEditingSupplement(null);
         }}
         onSave={editSupplement}
-        onStop={stopActiveSupplement}
+        onStop={async (supplementId) => {
+          if (!(await confirmSupplementRemoval([supplementId], editingSupplement?.name ?? '영양제'))) return false;
+          await stopActiveSupplement(supplementId);
+          return true;
+        }}
         onProductInfo={(productId) =>
           navigate(
             `${location.pathname.startsWith('/dev/') ? '/dev/supplements/product/' : '/supplements/product/'}${encodeURIComponent(productId)}`,
           )
         }
       />
+      <Dialog open={removalWarning !== null} onOpenChange={(open) => { if (!open) resolveRemoval(false); }}>
+        <DialogContent showCloseButton={false} className="gap-4 p-6">
+          <DialogHeader>
+            <DialogTitle className="[overflow-wrap:anywhere]">
+              {removalWarning?.stopName ? `${removalWarning.stopName} 복용을 중단할까요?` : '영양제를 삭제할까요?'}
+            </DialogTitle>
+            <DialogDescription>
+              {removalWarning?.endsChallenge && removalWarning.excludesFromChallenge
+                ? '일부 챌린지는 종료되고, 나머지 챌린지에서는 선택한 영양제가 제외돼요.'
+                : removalWarning?.endsChallenge
+                  ? `${removalWarning.stopName ? '복용을 중단하면' : '삭제하면'} 참여 중인 챌린지가 종료돼요.`
+                  : removalWarning?.excludesFromChallenge
+                    ? <>이 영양제로 참여 중인 챌린지가 있어요.<br />{removalWarning.stopName ? '복용을 중단하면' : '삭제하면'} 해당 챌린지의 대상에서 제외돼요.</>
+                    : '성분 합계에서 제외됩니다. 다시 추가할 수 있어요.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => resolveRemoval(false)}>취소</Button>
+            <Button variant="danger" onClick={() => resolveRemoval(true)}>
+              {removalWarning?.stopName ? '중단하기' : `삭제 ${removalWarning?.count}개`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <ErrorDialog
         open={saveError !== null}
         title={saveErrorTitle}
@@ -542,272 +595,6 @@ export function SupplementsPage({
   );
 }
 
-function NutrientTotalCard({
-  total,
-  showStandards,
-  grouped = false,
-}: {
-  total: NutrientTotal;
-  showStandards: boolean;
-  grouped?: boolean;
-}) {
-  const evaluation = evaluateNutrientStandard(total);
-  const isOverUpperLimit = showStandards && evaluation.status === 'over-upper-limit';
-  const statusLabel = showStandards ? standardStatusLabel(total, evaluation) : null;
-  const hasStatus = statusLabel !== null;
-
-  const content = (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-col gap-0">
-        <div data-testid="nutrient-total-header" className="relative mx-1 min-h-7">
-          <div
-            data-testid="nutrient-total-summary"
-            className={`flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 ${
-              hasStatus ? 'max-w-[60%]' : 'max-w-full'
-            }`}
-          >
-            <h3 className="[overflow-wrap:anywhere] text-lg font-bold text-foreground">
-              {total.name}
-            </h3>
-            <strong
-              className={`text-lg font-bold tnum ${
-                isOverUpperLimit ? 'text-danger-strong' : 'text-foreground'
-              }`}
-            >
-              {numberFormat.format(total.amount)}
-            </strong>
-            <span className="text-unit text-muted-foreground">{total.unit}</span>
-          </div>
-          {statusLabel !== null && (
-            <StandardStatus total={total} evaluation={evaluation} label={statusLabel} />
-          )}
-        </div>
-
-        {showStandards && (evaluation.base !== null || total.ul !== null) && (
-          <NutrientRangeBar total={total} />
-        )}
-      </div>
-
-      <details className="group text-sm text-muted-foreground">
-        <summary className="flex min-h-touch cursor-pointer list-none items-center justify-between gap-3 rounded-control py-1 font-bold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-          <span>성분 포함 제품 {total.sourceNames.length}개</span>
-          <DrawnChevron
-            aria-hidden
-            direction="down"
-            className="size-5 shrink-0 text-disabled-foreground transition-transform group-open:rotate-180"
-          />
-        </summary>
-        <ul className="flex flex-col gap-1 border-t border-border pt-2">
-          {total.sourceNames.map((sourceName) => (
-            <li key={sourceName} className="[overflow-wrap:anywhere]">
-              {sourceName}
-            </li>
-          ))}
-        </ul>
-      </details>
-    </div>
-  );
-
-  if (grouped) {
-    return (
-      <article
-        aria-label={`${total.name} 성분 합계`}
-        className="flex flex-col gap-4 border-t border-border p-4 first:border-t-0"
-      >
-        {content}
-      </article>
-    );
-  }
-
-  return (
-    <article aria-label={`${total.name} 성분 합계`}>
-      <Card className="gap-4 p-4">
-        {content}
-      </Card>
-    </article>
-  );
-}
-
-function standardStatusLabel(
-  total: NutrientTotal,
-  evaluation: ReturnType<typeof evaluateNutrientStandard>,
-): string | null {
-  const baseLabel = evaluation.baseKind === 'ai' ? '충분섭취량' : '권장량';
-  if (evaluation.status === 'over-upper-limit') {
-    return '상한 초과';
-  }
-  if (evaluation.status === 'below-base' && evaluation.percentOfBase !== null) {
-    return `${baseLabel}의 ${numberFormat.format(evaluation.percentOfBase)}%예요`;
-  }
-  if (evaluation.status === 'recommended') {
-    return (
-      total.ul === null && evaluation.percentOfBase !== null
-        ? `${baseLabel}의 ${numberFormat.format(evaluation.percentOfBase)}%예요`
-        : '권장 범위예요'
-    );
-  }
-  return null;
-}
-
-function StandardStatus({
-  total,
-  evaluation,
-  label,
-}: {
-  total: NutrientTotal;
-  evaluation: ReturnType<typeof evaluateNutrientStandard>;
-  label: string;
-}) {
-  const upperLimitPosition = rangePositions(total, evaluation.base).upper;
-  return (
-    <p
-      data-nutrient-status
-      className={`absolute top-0 whitespace-nowrap text-right text-sm ${
-        upperLimitPosition === null ? 'right-0' : '-translate-x-1/2'
-      } ${evaluation.status === 'over-upper-limit' ? 'font-bold text-danger-strong' : 'text-muted-foreground'}`}
-      style={upperLimitPosition === null ? undefined : { left: `${upperLimitPosition}%` }}
-    >
-      {label}
-    </p>
-  );
-}
-
-function NutrientRangeBar({ total }: { total: NutrientTotal }) {
-  const evaluation = evaluateNutrientStandard(total);
-  if (total.ul === null && evaluation.base === null) return null;
-
-  const positions = rangePositions(total, evaluation.base);
-  const upperLimit = total.ul;
-  const hasUpperLimit = upperLimit !== null;
-  const labelsAreClose =
-    positions.base !== null &&
-    positions.upper !== null &&
-    Math.abs(positions.upper - positions.base) < 20;
-  const fillColor =
-    evaluation.status === 'below-base'
-      ? 'bg-warning'
-      : evaluation.status === 'over-upper-limit'
-        ? 'bg-danger'
-        : 'bg-primary';
-  const markerColor =
-    evaluation.status === 'below-base'
-      ? 'bg-warning-strong'
-      : evaluation.status === 'over-upper-limit'
-        ? 'bg-danger-strong'
-        : 'bg-primary-strong';
-
-  return (
-    <div
-      data-nutrient-range
-      data-threshold-labels
-      aria-hidden={hasUpperLimit ? undefined : true}
-      className="relative mx-1 h-14"
-    >
-      {positions.base !== null && evaluation.base !== null && (
-        <div
-          data-threshold-label="base"
-          className={`absolute top-0 grid h-14 grid-rows-[1rem_1.5rem_1rem] whitespace-nowrap text-xs text-muted-foreground ${
-            labelsAreClose ? '-translate-x-full text-left' : '-translate-x-1/2 text-center'
-          }`}
-          style={{ left: `${clampThresholdLabel(positions.base)}%` }}
-        >
-          <span className="row-start-1">
-            {evaluation.baseKind === 'ai' ? '충분' : '권장'}
-          </span>
-          <span className="row-start-3 tnum">{numberFormat.format(evaluation.base)}</span>
-        </div>
-      )}
-      {positions.upper !== null && upperLimit !== null && (
-        <div
-          data-threshold-label="upper-limit"
-          className={`absolute top-0 grid h-14 grid-rows-[1rem_1.5rem_1rem] whitespace-nowrap text-xs text-muted-foreground ${
-            labelsAreClose ? 'text-right' : '-translate-x-1/2 text-center'
-          }`}
-          style={{ left: `${clampThresholdLabel(positions.upper)}%` }}
-        >
-          <span className="row-start-1">상한</span>
-          <span className="row-start-3 tnum">{numberFormat.format(upperLimit)}</span>
-        </div>
-      )}
-      <div
-        role={hasUpperLimit ? 'meter' : undefined}
-        aria-label={hasUpperLimit ? `${total.name} 섭취기준 위치` : undefined}
-        aria-valuemin={hasUpperLimit ? 0 : undefined}
-        aria-valuenow={upperLimit !== null ? Math.min(total.amount, upperLimit) : undefined}
-        aria-valuemax={upperLimit ?? undefined}
-        aria-valuetext={
-          hasUpperLimit ? `${numberFormat.format(total.amount)}${total.unit}` : undefined
-        }
-        className="absolute inset-x-0 top-4 h-5"
-      >
-        <div
-          data-range-track
-          className="absolute inset-x-0 top-2 h-2 rounded-pill bg-muted-bg"
-          style={
-            hasUpperLimit
-              ? undefined
-              : {
-                  maskImage: 'linear-gradient(to right, black 0%, black 80%, transparent 100%)',
-                  WebkitMaskImage:
-                    'linear-gradient(to right, black 0%, black 80%, transparent 100%)',
-                }
-          }
-        >
-          <div
-            data-range-fill
-            className={`h-full rounded-pill ${fillColor}`}
-            style={{ width: `${positions.marker}%` }}
-          />
-        </div>
-        {positions.base !== null && (
-          <span
-            data-threshold="base"
-            aria-hidden
-            className="absolute top-1 h-4 w-0.5 bg-muted-foreground"
-            style={{ left: `${positions.base}%` }}
-          />
-        )}
-        {positions.upper !== null && (
-          <span
-            data-threshold="upper-limit"
-            aria-hidden
-            className="absolute top-1 h-4 w-0.5 bg-muted-foreground"
-            style={{ left: `${positions.upper}%` }}
-          />
-        )}
-        <span
-          data-range-marker
-          aria-hidden
-          className={`absolute top-1 size-4 -translate-x-1/2 rounded-pill border-2 border-card ${markerColor}`}
-          style={{ left: `${positions.marker}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function clampThresholdLabel(position: number): number {
-  return Math.max(8, Math.min(92, position));
-}
-
-function rangePositions(total: NutrientTotal, base: number | null) {
-  if (total.ul === null) {
-    if (base === null || base === 0) return { base: null, upper: null, marker: 0 };
-    return {
-      base: 70,
-      upper: null,
-      marker: Math.max(0, Math.min(100, (total.amount / base) * 70)),
-    };
-  }
-  const upper = 88;
-  const marker =
-    total.amount > total.ul
-      ? 100
-      : Math.max(0, Math.min(upper, (total.amount / total.ul) * upper));
-  const basePosition =
-    base === null ? null : Math.max(4, Math.min(upper - 4, (base / total.ul) * upper));
-  return { base: basePosition, upper, marker };
-}
 
 function standardSourceLabel(profile: NutrientStandardProfile | null): string {
   if (!profile?.birthDate || !profile.gender) {

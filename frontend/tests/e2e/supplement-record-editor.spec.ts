@@ -208,13 +208,13 @@ test('긴 영양제 이름은 목록과 상세 및 중첩 팝업에서 전체가
     const arrow = normalRow.locator('svg').last();
     expect((await arrow.boundingBox())?.width).toBe(20);
 
-    await page.getByRole('button', { name: '삭제', exact: true }).click();
+    await page.getByRole('button', { name: '선택', exact: true }).click();
     const deleteRow = list.getByText(longName, { exact: true });
     const deleteLabel = list.locator('label').filter({ hasText: longName });
     await expectNameContained(deleteRow, deleteLabel);
     await expect(list.getByRole('checkbox', { name: `${longName} 선택` })).toBeVisible();
     await expectNoHorizontalOverflow(list);
-    await page.getByRole('button', { name: '완료', exact: true }).click();
+    await page.getByRole('button', { name: '취소', exact: true }).click();
   }
 });
 

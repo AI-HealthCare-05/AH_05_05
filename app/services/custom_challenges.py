@@ -182,6 +182,28 @@ class CustomChallengeService:
         self._lifecycle = lifecycle or CustomChallengeLifecycleService()
         self._badge_service = badge_service or CustomChallengeBadgeService()
 
+    async def badge_catalog(self) -> builtins.list[CustomChallengeRewardBadge]:
+        badges: dict[int, CustomChallengeRewardBadge] = {}
+        registered = await Badge.filter(
+            is_active=True,
+            type__is_active=True,
+            type__detail_code="CUSTOM",
+            type__group__is_active=True,
+            type__group__category="CHL",
+            type__group__group_code="BDG_TYPE",
+        ).order_by("id")
+        for badge in registered:
+            badges[badge.id] = CustomChallengeRewardBadge(
+                id=badge.id, name=badge.name, description=badge.description, image_path=badge.image_path
+            )
+        for template in await self._active_templates():
+            if self._template_type(template) not in (CustomChallengeType.MEDICATION, CustomChallengeType.SUPPLEMENT):
+                continue
+            badge = self._reward_badge(template)
+            if badge is not None:
+                badges.setdefault(badge.id, badge)
+        return [badges[badge_id] for badge_id in sorted(badges)]
+
     async def recommendations(self, user: User) -> CustomChallengeRecommendationListResponse:
         now = await self._finalize_due_for_user(user.id)
         meal_times = await self._meal_times(user.id)
@@ -642,9 +664,11 @@ class CustomChallengeService:
             .order_by("id")
         )
         for participation in participations:
+            targets_query = CustomChallengeTarget.filter(participation_id=participation.id)
+            if challenge_type is CustomChallengeType.SUPPLEMENT:
+                targets_query = targets_query.filter(supplement_registration_id__isnull=False)
             existing_ids = tuple(
-                await CustomChallengeTarget.filter(participation_id=participation.id)
-                .using_db(connection)
+                await targets_query.using_db(connection)
                 .order_by("source_id_snapshot")
                 .values_list("source_id_snapshot", flat=True)
             )
@@ -711,6 +735,8 @@ class CustomChallengeService:
                 target.source_id_snapshot,
             ): target.participation_id
             for target in targets
+            if target.participation.challenge_type is not CustomChallengeType.SUPPLEMENT
+            or target.supplement_registration_id is not None
         }
 
     async def _meal_times(self, user_id: int) -> dict[MealSlot, time]:
@@ -824,6 +850,10 @@ class CustomChallengeService:
                     id=target.id,
                     source_id=target.source_id_snapshot,
                     name=target.target_name_snapshot,
+                    is_excluded=(
+                        participation.challenge_type is CustomChallengeType.SUPPLEMENT
+                        and target.supplement_registration_id is None
+                    ),
                 )
                 for target in targets
             ],
@@ -869,10 +899,17 @@ class CustomChallengeService:
             for source_id, dose_date, slot in rows
             if source_id in source_to_target
         }
+        detached_supplement_targets = {
+            target.id
+            for target in targets
+            if participation.challenge_type is CustomChallengeType.SUPPLEMENT
+            and target.supplement_registration_id is None
+        }
         return {
             occurrence.id
             for occurrence in occurrences
             if (occurrence.target_id, occurrence.scheduled_date, _meal_slot(occurrence.slot)) in completed_keys
+            or (occurrence.target_id in detached_supplement_targets and occurrence.is_completed)
         }
 
     @staticmethod

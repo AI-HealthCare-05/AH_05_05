@@ -14,6 +14,7 @@ class TextGuidanceRules(BaseModel):
     driving_mentions: tuple[str, ...] = Field(min_length=1)
     food_drink_mentions: tuple[str, ...] = Field(min_length=1)
     food_drink_nonmatches: tuple[str, ...]
+    food_drink_mixed_contexts: tuple[str, ...] = Field(min_length=1)
 
     @field_validator("*")
     @classmethod
@@ -36,3 +37,16 @@ def mentions_food_or_drink(text: str) -> bool:
     for nonmatch in rules.food_drink_nonmatches:
         compact = compact.replace(nonmatch, "")
     return any(term in compact for term in rules.food_drink_mentions)
+
+
+def is_standalone_food_or_drink_guidance(text: str) -> bool:
+    """Conservatively omit mixed medication contexts from food-only cards.
+
+    This is a presentation guard, not exhaustive drug-name recognition. The
+    caller must preserve the full source in the general interaction card;
+    removing medication clauses could change the warning's conditions.
+    """
+    if not mentions_food_or_drink(text):
+        return False
+    compact = re.sub(r"\s+", "", text)
+    return not any(marker in compact for marker in load_text_guidance_rules().food_drink_mixed_contexts)

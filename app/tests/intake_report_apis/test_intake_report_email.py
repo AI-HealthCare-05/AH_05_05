@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +11,7 @@ from httpx import ASGITransport, AsyncClient
 from starlette import status
 from tortoise.contrib.test import TestCase
 
+from app.dependencies.email_background_tasks import get_email_task_scheduler
 from app.dependencies.intake_report import (
     get_intake_report_email_job_service,
     get_intake_report_email_service,
@@ -154,9 +155,13 @@ class StubEmailJobService:
 
 async def test_email_api_only_enqueues_server_snapshot_to_verified_owner() -> None:
     job_service = StubEmailJobService()
-    app.dependency_overrides[get_request_user] = lambda: SimpleNamespace(id=7, email="verified@example.com")
+    scheduler = SimpleNamespace(schedule=lambda _job_id: None)
+    app.dependency_overrides[get_request_user] = lambda: SimpleNamespace(
+        id=7, email="verified@example.com", name="테스트", birth_date=date(1990, 1, 2)
+    )
     app.dependency_overrides[get_intake_report_email_service] = lambda: StubSnapshotService()
     app.dependency_overrides[get_intake_report_email_job_service] = lambda: job_service
+    app.dependency_overrides[get_email_task_scheduler] = lambda: scheduler
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post("/api/v1/intake-reports/email", json={"emailToken": "server-issued-token"})
@@ -178,6 +183,9 @@ async def test_email_api_only_enqueues_server_snapshot_to_verified_owner() -> No
                 "recipient_email": "verified@example.com",
                 "report_markdown": "# 서버 보고서",
                 "report_id": "report-7",
+                "recipient_name": "테스트",
+                "report_birth_date": date(1990, 1, 2),
+                "scheduler": scheduler,
             }
         ]
         * 2
@@ -185,11 +193,14 @@ async def test_email_api_only_enqueues_server_snapshot_to_verified_owner() -> No
 
 
 async def test_email_api_rejects_extra_client_content_and_queue_failure() -> None:
-    app.dependency_overrides[get_request_user] = lambda: SimpleNamespace(id=7, email="verified@example.com")
+    app.dependency_overrides[get_request_user] = lambda: SimpleNamespace(
+        id=7, email="verified@example.com", name="테스트", birth_date=date(1990, 1, 2)
+    )
     app.dependency_overrides[get_intake_report_email_service] = lambda: StubSnapshotService()
     app.dependency_overrides[get_intake_report_email_job_service] = lambda: StubEmailJobService(
         job_status=BackgroundJobStatus.FAILED
     )
+    app.dependency_overrides[get_email_task_scheduler] = lambda: SimpleNamespace(schedule=lambda _job_id: None)
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             extra_response = await client.post(
@@ -205,3 +216,21 @@ async def test_email_api_rejects_extra_client_content_and_queue_failure() -> Non
 
     assert extra_response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
     assert failed_response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+
+
+async def test_email_api_rejects_missing_birthdate_before_enqueue() -> None:
+    job_service = StubEmailJobService()
+    app.dependency_overrides[get_request_user] = lambda: SimpleNamespace(
+        id=7, email="verified@example.com", birth_date=None
+    )
+    app.dependency_overrides[get_intake_report_email_service] = lambda: StubSnapshotService()
+    app.dependency_overrides[get_intake_report_email_job_service] = lambda: job_service
+    app.dependency_overrides[get_email_task_scheduler] = lambda: SimpleNamespace(schedule=lambda _job_id: None)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post("/api/v1/intake-reports/email", json={"emailToken": "server-issued-token"})
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "생년월일" in response.json()["detail"]
+    assert job_service.calls == []

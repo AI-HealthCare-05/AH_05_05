@@ -22,7 +22,7 @@ class SupplementReviewService:
         offset: int,
         limit: int,
     ) -> SupplementReviewListResponse:
-        result = await self.repository.list_public(product_id, offset=offset, limit=limit)
+        result = await self.repository.list_public(product_id, user_id=user.id, offset=offset, limit=limit)
         if result is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Supplement nutrient not found.")
 

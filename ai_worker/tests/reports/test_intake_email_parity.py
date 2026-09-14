@@ -1,11 +1,14 @@
 """Offline email projection checks; no app test bootstrap, DB or SMTP."""
 
+import base64
+from datetime import date
 from types import SimpleNamespace
 
 import pytest
 from cryptography.fernet import Fernet
 
 from ai_worker.schemas.intake_report import IntakeReportResult
+from ai_worker.tests.reports.test_report_html_attachment import decrypt_attachment
 from app.dtos.intake_reports import IntakeReportResponse
 
 
@@ -139,6 +142,20 @@ def sample_email_report() -> IntakeReportResponse:
     return IntakeReportResponse.model_validate(data)
 
 
+@pytest.mark.parametrize("standalone", [False, True])
+def test_email_groups_unavailable_medications_without_empty_details(standalone):
+    from app.core.email.intake_report_renderer import render_intake_report_email
+
+    data = sample_email_report().model_dump()
+    missing = {**data["cards"]["medications"][0], "item_id": 99, "product_name": "스토엠정", "has_information": False}
+    data["cards"]["medications"].append(missing)
+    markup, plain = render_intake_report_email(IntakeReportResponse.model_validate(data), standalone=standalone)
+    assert "확인 불가 약품" in plain
+    assert "스토엠정" in plain
+    assert "확인 불가 약품" in markup
+    assert markup.count('<details class="medicine">') == (1 if standalone else 0)
+
+
 def test_email_uses_web_card_order_and_values_without_old_percent_or_exclusions():
     from app.core.email.intake_report_renderer import render_intake_report_email
 
@@ -162,7 +179,9 @@ def test_email_uses_web_card_order_and_values_without_old_percent_or_exclusions(
     assert "칼슘" in plain and "600" in plain and "2,500" in plain
     assert 'data-upper-position="80"' in markup
     assert "공통 안내 · 2개 항목" in plain and plain.count("같은 안내") == 1
-    assert "1 · 1일 1회" in plain and "1.5정" in plain and "1.00" not in plain
+    assert "등록한 약" in plain and "등록한 영양제" in plain
+    assert "칼슘 600mg · 비타민 D 33μg" in plain
+    assert "1 · 1일 1회" not in plain and "1.5정" not in plain and "1.00" not in plain
     assert "성분 형태별 상한 기준이 달라 비교하지 않았어요." in plain
     assert "40세 남성" in plain and "상한은 섭취 목표가 아닙니다." in plain
     assert "<details" not in markup and "<script" not in markup
@@ -202,16 +221,23 @@ def test_email_html_survives_encrypted_snapshot_and_worker_renderer():
                 report_id=snapshot.report_id,
                 report_markdown=snapshot.report_markdown,
                 report_html=snapshot.report_html,
+                report_birth_date=date(1990, 1, 2),
             )
         )
     )
     message = EmailTemplateRenderer().render(payload)
-    assert message.html_body == markup
-    assert message.text_body == plain
+    assert (
+        decrypt_attachment(message.attachments[0].data).replace(
+            "data:image/png;base64," + base64.b64encode(message.inline_attachments[0].data).decode(),
+            "cid:rxvita-logo",
+        )
+        == markup
+    )
+    assert "영양제 성분 합계" not in message.text_body + message.html_body
     assert len(message.inline_attachments) == 1
 
 
-def test_separate_reports_have_distinct_subjects_without_altering_html():
+def test_report_ids_stay_out_of_subjects_without_altering_html():
     from app.core.email.intake_report_renderer import render_intake_report_email
     from app.core.email.payload import EmailJobPayload, EmailTemplate
     from app.core.email.renderer import EmailTemplateRenderer
@@ -226,13 +252,14 @@ def test_separate_reports_have_distinct_subjects_without_altering_html():
                 report_id=report_id,
                 report_markdown=plain,
                 report_html=markup,
+                report_birth_date=date(1990, 1, 2),
             )
         )
         for report_id in ["report-one", "report-two", "report-one"]
     ]
-    assert messages[0].subject != messages[1].subject
-    assert messages[0].subject == messages[2].subject
-    assert all(message.html_body == markup and message.text_body == plain for message in messages)
+    assert all("report-one" not in message.subject and "report-two" not in message.subject for message in messages)
+    assert all("영양제 성분 합계" in decrypt_attachment(message.attachments[0].data) for message in messages)
+    assert all("영양제 성분 합계" not in message.html_body + message.text_body for message in messages)
 
 
 @pytest.mark.parametrize("upper", [None, "0", "NaN", "500"])
@@ -252,7 +279,7 @@ def test_legacy_report_keeps_existing_markdown_path():
     assert render_intake_report_email(IntakeReportResponse.from_result(IntakeReportResult.empty(user_id=1))) is None
 
 
-async def test_generation_to_send_endpoint_to_encrypted_queue_keeps_web_snapshot(monkeypatch):
+async def test_generation_to_send_endpoint_to_encrypted_background_task_keeps_web_snapshot(monkeypatch):
     from app.apis.v1.intake_report_router import generate_intake_report, send_intake_report_email
     from app.core.email.payload import EmailPayloadCodec
     from app.core.email.renderer import EmailTemplateRenderer
@@ -267,7 +294,7 @@ async def test_generation_to_send_endpoint_to_encrypted_queue_keeps_web_snapshot
     data.update({key: value for key, value in fields.items() if key in data and key != "executive_summary"})
     data["status"] = "PARTIAL"
     result = IntakeReportResult.model_validate(data)
-    user = SimpleNamespace(id=3, email="owner@example.org")
+    user = SimpleNamespace(id=3, email="owner@example.org", name="테스트", birth_date=date(1990, 1, 2))
     key = Fernet.generate_key().decode()
     codec = EmailPayloadCodec(key)
 
@@ -279,17 +306,26 @@ async def test_generation_to_send_endpoint_to_encrypted_queue_keeps_web_snapshot
         async def require_verified_recipient(self, *, user):
             return user.email  # Authentication/verification DB boundary only.
 
-    class Queue:
-        args = None
+    class Scheduler:
+        job_id = None
 
-        async def enqueue_job(self, *args, **kwargs):
-            self.args = args
+        def schedule(self, job_id):
+            self.job_id = job_id
+
+    created = {}
 
     async def create_job(**kwargs):
-        return SimpleNamespace(id=42, **kwargs)
+        job = SimpleNamespace(id=42, encrypted_payload=None, next_attempt_at=None, updated_at=None, **kwargs)
+
+        async def save(*, update_fields):
+            return None
+
+        job.save = save
+        created["job"] = job
+        return job
 
     monkeypatch.setattr(BackgroundJob, "create", create_job)
-    queue = Queue()
+    scheduler = Scheduler()
     service = VerifiedEmailService(encryption_key=key)
     response = await generate_intake_report(
         data=GenerateIntakeReportRequest(), user=user, service=ReportService(), email_service=service
@@ -298,16 +334,21 @@ async def test_generation_to_send_endpoint_to_encrypted_queue_keeps_web_snapshot
         data=SendIntakeReportEmailRequest(email_token=response.email_token),
         user=user,
         email_service=service,
-        email_job_service=EmailJobService(redis_pool=queue, codec=codec),
+        email_job_service=EmailJobService(codec=codec),
+        scheduler=scheduler,
     )
-    assert queue.args[0] == "send_email" and queue.args[1] == 42
-    payload = codec.decrypt(queue.args[2])
+    assert scheduler.job_id == 42
+    payload = codec.decrypt(created["job"].encrypted_payload)
     message = EmailTemplateRenderer().render(payload)
-    assert "영양제 성분 합계" in message.html_body
-    assert "data-upper-position" in message.html_body
+    attachment_html = decrypt_attachment(message.attachments[0].data)
+    assert "영양제 성분 합계" in attachment_html
+    assert "data-upper-position" in attachment_html
+    assert "영양제 성분 합계" not in message.html_body
     assert "75%" not in message.text_body
     assert response.cards == result.cards
     assert payload.recipient_email == user.email
+    assert payload.report_birth_date == user.birth_date
+    assert payload.recipient_name == user.name
 
 
 def test_html_snapshot_preserves_recipient_binding_and_old_tokens():
@@ -356,7 +397,7 @@ def test_email_visible_notice_and_long_evidence_are_never_truncated():
     assert "마지막 문장 0.005mg" in markup
 
 
-def test_email_preserves_over_upper_unknown_and_no_reference_states():
+def test_email_preserves_over_upper_and_no_reference_but_omits_unknown_totals():
     from app.core.email.intake_report_renderer import render_intake_report_email
 
     report = sample_email_report()
@@ -365,7 +406,7 @@ def test_email_preserves_over_upper_unknown_and_no_reference_states():
     report.nutrient_totals[2].reference_value = None
     markup, plain = render_intake_report_email(report)
     assert "4,000" in plain and "상한 초과" in plain
-    assert "미확인" in plain
+    assert "미확인" not in plain
     assert "비교 기준 없음 · 확인된 합계만 표시했어요." in plain
     assert 'width="100.0%"' not in markup  # Threshold segments retained even when current amount overflows.
 
@@ -376,7 +417,7 @@ def test_email_rejects_non_displayable_numeric_magnitude_like_the_web():
     report = sample_email_report()
     report.nutrient_totals = [report.nutrient_totals[0].model_copy(update={"amount": "1e999999"})]
     markup, plain = render_intake_report_email(report)
-    assert "미확인" in plain
+    assert "미확인" not in plain
     assert "data-upper-position" not in markup
     assert len(markup) < 50_000
 
@@ -390,14 +431,23 @@ def test_email_snapshot_never_emits_a_token_that_exceeds_the_send_contract():
     assert service.create_snapshot_token(user=user, report_markdown="내용", report_html="😀" * 190_000) is None
 
 
-def test_email_keeps_each_registered_detail_in_its_original_order():
+def test_email_omits_registered_intake_details_but_keeps_product_and_ingredient_data():
     from app.core.email.intake_report_renderer import render_intake_report_email
 
     data = sample_email_report().model_dump()
     data["cards"]["medications"][0]["details"] = [
         {"label": "등록한 복용 정보", "text": "1.00정 · 아침", "source_ids": []},
         {"label": "이상 반응", "text": "기존 상세 원문", "source_ids": []},
-        {"label": "등록한 복용 정보", "text": "0.50정 · 저녁", "source_ids": []},
+        {"label": "등록한 계획", "text": "0.50정 · 저녁", "source_ids": []},
     ]
-    _, plain = render_intake_report_email(IntakeReportResponse.model_validate(data))
-    assert plain.index("1정 · 아침") < plain.index("기존 상세 원문") < plain.index("0.5정 · 저녁")
+    markup, plain = render_intake_report_email(IntakeReportResponse.model_validate(data))
+
+    for rendered in (markup, plain):
+        assert "사용자가 등록한 복용 정보" not in rendered
+        assert "1.00정 · 아침" not in rendered
+        assert "0.50정 · 저녁" not in rendered
+        assert "1.50정" not in rendered
+        assert "등록한 약" in rendered
+        assert "등록한 영양제" in rendered
+        assert "칼슘 600mg · 비타민 D 33μg" in rendered
+        assert "기존 상세 원문" in rendered

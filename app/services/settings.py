@@ -133,6 +133,7 @@ class NotifySettingsService:
                     source_ids=None,
                     changed_at=changed_at,
                     connection=connection,
+                    refresh_join_day_slot=True,
                 )
 
         return settings

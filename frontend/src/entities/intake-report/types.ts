@@ -20,6 +20,7 @@ export interface CardSource {
 export interface CardSection { text: string; sourceIds: string[]; }
 export interface CardDetail { label: string; text: string; sourceIds: string[]; }
 export interface MedicationCard {
+  hasInformation?: boolean;
   itemId: number; productName: string; efficacy: CardSection; caution: CardSection;
   identityNotice?: string | null; contraindication: CardSection; details: CardDetail[]; sourceIds: string[];
 }

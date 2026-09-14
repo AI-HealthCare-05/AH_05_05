@@ -9,6 +9,7 @@ import {
   type ChallengeParticipation,
   type UserChallengeBadge,
 } from '@/entities/challenge';
+import { getCustomChallengeBadges, type CustomChallengeBadgeAward } from '@/entities/custom-challenge';
 import { Button } from '@/shared/ui/Button';
 import { NavigationTabs } from '@/shared/ui/tabs';
 import { LoadingState } from '@/shared/ui/LoadingState';
@@ -22,16 +23,18 @@ import { ChallengeAccordion } from './ChallengeAccordion';
 interface ChallengeDashboard {
   participations: ChallengeParticipation[];
   badges: UserChallengeBadge[] | null;
+  customBadges: CustomChallengeBadgeAward[] | null;
   badgeError: string | null;
 }
 
 async function loadDashboard(): Promise<ChallengeDashboard> {
   const [participations, badgeResult] = await Promise.all([
     getChallengeParticipations(),
-    getUserChallengeBadges()
-      .then(result => ({ badges: result.items, badgeError: null }))
+    Promise.all([getUserChallengeBadges(), getCustomChallengeBadges()])
+      .then(([official, custom]) => ({ badges: official.items, customBadges: custom.items, badgeError: null }))
       .catch((reason: unknown) => ({
         badges: null,
+        customBadges: null,
         badgeError: reason instanceof Error ? reason.message : '배지 정보를 불러오지 못했어요.',
       })),
   ]);
@@ -184,8 +187,17 @@ export function OfficialChallengeMyPage() {
   const customHistory = custom.items?.filter(item => item.status !== 'ACTIVE') ?? [];
   const historyCount = history.length + customHistory.length;
   const emptyActive = data !== null && custom.items !== null && active.length + customActive.length === 0;
-  const awarded = data?.badges?.filter(item => item.status === 'AWARDED') ?? [];
-  const earnedKinds = new Set(awarded.map(item => item.badge_id));
+  const awarded = [
+    ...(data?.badges ?? []).filter(item => item.status === 'AWARDED').map(item => ({
+      key: `official-${item.id}`, badgeId: item.badge_id, name: item.badge_name,
+      imagePath: item.badge_image_path, awardedAt: item.awarded_at,
+    })),
+    ...(data?.customBadges ?? []).map(item => ({
+      key: `custom-${item.id}`, badgeId: item.badgeId, name: item.badgeName,
+      imagePath: item.badgeImagePath, awardedAt: item.awardedAt,
+    })),
+  ].sort((a, b) => Date.parse(b.awardedAt) - Date.parse(a.awardedAt));
+  const earnedKinds = new Set(awarded.map(item => item.badgeId));
   const badgeRefreshRequired = refreshRequiredIds.size > 0 || data?.badgeError !== null;
 
   return (
@@ -234,7 +246,7 @@ export function OfficialChallengeMyPage() {
         </div>
         {badgeRefreshRequired ? null : (
           <div className="flex gap-3" aria-label="최근 획득 배지">
-            {awarded.slice(0, 3).map(item => <img key={item.id} src={apiAssetUrl(item.badge_image_path)} alt={item.badge_name} className="size-9 rounded-pill object-contain" />)}
+            {awarded.slice(0, 3).map(item => <img key={item.key} src={apiAssetUrl(item.imagePath)} alt={item.name} className="size-9 rounded-pill object-contain" />)}
           </div>
         )}
       </section>

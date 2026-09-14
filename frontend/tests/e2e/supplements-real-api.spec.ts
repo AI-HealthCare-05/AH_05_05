@@ -288,7 +288,7 @@ test('override 목록은 기준 조회가 실패해도 오류 화면으로 바�
 
   await page.goto('/dev/supplements-three-exceeded');
 
-  await expect(page.getByRole('heading', { name: '먹고 있는 영양제 3개' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '영양제 3개' })).toBeVisible();
   await expect(page.getByText('영양제를 불러오지 못했어요')).toHaveCount(0);
 });
 
@@ -323,6 +323,45 @@ test('목록 응답의 문자열 섭취기준을 합계 기준선과 상한선�
   await expect(upperLabel.getByText('45', { exact: true })).toBeVisible();
   await expect(iron.getByRole('meter')).toBeVisible();
   await expect(iron.getByText('기준이 없는 성분이에요', { exact: true })).toHaveCount(0);
+});
+
+test('성분 합계 표시만 소수 둘째 자리로 반올림하고 원본 상한 판정은 유지한다', async ({ page }) => {
+  await openSupplementFixture(page, {
+    ...IRON_PRODUCT,
+    serving_desc: '1캡슐',
+    iron_mg: '8.001',
+    vitamin_c_mg: '32.315',
+    calcium_mg: '1000.000',
+    fat_g: '1.200',
+  }, {
+    ...MALE_NUTRIENT_STANDARD,
+    iron_mg: { rni: '5.000', ai: null, ul: '8.000' },
+  });
+  const vitaminC = page.getByRole('article', { name: '비타민 C 성분 합계' });
+  await expect(vitaminC.getByTestId('nutrient-total-summary').locator('strong')).toHaveText('32.32');
+  await expect(vitaminC.getByText('권장량의 32%예요', { exact: true })).toBeVisible();
+  await expect(vitaminC.getByRole('meter')).toHaveAttribute('aria-valuetext', '32.32mg');
+  const iron = page.getByRole('article', { name: '철 성분 합계' });
+  await expect(iron.getByTestId('nutrient-total-summary').locator('strong')).toHaveText('8');
+  await expect(iron.getByText('상한 초과', { exact: true })).toBeVisible();
+  await expect(page.getByRole('article', { name: '칼슘 성분 합계' }).getByTestId('nutrient-total-summary').locator('strong')).toHaveText('1,000');
+  await expect(page.getByRole('article', { name: '지방 성분 합계' }).getByTestId('nutrient-total-summary').locator('strong')).toHaveText('1.2');
+});
+
+test('여러 영양제의 성분은 원본을 합산한 뒤 소수 둘째 자리로 표시한다', async ({ page }) => {
+  await authenticate(page);
+  const product = { ...IRON_PRODUCT, serving_desc: '1캡슐', iron_mg: '3.333' };
+  await page.route('**/api/v1/med/user-suppl-nutr**', route => fulfillJson(route, {
+    items: [registrationFor(product, 9001, 1), registrationFor({ ...product, id: 702, name: '두 번째 철분' }, 9002, 1)],
+    total: 2, offset: 0, limit: 100, nutrient_standard: MALE_NUTRIENT_STANDARD,
+  }));
+  await page.route('**/api/v1/users/me', route => fulfillJson(route, {
+    name: '테스트 사용자', phoneNumber: null, birthDate: '2000-01-01', gender: 'MALE',
+  }));
+  await page.goto('/supplements');
+  const iron = page.getByRole('article', { name: '철 성분 합계' });
+  await expect(iron.getByTestId('nutrient-total-summary').locator('strong')).toHaveText('6.67');
+  await expect(iron.getByText('권장량의 83%예요', { exact: true })).toBeVisible();
 });
 
 test('성분 합계를 기준 종류별 등급으로 나누고 등급 안에서 비율순으로 정렬한다', async ({ page }) => {
@@ -998,7 +1037,7 @@ test('같은 RDB 제품 재등록은 목록을 교체하고 새로고침 뒤에�
   });
 
   await page.goto('/supplements');
-  await expect(page.getByText('먹고 있는 영양제 1개')).toBeVisible();
+  await expect(page.getByText('영양제 1개')).toBeVisible();
   await page.getByRole('button', { name: '영양제 추가' }).first().click();
   const sheet = page.getByRole('dialog');
   await sheet.getByRole('searchbox', { name: '영양제 제품 검색' }).fill('철분');
@@ -1015,7 +1054,7 @@ test('같은 RDB 제품 재등록은 목록을 교체하고 새로고침 뒤에�
   await expect(list.getByRole('button').first()).toContainText('자기전');
 
   await page.reload();
-  await expect(page.getByText('먹고 있는 영양제 1개')).toBeVisible();
+  await expect(page.getByText('영양제 1개')).toBeVisible();
   await expect(list.getByRole('button')).toHaveCount(1);
   await expect(list.getByRole('button').first()).toContainText('하루 1회 · 1회 2캡슐');
   await expect(list.getByRole('button').first()).toContainText('자기전');

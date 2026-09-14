@@ -74,6 +74,29 @@ async def test_resolver_auto_corrects_unique_product_typo() -> None:
 
 
 @pytest.mark.asyncio
+async def test_resolver_auto_corrects_product_base_name_when_catalog_name_has_ingredient() -> None:
+    resolver = RuleBasedMedicationQuestionResolver(
+        catalog=StaticTypedExpressionCatalog(
+            [
+                MedicationCatalogEntry(
+                    canonical_name="목앤파워스프레이(플루르비프로펜)",
+                    entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                    kind=InteractionEntityKind.DRUG,
+                    source=MedicationQueryEntitySource.RDBMS,
+                )
+            ]
+        ),
+    )
+
+    result = await resolver.resolve(question="목액파워스프레이 효능 알려줘")
+
+    assert result.status is MedicationExpressionResolutionStatus.AUTO_CORRECTED
+    assert result.resolved_question == "목앤파워스프레이 효능 알려줘"
+    assert result.entities[0].canonical_name == "목앤파워스프레이(플루르비프로펜)"
+    assert result.entities[0].product_lookup_name == "목앤파워스프레이(플루르비프로펜)"
+
+
+@pytest.mark.asyncio
 async def test_resolver_preserves_catalog_entity_type_and_source() -> None:
     resolver = RuleBasedMedicationQuestionResolver(
         catalog=StaticTypedExpressionCatalog(
@@ -119,6 +142,29 @@ async def test_resolver_matches_catalog_supplement_before_location_particle() ->
     assert result.status == MedicationExpressionResolutionStatus.UNCHANGED
     assert [(entity.canonical_name, entity.kind) for entity in result.entities] == [
         ("마그네슘", InteractionEntityKind.SUPPLEMENT),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_resolver_preserves_product_name_ending_with_particle_like_syllable() -> None:
+    resolver = RuleBasedMedicationQuestionResolver(
+        catalog=StaticTypedExpressionCatalog(
+            [
+                MedicationCatalogEntry(
+                    canonical_name="목앤탁인후스프레이",
+                    entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                    kind=InteractionEntityKind.DRUG,
+                    source=MedicationQueryEntitySource.RDBMS,
+                )
+            ]
+        ),
+    )
+
+    result = await resolver.resolve(question="목앤탁인후스프레이 효능 알려줘")
+
+    assert result.status == MedicationExpressionResolutionStatus.UNCHANGED
+    assert [(entity.canonical_name, entity.kind) for entity in result.entities] == [
+        ("목앤탁인후스프레이", InteractionEntityKind.DRUG),
     ]
 
 

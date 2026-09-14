@@ -1,3 +1,4 @@
+import asyncio
 import json
 from typing import Any, Protocol
 
@@ -66,10 +67,8 @@ def _validate_claim_pair_bindings(
     evidence_by_id: dict[str, EvidenceItem],
 ) -> None:
     for claim in output.claims:
-        if claim.section_type is not KnowledgeSectionType.INTERACTION:
-            continue
-        if claim.pair_key is None:
-            raise ValueError("INTERACTION claim에는 pair_key가 필요합니다.")
+        if claim.section_type is not KnowledgeSectionType.INTERACTION or claim.pair_key is None:
+            raise ValueError("상호작용 근거 판정은 INTERACTION claim만 반환할 수 있습니다.")
         _validate_pair_bound_evidence(
             pair_key=claim.pair_key,
             evidence_ids=claim.evidence_ids,
@@ -161,13 +160,13 @@ def build_interaction_evidence_reasoning_chain(
     if not normalized_model:
         raise ValueError("LLM 모델명은 비어 있을 수 없습니다.")
 
-    response_runnable: Runnable
+    model_response: Runnable
     if client is not None:
-        response_runnable = RunnableLambda(client.ainvoke).with_config(
+        model_response = RunnableLambda(client.ainvoke).with_config(
             run_name="medication.evidence_reasoning.client",
         )
     else:
-        response_runnable = (
+        model_response = (
             ChatOpenAI(
                 model=normalized_model,
                 temperature=0,
@@ -182,6 +181,17 @@ def build_interaction_evidence_reasoning_chain(
             )
             .with_config(run_name="medication.evidence_reasoning.model")
         )
+
+    async def invoke_with_timeout(
+        messages: Any,
+        config: RunnableConfig | None = None,
+    ) -> EvidenceReasoningOutput | dict[str, Any]:
+        async with asyncio.timeout(timeout_seconds):
+            return await model_response.ainvoke(messages, config=config)
+
+    response_runnable = RunnableLambda(invoke_with_timeout).with_config(
+        run_name="medication.evidence_reasoning.timeout",
+    )
 
     prompt_document = load_prompt_chain_stage(
         MedicationPromptStage.EVIDENCE_REASONING,

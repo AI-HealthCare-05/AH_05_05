@@ -364,7 +364,8 @@ async def test_active_undo_before_claim_removes_eligibility_and_reads_never_awar
         assert detail.status_code == listed.status_code == badges.status_code == 200
         assert detail.json()["status"] == "ACTIVE"
         assert detail.json()["completedCount"] == 1
-        assert badges.json() == {"items": [], "totalCount": 0}
+        assert badges.json()["items"] == []
+        assert badges.json()["totalCount"] == 0
         assert await CustomChallengeBadgeAward.filter(user=user).count() == 0
         undone = await client.request(method, path, headers=headers, json={**payload, "taken": False})
         assert undone.status_code == 200, undone.text
@@ -595,7 +596,8 @@ async def test_medication_api_keeps_episode_results_and_badge_frozen_after_end_a
         )
 
         unclaimed_badges = await client.get("/api/v1/user/custom-challenges/badges", headers=owner_headers)
-        assert unclaimed_badges.json() == {"items": [], "totalCount": 0}
+        assert unclaimed_badges.json()["items"] == []
+        assert unclaimed_badges.json()["totalCount"] == 0
         assert await CustomChallengeBadgeAward.filter(user=owner).count() == 0
         claimed = await _claim(client, owner_headers, first_id)
         assert claimed["newlyAwarded"] is True
@@ -614,7 +616,8 @@ async def test_medication_api_keeps_episode_results_and_badge_frozen_after_end_a
         assert badges_before.status_code == other_badges.status_code == 200
         assert badges_before.json()["totalCount"] == 1
         assert badges_before.json()["items"][0]["participationId"] == first_id
-        assert other_badges.json() == {"items": [], "totalCount": 0}
+        assert other_badges.json()["items"] == []
+        assert other_badges.json()["totalCount"] == 0
         assert await CustomChallengeBadgeAward.filter(user=owner).count() == 1
 
         undone = await client.post(
@@ -717,7 +720,8 @@ async def test_supplement_api_uses_exactly_seven_days_and_freezes_completion_aft
             f"/api/v1/user/custom-challenge-participations/{participation_id}", headers=headers
         )
         unclaimed_badges = await client.get("/api/v1/user/custom-challenges/badges", headers=headers)
-        assert unclaimed_badges.json() == {"items": [], "totalCount": 0}
+        assert unclaimed_badges.json()["items"] == []
+        assert unclaimed_badges.json()["totalCount"] == 0
         assert await CustomChallengeBadgeAward.filter(participation_id=participation_id).count() == 0
         claimed = await _claim(client, headers, participation_id)
         assert claimed["newlyAwarded"] is True

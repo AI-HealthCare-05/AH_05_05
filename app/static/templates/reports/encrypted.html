@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; frame-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer"><title>RxVita AI 보고서</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f4f8f7;color:#172033;font-family:system-ui,-apple-system,sans-serif;line-height:1.65}
+main{width:min(440px,calc(100% - 32px));margin:12vh auto;padding:32px;background:white;border:1px solid #d7e6df;border-radius:20px}
+.brand{font-size:26px;font-weight:800;color:#007f79}h1{font-size:22px;margin:14px 0}p{font-size:14px;color:#59636f}
+label{display:block;font-size:14px;font-weight:600}input,button{font:inherit;border-radius:10px;min-height:46px;width:100%;margin-top:8px}
+input{padding:10px;border:1px solid #8eafaa;letter-spacing:.2em}button{border:0;background:#007f79;color:white;cursor:pointer;font-weight:700}button:disabled{opacity:.6;cursor:wait}
+:focus-visible{outline:3px solid #b58a35;outline-offset:3px}#error{color:#a12a2a;min-height:24px}small{display:block;color:#59636f;font-size:12px;margin-top:14px}
+[hidden]{display:none!important}#viewer{height:100dvh}header{height:56px;padding:8px 18px;display:flex;align-items:center;justify-content:space-between;background:white;border-bottom:1px solid #d7e6df}header button{width:auto;min-height:36px;margin:0;padding:2px 16px}iframe{width:100%;height:calc(100dvh - 56px);border:0;background:#f4f8f7}
+</style></head><body>
+<main id="lock"><div class="brand">RxVita</div><h1>AI 보고서 확인하기</h1>
+<p>보고서를 열려면 생년월일 6자리를 입력해 주세요.</p>
+<form id="unlock"><label for="password">생년월일 6자리 (YYMMDD)</label><input id="password" type="password" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="off" required aria-describedby="error">
+<button id="open" type="submit">보고서 열기</button><p id="error" role="status" aria-live="polite"></p></form>
+<small>메일 미리보기에서는 열리지 않을 수 있습니다. 파일을 내려받아 Chrome·Edge·Safari 등 브라우저에서 열어 주세요. 비밀번호는 외부로 전송되지 않습니다.</small>
+<noscript><p>보고서를 열려면 JavaScript를 사용할 수 있는 브라우저가 필요합니다.</p></noscript></main>
+<section id="viewer" hidden><header><strong>RxVita AI 보고서</strong><button id="close" type="button">다시 잠그기</button></header><iframe id="report" title="복용약·영양제 AI 보고서" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe></section>
+<script id="report-data" type="application/json">{{ envelope|safe }}</script>
+<script>
+'use strict';
+const lock=document.getElementById('lock'),viewer=document.getElementById('viewer'),frame=document.getElementById('report'),password=document.getElementById('password'),error=document.getElementById('error'),button=document.getElementById('open');
+const bytes=value=>Uint8Array.from(atob(value),char=>char.charCodeAt(0));
+document.getElementById('unlock').addEventListener('submit',async event=>{
+  event.preventDefault();error.textContent='';
+  if(!globalThis.crypto?.subtle){error.textContent='이 환경에서는 열 수 없습니다. 파일을 내려받아 최신 브라우저에서 열어 주세요.';return;}
+  button.disabled=true;button.textContent='보고서 여는 중…';
+  try{
+    const envelope=JSON.parse(document.getElementById('report-data').textContent);
+    const material=await crypto.subtle.importKey('raw',new TextEncoder().encode(password.value),'PBKDF2',false,['deriveKey']);
+    password.value='';
+    const key=await crypto.subtle.deriveKey({name:'PBKDF2',salt:bytes(envelope.salt),iterations:envelope.iterations,hash:'SHA-256'},material,{name:'AES-GCM',length:256},false,['decrypt']);
+    const plaintext=await crypto.subtle.decrypt({name:'AES-GCM',iv:bytes(envelope.iv)},key,bytes(envelope.ciphertext));
+    frame.srcdoc=new TextDecoder().decode(plaintext);lock.hidden=true;viewer.hidden=false;document.getElementById('close').focus();
+  }catch{password.value='';error.textContent='생년월일 6자리를 확인해 주세요. 계속 열리지 않으면 첨부파일을 다시 내려받아 주세요.';password.focus();}
+  finally{button.disabled=false;button.textContent='보고서 열기';}
+});
+document.getElementById('close').addEventListener('click',()=>{frame.removeAttribute('srcdoc');viewer.hidden=true;lock.hidden=false;password.value='';password.focus();});
+</script></body></html>

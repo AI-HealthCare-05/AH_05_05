@@ -28,6 +28,7 @@ from app.models.email_verifications import EmailVerification
 from app.models.enums import BackgroundJobStatus, EmailVerificationPurpose
 from app.repositories.email_verification_repository import EmailVerificationRepository
 from app.repositories.user_repository import UserRepository
+from app.services.email_jobs import EmailTaskScheduler
 
 
 class SignupVerificationEmailEnqueuer(Protocol):
@@ -39,6 +40,7 @@ class SignupVerificationEmailEnqueuer(Protocol):
         verification_code: str,
         expires_in: int,
         expires_at: datetime,
+        scheduler: EmailTaskScheduler,
     ) -> BackgroundJob: ...
 
 
@@ -86,7 +88,7 @@ class EmailVerificationService:
             ttl_seconds=config.EMAIL_VERIFICATION_TOKEN_TTL_SECONDS,
         )
 
-    async def request(self, email: str) -> EmailVerificationRequestResult:
+    async def request(self, email: str, *, scheduler: EmailTaskScheduler) -> EmailVerificationRequestResult:
         normalized_email = email.casefold()
         if await self.user_repository.exists_by_email(normalized_email):
             raise SignupEmailAlreadyExistsError()
@@ -124,6 +126,7 @@ class EmailVerificationService:
             verification_code=code,
             expires_in=config.EMAIL_VERIFICATION_TTL_SECONDS,
             expires_at=expires_at,
+            scheduler=scheduler,
         )
         if job.status is BackgroundJobStatus.FAILED:
             await EmailVerification.filter(id=verification.id).update(expires_at=now, updated_at=now)

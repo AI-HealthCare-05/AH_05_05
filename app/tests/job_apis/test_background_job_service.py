@@ -23,27 +23,8 @@ class TestBackgroundJobService(TestCase):
             p256dh_key="p256dh",
             auth_key="auth",
         )
-        self.redis_pool = AsyncMock()
-        self.redis_pool.enqueue_job.return_value = object()
-        self.service = BackgroundJobService(redis_pool=self.redis_pool)
-
-    async def test_alarm_job_creation_is_idempotent(self):
-        first, first_created = await self.service.create_alarm_job(
-            self.alarm,
-            self.subscription,
-            self.alarm.next_trigger_at,
-        )
-        second, second_created = await self.service.create_alarm_job(
-            self.alarm,
-            self.subscription,
-            self.alarm.next_trigger_at,
-        )
-
-        assert first.id == second.id
-        assert first_created is True
-        assert second_created is False
-        assert first.reference_table == "alarms"
-        assert first.reference_id == self.alarm.id
+        self.scheduler = AsyncMock()
+        self.service = BackgroundJobService()
 
     async def test_manual_retry_creates_child_of_failed_job(self):
         event = await AlarmEvent.create(
@@ -62,12 +43,12 @@ class TestBackgroundJobService(TestCase):
             max_retry_count=3,
         )
 
-        retried = await self.service.retry_failed(failed.id)
+        retried = await self.service.retry_failed(failed.id, scheduler=self.scheduler)
 
         assert retried.parent_job_id == failed.id
         assert retried.status == BackgroundJobStatus.QUEUED
         assert retried.idempotency_key != failed.idempotency_key
-        self.redis_pool.enqueue_job.assert_awaited_once()
+        self.scheduler.start_job.assert_awaited_once_with(retried.id)
 
     async def test_processing_job_cannot_be_cancelled(self):
         job = await BackgroundJob.create(
@@ -98,10 +79,10 @@ class TestBackgroundJobService(TestCase):
             max_retry_count=3,
         )
         with pytest.raises(HTTPException) as error:
-            await self.service.retry_failed(failed.id)
+            await self.service.retry_failed(failed.id, scheduler=self.scheduler)
         assert error.value.status_code == status.HTTP_409_CONFLICT
         assert await BackgroundJob.filter(parent_job_id=failed.id).count() == 0
-        self.redis_pool.enqueue_job.assert_not_awaited()
+        self.scheduler.start_job.assert_not_awaited()
 
     async def test_email_job_cannot_be_manually_retried(self):
         failed = await BackgroundJob.create(
@@ -114,8 +95,8 @@ class TestBackgroundJobService(TestCase):
         )
 
         with pytest.raises(HTTPException) as error:
-            await self.service.retry_failed(failed.id)
+            await self.service.retry_failed(failed.id, scheduler=self.scheduler)
 
         assert error.value.status_code == status.HTTP_409_CONFLICT
         assert error.value.detail == "Job retry handler is not available."
-        self.redis_pool.enqueue_job.assert_not_awaited()
+        self.scheduler.start_job.assert_not_awaited()

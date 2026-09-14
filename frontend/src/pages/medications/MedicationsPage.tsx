@@ -30,6 +30,7 @@ import {
   ErrorDialog,
   Header,
   Input,
+  SelectionActions,
 } from '@/shared/ui';
 import { MEAL_SLOTS, SLOT_ORDER, mealSlotLabel } from '@/shared/model/mealSlot';
 import { cn } from '@/shared/lib/cn';
@@ -376,7 +377,7 @@ export function MedicationsPage({
     setDeletePending(false);
   }
 
-  const headerTitle = selectionMode ? '삭제할 처방을 선택하세요' : '복약';
+  const headerTitle = '복약';
   const periodLabel = medicationPeriodLabel(range, new Date());
   const activeOverviews = overviews?.filter((overview) => !overview.isFinished) ?? [];
   const finishedOverviews = overviews?.filter((overview) => overview.isFinished) ?? [];
@@ -403,33 +404,25 @@ export function MedicationsPage({
   function renderListActions(className: string) {
     return (
       <div className={className}>
-        <Button
-          fullWidth={false}
-          variant="secondary"
-          className="self-start"
-          onClick={() => navigate('/document-upload')}
-        >
-          <Plus aria-hidden className="mr-1 size-4" />
-          처방 추가
-        </Button>
-        {selectionMode ? (
+        {!selectionMode && (
           <Button
             fullWidth={false}
-            variant="danger"
-            disabled={selectedRecordIds.size === 0}
-            onClick={openDeleteConfirmation}
+            variant="primary"
+            className="self-start"
+            onClick={() => navigate('/document-upload')}
           >
-            삭제
-          </Button>
-        ) : (
-          <Button
-            fullWidth={false}
-            variant="secondary"
-            onClick={() => setSelectionMode(true)}
-          >
-            선택
+            <Plus aria-hidden className="mr-1 size-4" />
+            처방 추가
           </Button>
         )}
+        <SelectionActions
+          aria-label="처방 선택"
+          selectionMode={selectionMode}
+          selectedCount={selectedRecordIds.size}
+          onStart={() => setSelectionMode(true)}
+          onCancel={leaveSelectionMode}
+          onDelete={openDeleteConfirmation}
+        />
       </div>
     );
   }
@@ -442,26 +435,14 @@ export function MedicationsPage({
         title={headerTitle}
         onBack={() => enteredFromDirectNote ? navigate('/home', { replace: true }) : navigate(-1)}
         right={
-          selectionMode ? (
-            <div className="flex shrink-0 items-center gap-1">
-              <button
-                type="button"
-                className="min-h-touch px-2 text-sm font-bold text-muted-foreground"
-                onClick={leaveSelectionMode}
-              >
-                취소
-              </button>
-            </div>
-          ) : (
-            <Button
-              size="compact"
-              fullWidth={false}
-              className="px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              onClick={() => navigate('/reports/new?source=medications')}
-            >
-              AI 보고서 받기
-            </Button>
-          )
+          <Button
+            size="compact"
+            fullWidth={false}
+            className="px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            onClick={() => navigate('/reports/new?source=medications')}
+          >
+            AI 보고서 받기
+          </Button>
         }
       />
 
@@ -519,7 +500,7 @@ export function MedicationsPage({
                   <h2 id="active-episode-list-title" className="text-xl font-bold text-foreground">
                     복용 중
                   </h2>
-                  <span className="text-sm text-muted-foreground tnum">{activeOverviews.length}개</span>
+                  <span className="text-xl font-bold text-foreground tnum">{activeOverviews.length}개</span>
                 </div>
                 {renderListActions('flex shrink-0 items-center gap-2')}
               </div>

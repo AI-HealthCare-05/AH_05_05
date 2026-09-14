@@ -20,6 +20,7 @@ from ai_worker.schemas.knowledge import (
     RetrievedKnowledgeChunk,
 )
 from ai_worker.schemas.medication_search import (
+    MedicationInteractionQueryPair,
     MedicationQueryEntity,
     MedicationQueryEntitySource,
     MedicationQueryEntityType,
@@ -765,6 +766,54 @@ async def test_search_excludes_results_below_minimum_score() -> None:
     assert [result.similarity_score for result in results] == [0.8]
 
 
+async def test_search_keeps_declared_pair_metadata_even_when_chunk_text_uses_no_pair_aliases() -> None:
+    pair = MedicationInteractionQueryPair(
+        left_name="비타민 D",
+        right_name="칼슘",
+        pair_type="SUPPLEMENT_SUPPLEMENT",
+        pair_key="a" * 64,
+    )
+    base_execution = build_execution_plan("비타민 D와 칼슘을 같이 먹어도 돼?")
+    execution = base_execution.model_copy(
+        update={
+            "query_plan": base_execution.query_plan.model_copy(
+                update={
+                    "entity_names": ["비타민 D", "칼슘"],
+                    "section_types": [KnowledgeSectionType.INTERACTION],
+                    "interaction_pair": pair,
+                    "interaction_pairs": [pair],
+                    "interaction_pair_keys": [pair.pair_key],
+                }
+            )
+        }
+    )
+    pair_scoped_chunk = build_chunk(
+        score=0.2,
+        content="검수된 관계 근거입니다.",
+        title="검수 문서",
+    ).model_copy(
+        update={
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "interaction_pair_keys": [pair.pair_key],
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                }
+            )
+        }
+    )
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=FakeKnowledgeStore(responses=[[pair_scoped_chunk]]),
+        dataset_version="knowledge-baseline-v1",
+        min_similarity_score=0.65,
+    )
+
+    result = await retriever.search_with_diagnostics(execution_plan=execution)
+
+    assert result.chunks == [pair_scoped_chunk]
+    assert result.diagnostics.rejected_pair_mismatch_count == 0
+
+
 async def test_search_does_not_apply_dense_cosine_threshold_to_bm25_score() -> None:
     bm25_result = build_chunk(
         0.2,
@@ -817,6 +866,36 @@ async def test_candidate_diagnostics_are_deduplicated_and_limited_to_twenty() ->
     assert len(result.diagnostics.candidate_diagnostics) == 20
     assert [diagnostic.adjusted_rank for diagnostic in result.diagnostics.candidate_diagnostics] == list(range(1, 21))
     assert sum(diagnostic.selected_in_top_5 for diagnostic in result.diagnostics.candidate_diagnostics) == 2
+
+
+async def test_audit_target_diagnostics_keep_gold_document_beyond_runtime_trace_limit() -> None:
+    chunks = [
+        build_chunk(
+            0.9 - index / 100,
+            chunk_id=f"{index:064x}",
+            document_id=("gold-document" if index == 24 else f"document-{index}"),
+            ingredient_names=["마그네슘"],
+            section_type=KnowledgeSectionType.FUNCTION,
+        )
+        for index in range(25)
+    ]
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=FakeKnowledgeStore(responses=[chunks]),
+        dataset_version="knowledge-full-v2-interaction-metadata",
+    )
+
+    result = await retriever.search_with_diagnostics(
+        execution_plan=build_execution_plan(
+            "마그네슘은 왜 먹나요?",
+            supplement_names=["마그네슘"],
+        ),
+        audit_target_document_ids={"gold-document"},
+    )
+
+    assert len(result.diagnostics.candidate_diagnostics) == 20
+    assert [diagnostic.document_id for diagnostic in result.diagnostics.audit_target_diagnostics] == ["gold-document"]
+    assert result.diagnostics.audit_target_diagnostics[0].adjusted_rank == 25
 
 
 async def test_search_attaches_only_adjacent_eligible_parent_context() -> None:

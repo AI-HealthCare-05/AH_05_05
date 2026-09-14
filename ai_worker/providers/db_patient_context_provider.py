@@ -62,7 +62,6 @@ class DbPatientContextProvider:
                     name=medication.name,
                     dose=medication.dose_quantity,
                     times_per_day=(medication.times_per_day),
-                    note=medication.note,
                     days=medication.days,
                     prescribed_at=(medication.prescribed_at),
                 )

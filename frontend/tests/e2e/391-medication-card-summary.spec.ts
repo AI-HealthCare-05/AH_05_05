@@ -184,7 +184,7 @@ test('연필만 기존 편집창을 열고 선택 모드는 편집과 펼침 없
   await expect(page.getByRole('checkbox', { name: '2026년 9월 5일 처방 선택' })).toBeChecked();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await page.getByRole('button', { name: '삭제 1개', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
 });
 

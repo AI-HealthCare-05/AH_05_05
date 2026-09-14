@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse as Response
 
 from app.core import config
 from app.core.config import Env
+from app.dependencies.email_background_tasks import get_email_task_scheduler
 from app.dtos.auth import (
     AuthErrorResponse,
     EmailVerificationCodeRequest,
@@ -20,6 +21,7 @@ from app.dtos.auth import (
     TokenRefreshResponse,
 )
 from app.services.auth import AuthService
+from app.services.email_jobs import EmailTaskScheduler
 from app.services.email_verifications import EmailVerificationService
 from app.services.jwt import JwtService
 
@@ -68,9 +70,10 @@ def _login_error(exc: HTTPException) -> Response:
 )
 async def request_email_verification(
     request: EmailVerificationRequest,
+    scheduler: Annotated[EmailTaskScheduler, Depends(get_email_task_scheduler)],
     service: Annotated[EmailVerificationService, Depends(get_email_verification_service)],
 ) -> EmailVerificationRequestResponse:
-    result = await service.request(str(request.email))
+    result = await service.request(str(request.email), scheduler=scheduler)
     return EmailVerificationRequestResponse(
         verification_id=result.verification_id,
         expires_in=result.expires_in,
@@ -192,13 +195,14 @@ async def login(
 )
 async def request_password_reset(
     request: PasswordResetRequest,
+    scheduler: Annotated[EmailTaskScheduler, Depends(get_email_task_scheduler)],
     auth_service: Annotated[AuthService, Depends(AuthService)],
 ) -> PasswordResetResponse:
     """등록된 활성 사용자라면 임시비밀번호 이메일 작업을 생성한다.
 
     이메일 가입 여부가 노출되지 않도록 계정 존재 여부와 관계없이 같은 응답을 반환한다.
     """
-    await auth_service.request_password_reset(str(request.email))
+    await auth_service.request_password_reset(str(request.email), scheduler=scheduler)
     return PasswordResetResponse(detail="입력한 이메일이 등록되어 있으면 임시비밀번호를 발송합니다.")
 
 

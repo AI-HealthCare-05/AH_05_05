@@ -5,12 +5,18 @@ from starlette import status
 from tortoise.contrib.test import TestCase
 
 from app.core.utils.security import hash_password, verify_password
+from app.dependencies.email_background_tasks import get_email_task_scheduler
 from app.main import app
 from app.models.enums import AccountStatus
 from app.models.users import User
 from app.services.email_jobs import EmailJobService
 
 PASSWORD_RESET_URL = "/api/v1/auth/password-reset"
+
+
+class NoopEmailTaskScheduler:
+    def schedule(self, _job_id: int) -> None:
+        return None
 
 
 class TestPasswordResetAPI(TestCase):
@@ -25,8 +31,12 @@ class TestPasswordResetAPI(TestCase):
         )
 
     async def request(self, email: str):
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            return await client.post(PASSWORD_RESET_URL, json={"email": email})
+        app.dependency_overrides[get_email_task_scheduler] = NoopEmailTaskScheduler
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                return await client.post(PASSWORD_RESET_URL, json={"email": email})
+        finally:
+            app.dependency_overrides.pop(get_email_task_scheduler, None)
 
     async def test_active_user_queues_reset_without_changing_password_in_api(self) -> None:
         enqueue = AsyncMock()

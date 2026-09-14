@@ -224,7 +224,7 @@ def test_system_prompt_requires_limited_markdown_product_answer() -> None:
     assert "초안에 있는 이름만 독립한 굵은 줄" in SYSTEM_PROMPT
     assert "값이 없는 항목은 출력하지" in SYSTEM_PROMPT
     assert "질문과 직접 관계있는 섹션" in SYSTEM_PROMPT
-    assert "각 섹션은 최대 3개 bullet" in SYSTEM_PROMPT
+    assert "각 섹션은 최대 5개 bullet" in SYSTEM_PROMPT
     assert "10어절 이내" in SYSTEM_PROMPT
 
 
@@ -252,9 +252,16 @@ def test_system_prompt_forbids_repeating_unverified_interaction_notice() -> None
     assert "확인하지 못한 조합은 한 번만 표시" in SYSTEM_PROMPT
 
 
+def test_system_prompt_preserves_merged_answer_constraints() -> None:
+    assert "🍗 **함께 주의할 약·음식**" in SYSTEM_PROMPT
+    assert "직접 근거가 없는 조합을 안전하거나 위험하다고 단정하지" in SYSTEM_PROMPT
+    assert "`|`, `(`, `)`" in SYSTEM_PROMPT
+    assert "rewrite_instruction" in SYSTEM_PROMPT
+
+
 def test_system_prompt_limits_each_requested_section_to_short_bullets() -> None:
     assert "각 bullet은 한 가지 핵심만 10어절 이내" in SYSTEM_PROMPT
-    assert "각 섹션은 최대 3개 bullet" in SYSTEM_PROMPT
+    assert "각 섹션은 최대 5개 bullet" in SYSTEM_PROMPT
 
 
 def test_prompt_limits_product_output_to_requested_sections() -> None:

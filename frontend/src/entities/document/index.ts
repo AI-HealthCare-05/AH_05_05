@@ -1,11 +1,17 @@
 export {
   cancelOcrResult,
   confirmOcrResult,
-  getOcrDocumentImageUrl,
-  getOcrProcessedImageUrl,
   getOcrResult,
-  releaseOcrDocumentImageUrl,
+  createOcrPreviewSession,
+  getOcrPreviewSessionFile,
+  loadOcrPreviewImages,
+  releaseOcrJobImages,
+  releaseOcrPreviewSession,
   uploadDocument,
+} from './api';
+export type {
+  OcrPreviewImages,
+  OcrPreviewSessionId,
 } from './api';
 export type {
   Confidence,

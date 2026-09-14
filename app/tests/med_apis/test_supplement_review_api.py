@@ -56,7 +56,7 @@ class TestSupplementReviewAPI(TestCase):
     async def test_list_reviews_returns_public_fields_and_separate_rating_population(self) -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             product = await create_supplement("REVIEW-LIST-001", "후기 목록 제품")
-            viewer, mine, headers = await self._create_registration(
+            _, mine, headers = await self._create_registration(
                 client,
                 product,
                 index=1,
@@ -79,7 +79,6 @@ class TestSupplementReviewAPI(TestCase):
                 name="KimJinhyeong",
                 review_body="본문만 남긴 후기",
             )
-            await SupplementReviewReport.create(user=viewer, registration=score_only)
             await self._create_registration(
                 client,
                 product,
@@ -134,7 +133,7 @@ class TestSupplementReviewAPI(TestCase):
         }
         assert payload["items"][1]["author_label"] == "박*"
         assert payload["items"][1]["review_body"] is None
-        assert payload["items"][1]["reported_by_me"] is True
+        assert payload["items"][1]["reported_by_me"] is False
         assert payload["items"][2]["author_label"] == "김*훈"
         assert payload["items"][2]["is_mine"] is True
         for item in payload["items"]:
@@ -195,6 +194,73 @@ class TestSupplementReviewAPI(TestCase):
         assert await SupplementReviewReport.filter(registration=target).count() == 1
         assert own.status_code == status.HTTP_400_BAD_REQUEST
         assert own.json()["detail"] == "본인 후기는 신고할 수 없습니다"
+
+    async def test_report_hides_review_only_for_reporter_across_list_requests(self) -> None:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            product = await create_supplement("REVIEW-REPORT-USER", "신고자별 숨김 제품")
+            _, visible, _ = await self._create_registration(
+                client,
+                product,
+                index=22,
+                name="계속보임",
+                score=5,
+                review_body="신고하지 않은 후기",
+            )
+            _, reported, _ = await self._create_registration(
+                client,
+                product,
+                index=23,
+                name="신고대상",
+                score=3,
+                review_body="신고 후 숨길 후기",
+            )
+            _, _, reporter_headers = await self._create_registration(
+                client,
+                await create_supplement("REVIEW-REPORTER-OWN", "신고자 소유 제품"),
+                index=24,
+                name="신고자",
+            )
+            other_headers = await authentication_headers(
+                client,
+                "supplement-other-viewer@example.com",
+                "01050000025",
+            )
+
+            before = await client.get(
+                f"/api/v1/med/nutr/{product.id}/reviews",
+                params={"offset": 0, "limit": 1},
+                headers=reporter_headers,
+            )
+            response = await client.post(
+                f"/api/v1/med/nutr/reviews/{reported.id}/report",
+                headers=reporter_headers,
+            )
+            after = await client.get(
+                f"/api/v1/med/nutr/{product.id}/reviews",
+                params={"offset": 0, "limit": 1},
+                headers=reporter_headers,
+            )
+            other_user = await client.get(
+                f"/api/v1/med/nutr/{product.id}/reviews",
+                params={"offset": 0, "limit": 10},
+                headers=other_headers,
+            )
+
+        assert before.status_code == status.HTTP_200_OK
+        assert before.json()["items"][0]["id"] == reported.id
+        assert before.json()["total"] == 2
+        assert before.json()["review_count"] == 2
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert after.status_code == status.HTTP_200_OK
+        assert [item["id"] for item in after.json()["items"]] == [visible.id]
+        assert after.json()["total"] == 1
+        assert after.json()["review_count"] == 1
+        assert after.json()["rating_average"] == "5.0"
+        assert other_user.status_code == status.HTTP_200_OK
+        assert [item["id"] for item in other_user.json()["items"]] == [reported.id, visible.id]
+        assert other_user.json()["total"] == 2
+        assert other_user.json()["review_count"] == 2
+        assert other_user.json()["rating_average"] == "4.0"
 
     async def test_report_returns_not_found_for_unavailable_review(self) -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

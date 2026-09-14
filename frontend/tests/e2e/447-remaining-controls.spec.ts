@@ -44,17 +44,15 @@ async function expectNoDocumentOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 }
 
-async function expectNativeDateContentFits(input: Locator) {
+async function expectDateEntryContentFits(input: Locator) {
   const fit = await input.evaluate((element: HTMLInputElement) => {
     const style = getComputedStyle(element);
     const context = document.createElement('canvas').getContext('2d')!;
     context.font = style.font;
-    const displayedDate = element.value ? '2026. 09. 13.' : '연도. 월. 일.';
+    const displayedDate = element.value || element.placeholder;
     const requiredWidth =
       parseFloat(style.paddingLeft) +
       context.measureText(displayedDate).width +
-      8 +
-      24 +
       parseFloat(style.paddingRight);
     return { clientWidth: element.clientWidth, requiredWidth };
   });
@@ -114,10 +112,11 @@ test('검색·날짜·메모·후기·진료 시간은 기존 Input과 같은 �
   await page.getByRole('button', { name: '최근 6개월' }).click();
   const periodSheet = page.getByRole('dialog', { name: '조회 기간' });
   await periodSheet.getByText('직접 지정', { exact: true }).click();
-  const from = periodSheet.getByLabel('시작일');
-  const to = periodSheet.getByLabel('종료일');
+  const from = periodSheet.getByLabel('시작일', { exact: true });
+  const to = periodSheet.getByLabel('종료일', { exact: true });
   for (const date of [from, to]) {
-    await expect(date).toHaveAttribute('type', 'date');
+    await expect(date).toHaveAttribute('type', 'text');
+    await expect(date).toHaveAttribute('inputmode', 'numeric');
     const dateSurface = await surface(date);
     expectRaisedMaterial(dateSurface, nativeDateSurface);
     expect(Math.abs(dateSurface.height - nativeDateSurface.height)).toBeLessThan(0.1);
@@ -167,7 +166,7 @@ test('검색·날짜·메모·후기·진료 시간은 기존 Input과 같은 �
 });
 
 for (const width of [320, 390]) {
-  test(`${width}px 직접 지정 날짜는 네이티브 내용이 맞는 반응형 열을 사용한다`, async ({ page }, testInfo) => {
+  test(`${width}px 직접 지정 날짜는 직접 입력 가능한 반응형 열을 사용한다`, async ({ page }, testInfo) => {
     test.skip(IS_REAL_API, MOCK_ONLY_REASON);
     await page.clock.setFixedTime(new Date('2026-09-13T03:00:00Z'));
     await page.setViewportSize({ width, height: 844 });
@@ -175,8 +174,8 @@ for (const width of [320, 390]) {
     await page.getByRole('button', { name: '최근 6개월' }).click();
     const periodSheet = page.getByRole('dialog', { name: '조회 기간' });
     await periodSheet.getByText('직접 지정', { exact: true }).click();
-    const from = periodSheet.getByLabel('시작일');
-    const to = periodSheet.getByLabel('종료일');
+    const from = periodSheet.getByLabel('시작일', { exact: true });
+    const to = periodSheet.getByLabel('종료일', { exact: true });
 
     const [emptyFromBox, emptyToBox] = await Promise.all([from.boundingBox(), to.boundingBox()]);
     expect(emptyFromBox).not.toBeNull();
@@ -188,8 +187,8 @@ for (const width of [320, 390]) {
       expect(Math.abs(emptyFromBox!.y - emptyToBox!.y)).toBeLessThan(1);
       expect(emptyToBox!.x).toBeGreaterThanOrEqual(emptyFromBox!.x + emptyFromBox!.width);
     }
-    await expectNativeDateContentFits(from);
-    await expectNativeDateContentFits(to);
+    await expectDateEntryContentFits(from);
+    await expectDateEntryContentFits(to);
     await expectNoDocumentOverflow(page);
     await page.screenshot({ path: testInfo.outputPath(`task-6-period-empty-${width}.png`), fullPage: true });
 
@@ -199,8 +198,8 @@ for (const width of [320, 390]) {
     await expect(from).toHaveAttribute('max', '2026-09-13');
     await expect(to).toHaveAttribute('min', '2026-09-01');
     await expect(to).toHaveAttribute('max', '2026-09-13');
-    await expectNativeDateContentFits(from);
-    await expectNativeDateContentFits(to);
+    await expectDateEntryContentFits(from);
+    await expectDateEntryContentFits(to);
     await expectNoDocumentOverflow(page);
     await page.screenshot({ path: testInfo.outputPath(`task-6-period-populated-${width}.png`), fullPage: true });
   });

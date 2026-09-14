@@ -16,6 +16,9 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/v1/user/custom-challenge-recommendations', route => route.fulfill({
     json: { items: [], totalCount: 0 },
   }));
+  await page.route('**/api/v1/user/custom-challenges/badges', route => route.fulfill({
+    json: { items: [], totalCount: 0 },
+  }));
 });
 
 const badge = {
@@ -213,7 +216,7 @@ for (const entry of ['participation', 'catalog'] as const) {
     release();
     await expect(page).toHaveURL(/\/challenges\/participations\/502$/);
     await expect(page.getByRole('progressbar', { name: '내 인증 기록 진행률' })).toHaveAttribute('aria-valuenow', '0');
-    await expect(page.getByText('내 수행 기간 · 2026.9.10 ~ 2026.9.23')).toBeVisible();
+    await expect(page.getByText('내 수행 기간 · 2026.09.10 ~ 2026.09.23')).toBeVisible();
     await expect(page.getByLabel('2026-09-10 미인증', { exact: true })).toBeVisible();
     await page.goto('/challenges/participations/501');
     await expect(page.getByRole('progressbar', { name: '내 인증 기록 진행률' })).toHaveAttribute('aria-valuenow', '21.43');
@@ -390,7 +393,7 @@ test('real browse renders compact recruitment dates from the catalog and never s
 
   await page.getByRole('button', { name: '공식 챌린지 펼치기', exact: true }).click();
   for (const name of ['매일 30분 걷기', '건강 기록 제출하기', '가볍게 스트레칭']) {
-    await expect(page.getByRole('button', { name: `${name} 자세히 보기` })).toContainText('모집기간 : 2026년 9월 1일 ~ 2026년 9월 30일');
+    await expect(page.getByRole('button', { name: `${name} 자세히 보기` })).toContainText('모집기간 : 2026.09.01 ~ 2026.09.30');
   }
   await expect(page.getByText('목업 미리보기')).toHaveCount(0);
   await expect(page.getByText('물 마시기', { exact: true })).toHaveCount(0);
@@ -1118,7 +1121,7 @@ test('participation detail uses server dates, counts, progress, and verified dat
   await page.goto('/challenges/participations/501');
 
   await expect(page.getByRole('heading', { name: dailyChallenge.name })).toBeVisible();
-  await expect(page.getByText('내 수행 기간 · 2026.9.8 ~ 2026.9.21')).toBeVisible();
+  await expect(page.getByText('내 수행 기간 · 2026.09.08 ~ 2026.09.21')).toBeVisible();
   await expect(page.getByText('3 / 14일 인증', { exact: true })).toBeVisible();
   await expect(page.getByRole('progressbar', { name: '내 인증 기록 진행률' })).toHaveAttribute('aria-valuenow', '21.43');
   await expect(page.getByLabel('2026-09-08 인증 완료')).toBeVisible();
@@ -1184,13 +1187,13 @@ test('active participation cancellation confirms retained history, posts once, a
   expect(cancelCalls).toBe(1);
 
   releaseCancel();
-  await expect(page.getByRole('heading', { name: '이번 도전은 여기까지예요' })).toBeVisible();
+  await expect(page).toHaveURL('/challenges');
   await expect(page.getByRole('button', { name: '챌린지 참여 취소' })).toHaveCount(0);
   expect(cancelCalls).toBe(1);
   expect(cancelBody).toBeNull();
   expect(cancelAuthorization).toBe('Bearer token-for-challenge-api@example.com');
 
-  await page.reload();
+  await page.goto('/challenges/participations/501');
   await expect(page.getByRole('heading', { name: '이번 도전은 여기까지예요' })).toBeVisible();
   await expect(page.getByRole('button', { name: '챌린지 참여 취소' })).toHaveCount(0);
   expect(cancelCalls).toBe(1);
@@ -1242,6 +1245,7 @@ test('failed cancellation keeps the active participation and allows a deliberate
   await dialog.getByRole('button', { name: '참여 취소', exact: true }).click();
 
   await expect(dialog.getByRole('alert')).toContainText('진행 중인 챌린지만 취소할 수 있어요.');
+  await expect(page).toHaveURL('/challenges/participations/501');
   await expect(dialog.getByRole('button', { name: '참여 취소', exact: true })).toBeEnabled();
   expect(cancelCalls).toBe(1);
   await dialog.getByRole('button', { name: '돌아가기', exact: true }).click();
@@ -1453,7 +1457,7 @@ test('D30 WEEKLY_3 shows the full exclusive-end duration while keeping the last 
 
   await page.goto('/challenges/participations/503');
 
-  await expect(page.getByText('내 수행 기간 · 2026.9.1 ~ 2026.9.30')).toBeVisible();
+  await expect(page.getByText('내 수행 기간 · 2026.09.01 ~ 2026.09.30')).toBeVisible();
   await expect(page.getByText('수행 기간의 마지막 2일은 인증 집계 대상이 아니에요.')).toBeVisible();
   await expect(page.getByLabel('2026-09-28 미인증')).toBeVisible();
   await expect(page.getByLabel(/2026-09-29/)).toHaveCount(0);
@@ -1523,7 +1527,7 @@ test('relative badge media paths resolve from the server root on every official 
   }
 });
 
-test('badge box unions catalog and server awards, grays out unearned badges, and has no filters', async ({ page }) => {
+test('badge box unions catalog and server awards, grays out unearned badges, and has no filters', async ({ page }, testInfo) => {
   await authenticate(page);
   const awardedBadge = {
     id: 701,
@@ -1567,7 +1571,14 @@ test('badge box unions catalog and server awards, grays out unearned badges, and
   await grid.getByRole('link', { name: `${badge.name}, 미획득` }).click();
   await expect(page.getByRole('heading', { name: '배지 상세' })).toBeVisible();
   await expect(page.getByText('아직 획득하지 않았어요.')).toBeVisible();
-  await expect(page.getByText(badge.description)).toBeVisible();
+  await expect(page.getByText(badge.description)).toHaveCount(0);
+  await expect(page.getByText('공식 챌린지 달성', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: '배지 지급 기준' })).toHaveCount(0);
+  await expect(page.getByText('내 배지로 돌아가기', { exact: true })).toHaveCount(0);
+  await page.getByRole('img', { name: badge.name, exact: true }).evaluate((image: HTMLImageElement) => image.decode());
+  await page.screenshot({ path: testInfo.outputPath('badge-detail-simplified.png'), fullPage: true, animations: 'disabled' });
+  await page.getByRole('button', { name: '뒤로 가기', exact: true }).click();
+  await expect(page).toHaveURL('/challenges/badges');
 });
 
 test('authenticated home renders a server-backed challenge summary with navigation only', async ({ page }) => {

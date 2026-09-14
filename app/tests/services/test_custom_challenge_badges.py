@@ -210,8 +210,67 @@ async def test_custom_badge_api_returns_only_the_authenticated_users_awards() ->
             }
         ],
         "totalCount": 1,
+        "availableBadges": [],
     }
     assert other.id != owner.id
+
+
+async def test_badge_catalog_includes_unearned_intake_badges_without_registered_sources() -> None:
+    user = await User.create(email="unearned@example.com", hashed_password="unused", name="미획득")
+    type_group = await CommonCodeGroup.create(category="CHL", group_code="CST_CHL_TYPE", group_name="유형")
+    check_group = await CommonCodeGroup.create(category="CHL", group_code="CST_CHK_TYPE", group_name="인증")
+    check = await CommonCode.create(group=check_group, detail_code="AUTO", detail_name="자동")
+    expected = []
+    templates = []
+    for code, name in [("MEDICATION", "복약"), ("SUPPLEMENT", "영양제"), ("VISIT", "진료")]:
+        kind = await CommonCode.create(group=type_group, detail_code=code, detail_name=name)
+        badge = await Badge.create(name=f"{name} 배지", image_path=f"media/badges/{code}.png")
+        template = await CustomChallengeTemplate.create(
+            name=f"{name} 챌린지",
+            challenge_type=kind,
+            check_type=check,
+            reward_badge=badge,
+        )
+        templates.append(template)
+        if code != "VISIT":
+            expected.append({"id": badge.id, "name": badge.name, "description": None, "imagePath": badge.image_path})
+    await CustomChallengeTemplate.create(
+        name="중복 영양제",
+        challenge_type_id=templates[1].challenge_type_id,
+        check_type=check,
+        reward_badge_id=templates[1].reward_badge_id,
+    )
+    hidden = await Badge.create(name="숨김 배지", image_path="media/hidden.png")
+    await CustomChallengeTemplate.create(
+        name="비활성 템플릿",
+        challenge_type_id=templates[0].challenge_type_id,
+        check_type=check,
+        reward_badge=hidden,
+        is_active=False,
+    )
+    inactive_badge = await Badge.create(name="비활성 배지", image_path="media/inactive.png", is_active=False)
+    await CustomChallengeTemplate.create(
+        name="비활성 배지 템플릿",
+        challenge_type_id=templates[0].challenge_type_id,
+        check_type=check,
+        reward_badge=inactive_badge,
+    )
+    badge_group = await CommonCodeGroup.create(category="CHL", group_code="BDG_TYPE", group_name="배지 유형")
+    badge_type = await CommonCode.create(group=badge_group, detail_code="CUSTOM", detail_name="맞춤")
+    unlinked = await Badge.create(name="미연결 맞춤 배지", image_path="media/unlinked.png", type=badge_type)
+    unlinked_view = {"id": unlinked.id, "name": unlinked.name, "description": None, "imagePath": unlinked.image_path}
+    expected.append(unlinked_view)
+    app.dependency_overrides[get_request_user] = lambda: user
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/user/custom-challenges/badges")
+        assert response.status_code == 200
+        assert response.json() == {"items": [], "totalCount": 0, "availableBadges": expected}
+        check.is_active = False
+        await check.save(update_fields=["is_active"])
+        response = await client.get("/api/v1/user/custom-challenges/badges")
+        assert response.json() == {"items": [], "totalCount": 0, "availableBadges": [unlinked_view]}
+    assert await CustomChallengeParticipation.all().count() == 0
+    assert await CustomChallengeBadgeAward.all().count() == 0
 
 
 @pytest.mark.parametrize("first_entry", ["badge-list", "participation-list", "detail"])
@@ -255,7 +314,7 @@ async def test_first_read_finalizes_completed_result_without_awarding(first_entr
         response = await client.get("/api/v1/user/custom-challenges/badges")
 
     assert response.status_code == 200
-    assert response.json() == {"items": [], "totalCount": 0}
+    assert response.json() == {"items": [], "totalCount": 0, "availableBadges": []}
     assert await CustomChallengeBadgeAward.filter(participation_id=participation.id).count() == 0
     await participation.refresh_from_db()
     assert participation.status is ChallengeParticipationStatus.COMPLETED

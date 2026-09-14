@@ -32,6 +32,9 @@ class BackgroundJob(models.Model):
     )
     error_code = fields.CharField(max_length=100, null=True)
     error_message = fields.TextField(null=True)
+    encrypted_payload = fields.TextField(null=True)
+    next_attempt_at = fields.DatetimeField(null=True)
+    lease_expires_at = fields.DatetimeField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(null=True)
 
@@ -42,4 +45,6 @@ class BackgroundJob(models.Model):
             ("requested_at",),
             ("user",),
             Index(fields=("status", "requested_at"), name="idx_queue_stats"),
+            Index(fields=("job_type", "status", "next_attempt_at"), name="idx_email_job_retry_due"),
+            Index(fields=("job_type", "status", "lease_expires_at"), name="idx_email_job_lease"),
         )

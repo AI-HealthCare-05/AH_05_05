@@ -37,7 +37,7 @@ from app.dtos.pagination import PageResponse
 from app.models.admins import Admin
 from app.models.enums import AccountStatus, AdminRole
 from app.services.admin_credentials import issue_temporary_password
-from app.services.email_jobs import EmailJobService
+from app.services.email_jobs import EmailJobService, EmailTaskScheduler
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,13 @@ class AdminQueryService:
             raise AdminNotFoundError()
         return self._to_detail(admin)
 
-    async def create_admin(self, request: AdminCreateRequest, actor_admin_id: int) -> AdminCreateResponse:
+    async def create_admin(
+        self,
+        request: AdminCreateRequest,
+        actor_admin_id: int,
+        *,
+        scheduler: EmailTaskScheduler,
+    ) -> AdminCreateResponse:
         """REQ-ADMIN-008 관리자 등록. 임시 비밀번호는 서버가 만들어 메일로만 전달한다."""
         email = str(request.email)
 
@@ -109,6 +115,7 @@ class AdminQueryService:
             recipient_email=email,
             recipient_name=request.name,
             temporary_password=credential.plaintext_for_delivery,
+            scheduler=scheduler,
         )
 
         logger.info(
@@ -132,7 +139,13 @@ class AdminQueryService:
             email_job_status=email_job.status,
         )
 
-    async def reset_password(self, admin_id: int, actor_admin_id: int) -> AdminPasswordResetResponse:
+    async def reset_password(
+        self,
+        admin_id: int,
+        actor_admin_id: int,
+        *,
+        scheduler: EmailTaskScheduler,
+    ) -> AdminPasswordResetResponse:
         """REQ-ADMIN-003 임시 비밀번호 재발송.
 
         등록 시 메일 발송이 실패하면 비밀번호를 아무도 모르는 계정이 남는데,
@@ -162,6 +175,7 @@ class AdminQueryService:
             recipient_email=admin.email,
             recipient_name=admin.name,
             temporary_password=credential.plaintext_for_delivery,
+            scheduler=scheduler,
         )
 
         logger.info(

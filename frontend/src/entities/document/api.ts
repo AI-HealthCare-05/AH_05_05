@@ -19,29 +19,98 @@ import type {
 
 const idempotencyKeys = new WeakMap<File, string>();
 const pendingUploads = new WeakMap<File, Promise<UploadDocumentsResult>>();
-const documentImageUrls = new Map<string, Promise<string>>();
 
-type OcrImageKind = 'original' | 'processed';
+export type OcrPreviewSessionId = string;
 
-function imageCacheKey(ocrJobId: string, kind: OcrImageKind): string {
-  return `${ocrJobId}:${kind}`;
+export interface OcrPreviewImages {
+  originalImageUrl: string;
+  processedImageUrl: string;
 }
 
-function revokeAuthenticatedImageUrl(ocrJobId: string): void {
-  for (const kind of ['original', 'processed'] as const) {
-    const key = imageCacheKey(ocrJobId, kind);
-    const pendingUrl = documentImageUrls.get(key);
-    if (!pendingUrl) continue;
-    documentImageUrls.delete(key);
-    void pendingUrl.then((url) => URL.revokeObjectURL(url), () => undefined);
-  }
+interface OcrPreviewSession {
+  file: File;
+  images?: OcrPreviewImages;
+  imageRequest?: Promise<OcrPreviewImages | null>;
+  released: boolean;
 }
 
-function revokeAllAuthenticatedImageUrls(): void {
-  for (const pendingUrl of documentImageUrls.values()) {
-    void pendingUrl.then((url) => URL.revokeObjectURL(url), () => undefined);
+/**
+ * OCR 검토 중에만 원본 File·blob URL을 탭 메모리에 보관합니다.
+ * sessionStorage·history state에는 ID만 지나가며, 새로고침하면 이 Map은 비워집니다.
+ */
+const ocrPreviewSessions = new Map<OcrPreviewSessionId, OcrPreviewSession>();
+
+function createOcrPreviewSessionId(): OcrPreviewSessionId {
+  const random = crypto.getRandomValues(new Uint8Array(16));
+  return `ocr-preview-${Array.from(random, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function revokePreviewImages(images: OcrPreviewImages): void {
+  URL.revokeObjectURL(images.originalImageUrl);
+  URL.revokeObjectURL(images.processedImageUrl);
+}
+
+/** 선택한 사진을 history에 넣지 않고 현재 브라우저 탭의 OCR 검토 세션으로 시작합니다. */
+export function createOcrPreviewSession(file: File): OcrPreviewSessionId {
+  const sessionId = createOcrPreviewSessionId();
+  ocrPreviewSessions.set(sessionId, { file, released: false });
+  return sessionId;
+}
+
+/** 업로드 효과가 원본 File을 읽는 유일한 경로입니다. 세션이 사라진 새로고침에서는 null입니다. */
+export function getOcrPreviewSessionFile(sessionId: OcrPreviewSessionId | null | undefined): File | null {
+  return sessionId ? ocrPreviewSessions.get(sessionId)?.file ?? null : null;
+}
+
+/**
+ * 원본은 선택 File에서 즉시 만들고 전처리본만 인증 fetch 합니다.
+ * 둘 다 준비되기 전에는 세션에 URL을 저장하지 않아 서버 사진 삭제 확인을 보낼 수 없습니다.
+ */
+export function loadOcrPreviewImages(
+  sessionId: OcrPreviewSessionId,
+  ocrJobId: string,
+  mockProcessedImageUrl: string,
+): Promise<OcrPreviewImages | null> {
+  const session = ocrPreviewSessions.get(sessionId);
+  if (!session || session.released) return Promise.resolve(null);
+  if (session.images) return Promise.resolve(session.images);
+  if (session.imageRequest) return session.imageRequest;
+
+  let originalImageUrl: string;
+  try {
+    originalImageUrl = URL.createObjectURL(session.file);
+  } catch (error) {
+    return Promise.reject(error);
   }
-  documentImageUrls.clear();
+  const request = getOcrProcessedImageUrl(ocrJobId, mockProcessedImageUrl)
+    .then((processedImageUrl) => {
+      const images = { originalImageUrl, processedImageUrl };
+      if (session.released || ocrPreviewSessions.get(sessionId) !== session) {
+        revokePreviewImages(images);
+        return null;
+      }
+      session.images = images;
+      return images;
+    })
+    .catch((error: unknown) => {
+      URL.revokeObjectURL(originalImageUrl);
+      throw error;
+    })
+    .finally(() => {
+      session.imageRequest = undefined;
+    });
+  session.imageRequest = request;
+  return request;
+}
+
+/** 검토 종료와 unmount 때 blob URL·File 참조를 즉시 끊습니다. */
+export function releaseOcrPreviewSession(sessionId: OcrPreviewSessionId | null | undefined): void {
+  if (!sessionId) return;
+  const session = ocrPreviewSessions.get(sessionId);
+  if (!session) return;
+  session.released = true;
+  ocrPreviewSessions.delete(sessionId);
+  if (session.images) revokePreviewImages(session.images);
 }
 
 function idempotencyKeyFor(file: File): string {
@@ -54,38 +123,31 @@ function idempotencyKeyFor(file: File): string {
   return key;
 }
 
-function authenticatedImageUrl(ocrJobId: string, kind: OcrImageKind): Promise<string> {
-  const key = imageCacheKey(ocrJobId, kind);
-  const existing = documentImageUrls.get(key);
-  if (existing) return existing;
-  const suffix = kind === 'processed' ? '/processed-image' : '/image';
-  const request = http
-    .getBlob(`/v1/ocr/jobs/${encodeURIComponent(ocrJobId)}${suffix}`)
-    .then((blob) => URL.createObjectURL(blob))
-    .catch((error: unknown) => {
-      documentImageUrls.delete(key);
-      throw error;
-    });
-  documentImageUrls.set(key, request);
-  return request;
+/** OCR에 사용한 원근·조명 보정 이미지를 인증 fetch로 불러옵니다. */
+export function getOcrProcessedImageUrl(ocrJobId: string, mockImageUrl: string): Promise<string> {
+  return USE_MOCK
+    ? Promise.resolve(mockImageUrl)
+    : http
+      .getBlob(`/v1/ocr/jobs/${encodeURIComponent(ocrJobId)}/processed-image`)
+      .then((blob) => URL.createObjectURL(blob));
 }
 
 /**
- * 원본 이미지는 <img> 태그에 Bearer 헤더를 붙일 수 없어서 별도로 인증 fetch 합니다.
- * OCR JSON 조회와 분리해, 미리보기만 실패해도 검토·저장을 계속할 수 있게 합니다.
+ * 브라우저가 원본 File과 전처리본을 모두 확보한 뒤 서버 사진만 지웁니다.
+ * 삭제 실패는 등록 저장을 되돌리지 않으며, 짧게 한 번만 재시도합니다.
  */
-export function getOcrDocumentImageUrl(ocrJobId: string, mockImageUrl: string): Promise<string> {
-  return USE_MOCK ? Promise.resolve(mockImageUrl) : authenticatedImageUrl(ocrJobId, 'original');
-}
-
-/** OCR에 사용한 원근·조명 보정 이미지를 인증 fetch로 불러옵니다. */
-export function getOcrProcessedImageUrl(ocrJobId: string, mockImageUrl: string): Promise<string> {
-  return USE_MOCK ? Promise.resolve(mockImageUrl) : authenticatedImageUrl(ocrJobId, 'processed');
-}
-
-/** 검토 화면이 떠나거나 저장을 마치면 인증 이미지 blob URL을 해제합니다. */
-export function releaseOcrDocumentImageUrl(ocrJobId: string): void {
-  revokeAuthenticatedImageUrl(ocrJobId);
+export async function releaseOcrJobImages(ocrJobId: string): Promise<void> {
+  if (USE_MOCK) return;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await http.post<void>(`/v1/ocr/jobs/${encodeURIComponent(ocrJobId)}/release-images`);
+      return;
+    } catch (error: unknown) {
+      lastError = error;
+    }
+  }
+  throw lastError;
 }
 
 /** 조제약 OCR 작업 생성 — POST /ocr */
@@ -106,8 +168,6 @@ async function requestUploadDocument(file: File): Promise<UploadDocumentsResult>
     await mockDelay();
     return mockUploadDocument(file);
   }
-
-  revokeAllAuthenticatedImageUrls();
 
   const form = new FormData();
   form.append('file', file);
@@ -134,7 +194,6 @@ export async function cancelOcrResult(batchId: string): Promise<void> {
   } else {
     await http.post<void>(`/v1/ocr/jobs/${encodeURIComponent(batchId)}/cancel`);
   }
-  releaseOcrDocumentImageUrl(batchId);
 }
 
 /** 사용자 수정본 확정 — PATCH /ocr/jobs/{ocrJobId} */
@@ -152,6 +211,5 @@ export async function confirmOcrResult(
     `/v1/ocr/jobs/${encodeURIComponent(batchId)}${query}`,
     payload,
   );
-  releaseOcrDocumentImageUrl(batchId);
   return confirmed;
 }

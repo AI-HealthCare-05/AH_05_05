@@ -92,9 +92,12 @@ class CustomChallengeBadgeService:
                     connection=connection,
                 )
         awards = await CustomChallengeBadgeAward.filter(user_id=user_id).order_by("-awarded_at", "-id")
+        from app.services.custom_challenges import CustomChallengeService
+
         return CustomChallengeBadgeAwardListResponse(
             items=[self.response(award) for award in awards],
             total_count=len(awards),
+            available_badges=await CustomChallengeService().badge_catalog(),
         )
 
     async def get_for_participation(

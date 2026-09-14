@@ -76,7 +76,7 @@ for (const source of ['medications', 'supplements']) {
   });
 }
 
-test('pending generation prevents duplicate requests; timeout allows retry', async ({ page }) => {
+test('pending generation prevents duplicate requests; timeout allows retry', async ({ page }, testInfo) => {
   let calls = 0;
   let release!: () => void;
   const wait = new Promise<void>(resolve => { release = resolve; });
@@ -95,6 +95,7 @@ test('pending generation prevents duplicate requests; timeout allows retry', asy
   await expect(page.getByRole('status')).toHaveText('보고서 생성 중 (최대 2분 소요)');
   await expect(pendingButton.locator('.rx-button-spinner')).toHaveCount(0);
   expect(calls).toBe(1);
+  await page.screenshot({ path: testInfo.outputPath('456-report-pending-no-button-spinner.png'), fullPage: true });
   release();
   await expect(page.getByRole('alert')).toContainText('생성 시간이 초과');
   await page.getByRole('button', { name: '다시 시도', exact: true }).click();

@@ -82,7 +82,7 @@ test('저장된 읽기 전용 OCR은 접기 없이 미추출과 필요 시 정�
   const prn = page.getByRole('article', { name: '필요시복용약', exact: true });
   await expect(prn.locator('[aria-expanded]')).toHaveCount(0);
   await expect(prn.locator('dl > div')).toHaveText(['함량미추출', '1회 투약량미추출', '1일 횟수필요 시', '투약일수미추출']);
-  await expect(prn.getByText('확인 권장')).toBeVisible();
+  await expect(prn.getByText('확인 권장')).toHaveCount(0);
   const missing = page.getByRole('article', { name: '추출하지못한약', exact: true });
   await expect(missing.locator('dl > div')).toHaveText(['함량미추출', '1회 투약량미추출', '1일 횟수미추출', '투약일수미추출']);
   await expect(page.getByRole('dialog')).toHaveCount(0);

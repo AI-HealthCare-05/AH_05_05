@@ -48,6 +48,7 @@ import { OfficialChallengeComingSoonPage } from '@/pages/challenges/OfficialChal
 import { CustomChallengeRecommendationsPage } from '@/pages/challenges/CustomChallengeRecommendationsPage';
 import { CustomChallengeTargetPage } from '@/pages/challenges/CustomChallengeTargetPage';
 import { CustomChallengeParticipationPage } from '@/pages/challenges/CustomChallengeParticipationPage';
+import { CustomChallengeBadgePage } from '@/pages/challenges/CustomChallengeBadgePage';
 import type { AccountProfile, UpdateAccountProfilePayload } from '@/entities/account';
 import type { ChatMessage, ChatSessionSummary, SendChatResult } from '@/entities/chat';
 import {
@@ -229,6 +230,7 @@ export function AppRouter() {
             <Route path="tailored" element={<CustomChallengeRecommendationsPage />} />
             <Route path="tailored/:kind" element={<CustomChallengeTargetPage />} />
             <Route path="custom-participations/:participationId" element={<CustomChallengeParticipationPage />} />
+            <Route path="custom-badges/:badgeId" element={<CustomChallengeBadgePage />} />
             <Route path="create" element={<OfficialChallengeComingSoonPage feature="personal" />} />
             <Route path="badges" element={<OfficialChallengeBadgesPage />} />
             <Route path="badges/:badgeId" element={<OfficialChallengeBadgePage />} />

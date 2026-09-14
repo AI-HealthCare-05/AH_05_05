@@ -221,6 +221,69 @@ def test_spacing_repair_skips_valid_plan() -> None:
     assert prepare_spacing_repair(plan, catalog) is None
 
 
+def test_unchunkable_optional_review_does_not_skip_other_short_prose() -> None:
+    source = "과량의알코올과함께복용하지마십시오."
+    draft = _draft()
+    guide = draft.guide_evidence[0].model_copy(update={"efficacy": "1일" * 51, "adverse_reactions": source})
+    draft = draft.model_copy(update={"guide_evidence": [guide, draft.guide_evidence[1]]})
+    catalog, plan = _valid_plan(draft)
+    request = prepare_spacing_repair(plan, catalog, review_all_text=True)
+    assert request is not None
+    fields = request.payload()
+    originals = ["".join(chunk["text"] for chunk in field["chunks"]) for field in fields]
+    assert source in originals
+    assert "1일" * 51 not in originals
+    expected = "과량의 알코올과 함께 복용하지 마십시오."
+    response = project_spacing_proposals(
+        fields, {f"f{i}": expected if text == source else text for i, text in enumerate(originals)}
+    )
+    repaired = request.apply(response)
+    assert expected in repaired.medications[0].detail_texts
+    assert repaired.medications[0].efficacy.text == "1일" * 51
+
+
+@pytest.mark.parametrize(
+    "source,expected",
+    [
+        ("과량의알코올과함께복용하지마십시오.", "과량의 알코올과 함께 복용하지 마십시오."),
+        ("연령, 증상에따라적절히증감합니다.", "연령, 증상에 따라 적절히 증감합니다."),
+        (
+            "이약투여중단후가려움증, 두드러기가 나타날수있습니다.",
+            "이 약 투여 중단 후 가려움증, 두드러기가 나타날 수 있습니다.",
+        ),
+        (
+            "성인및12세이상청소년은1일1회120mg을식사전물과함께복용합니다.",
+            "성인 및 12세 이상 청소년은 1일 1회 120mg을 식사 전 물과 함께 복용합니다.",
+        ),
+        (
+            "신부전환자는시작용량으로서1일1회60mg을식사전물과함께복용합니다.",
+            "신부전 환자는 시작 용량으로서 1일 1회 60mg을 식사 전 물과 함께 복용합니다.",
+        ),
+    ],
+)
+async def test_server_reviews_short_and_numeric_prose_before_rendering(source: str, expected: str) -> None:
+    catalog, _, _, index = _spacing_repair_case(source)
+    seen = []
+
+    class Client:
+        async def ainvoke(self, messages):
+            fields = json.loads(messages[1].content)["fields"]
+            originals = ["".join(chunk["text"] for chunk in field["chunks"]) for field in fields]
+            seen.extend(originals)
+            return project_spacing_proposals(
+                fields, {f"f{i}": expected if text == source else text for i, text in enumerate(originals)}
+            )
+
+    plan = await OpenAIIntakeReportCardsGenerator(model="offline", spacing_client=Client())._generate_valid_plan(
+        catalog
+    )
+    assert source in seen
+    assert plan.medications[0].detail_texts[index] == expected
+    assert "".join(plan.medications[0].detail_texts[index].split()) == "".join(source.split())
+    cards = render_cards(validate_card_plan(plan, catalog), catalog, _draft())
+    assert expected in render_cards_markdown(cards, _draft())
+
+
 _DENSE_SOURCE = "이약을복용하기전에반드시의사또는약사와상의하십시오."
 _SPACED_SOURCE = "이 약을 복용하기 전에 반드시 의사 또는 약사와 상의하십시오."
 _SPACE_POSITIONS = [1, 3, 7, 9, 12, 14, 16, 19]
@@ -240,8 +303,8 @@ def _natural_position_response(messages):
     response = _boundary_response(fields)
     for field, repair in zip(fields, response["repairs"], strict=True):
         for chunk, selected in zip(field["chunks"], repair["chunks"], strict=True):
-            assert chunk["text"] == _DENSE_SOURCE
-            selected["spaceAfter"] = list(_SPACE_POSITIONS)
+            if chunk["text"] == _DENSE_SOURCE:
+                selected["spaceAfter"] = list(_SPACE_POSITIONS)
     return response
 
 
@@ -312,9 +375,7 @@ async def test_generator_uses_only_positions_and_never_requests_a_free_text_plan
             self.calls += 1
             payload = json.loads(messages[1].content)
             assert set(payload) == {"fields"}
-            response = _boundary_response(payload["fields"])
-            response["repairs"][0]["chunks"][0]["spaceAfter"] = [1, 3, 7, 9, 12, 14, 16, 19]
-            return response
+            return _natural_position_response(messages)
 
     client = PositionsClient()
     result = await OpenAIIntakeReportCardsGenerator(model="offline-test", spacing_client=client)._generate_valid_plan(
@@ -504,10 +565,17 @@ async def test_schema_bound_client_recovers_from_syllable_splitting() -> None:
             self.calls += 1
             originals = json.loads(messages[1].content)
             if self.calls == 1:
-                return self.schema.model_validate({key: " ".join(text[:-1]) + "." for key, text in originals.items()})
+                return self.schema.model_validate(
+                    {
+                        key: " ".join(text[:-1]) + "." if text == _DENSE_SOURCE else text
+                        for key, text in originals.items()
+                    }
+                )
             assert "SPACING_REPAIR_EXCESSIVE" in messages[-1].content
             assert set(json.loads(messages[2].content)) == set(originals)
-            return self.schema.model_validate(dict.fromkeys(originals, _SPACED_SOURCE))
+            return self.schema.model_validate(
+                {key: _SPACED_SOURCE if text == _DENSE_SOURCE else text for key, text in originals.items()}
+            )
 
     model = Model()
     catalog = build_evidence_catalog(_dense_draft())
@@ -870,6 +938,7 @@ def test_public_schema_serializes_exact_camel_case_contract() -> None:
     assert payload["medications"][0] == {
         "itemId": 91,
         "productName": "동적 제품",
+        "hasInformation": True,
         "identityNotice": None,
         "efficacy": {"text": "효능", "sourceIds": ["guide:5"]},
         "caution": {"text": "주의", "sourceIds": ["guide:5"]},
@@ -1126,6 +1195,47 @@ def test_general_guide_interaction_is_kept_but_not_inferred_as_personal_pair() -
     assert "특정 병용 조합" in guide_cards[0].action
 
 
+@pytest.mark.parametrize(
+    "mixed_warning",
+    [
+        "바르비탈계 약물, 삼환계 항우울제 및 알코올을 투여한 환자, 와파린, 플루클록사실린을 복용하는 환자는 의사 또는 약사와 상의하십시오.",
+        "알코올 및 다른 약물을 함께 복용하지 마십시오.",
+        "가상의약을 복용하는 환자는 알코올 섭취 전 전문가에게 확인하세요.",
+    ],
+)
+@pytest.mark.parametrize("food_warning", ["", "자몽 주스와 함께 복용하지 마십시오."])
+def test_mixed_drug_and_food_warning_stays_in_interactions_only(mixed_warning: str, food_warning: str) -> None:
+    draft = _draft()
+    source = " ".join(part for part in (mixed_warning, food_warning) if part)
+    draft.guide_evidence[0] = _guide(guide_id=11, product_name="첫 약", interactions=source)
+    catalog, plan = _valid_plan(draft)
+    cards = render_cards(validate_card_plan(plan, catalog), catalog, draft)
+
+    interaction = next(card for card in cards.interactions if card.id == "guide-interaction:101")
+    assert interaction.summary == source
+    assert interaction.evidence_level == "PUBLIC_GUIDE"
+    assert interaction.action_level == "CHECK"
+    food_cards = [card for card in cards.lifestyle if card.id == "food-drink:101"]
+    assert [card.summary for card in food_cards] == ([food_warning] if food_warning else [])
+
+
+@pytest.mark.parametrize(
+    "food_warning",
+    [
+        "과량의 알코올과 함께 복용하지 마십시오.",
+        "자몽 주스, 오렌지 및 사과 주스와 함께 복용 시 이 약의 효과를 감소시킬 수 있으므로 물과 함께 복용하는 것을 권장합니다.",
+        "이 약은 식사와 함께 복용하세요.",
+    ],
+)
+def test_standalone_food_warning_is_preserved_verbatim(food_warning: str) -> None:
+    draft = _draft()
+    draft.guide_evidence[0] = _guide(guide_id=11, product_name="첫 약", interactions=food_warning)
+    catalog, plan = _valid_plan(draft)
+    cards = render_cards(validate_card_plan(plan, catalog), catalog, draft)
+
+    assert next(card.summary for card in cards.lifestyle if card.id == "food-drink:101") == food_warning
+
+
 def test_interaction_and_lifestyle_accept_spacing_only_summary_normalization() -> None:
     raw_summary = "자몽주스와함께복용하면이약의효과가감소할수있으므로물과함께복용하십시오."
     spaced_summary = "자몽 주스와 함께 복용하면 이 약의 효과가 감소할 수 있으므로 물과 함께 복용하십시오."
@@ -1211,7 +1321,60 @@ def test_plan_rejects_putting_general_guidance_before_approved_warning() -> None
         validate_card_plan(IntakeReportCardsPlan.model_validate(payload), catalog)
 
 
-def test_overlap_counts_unique_known_contributors_and_does_not_treat_unknown_as_zero() -> None:
+@pytest.mark.parametrize(
+    ("nutrient_name", "subject"),
+    [
+        ("지방", "지방이"),
+        ("칼슘", "칼슘이"),
+        ("단백질", "단백질이"),
+        ("식이섬유", "식이섬유가"),
+        ("비타민 D", "비타민 D가"),
+        ("비타민 B6", "비타민 B6이"),
+        ("비타민 B12", "비타민 B12가"),
+    ],
+)
+def test_overlap_title_uses_nutrient_subject_particle(nutrient_name: str, subject: str) -> None:
+    draft = _draft(
+        nutrient_totals=[
+            IntakeReportNutrientTotal(
+                nutrient_name=nutrient_name,
+                daily_total="2 mg",
+                amount="2",
+                unit="mg",
+                calculation_status="PARTIAL_LABEL_SCHEDULE",
+                included_product_names=["제품 A", "제품 B"],
+            )
+        ]
+    )
+    catalog, plan = _valid_plan(draft)
+    cards = render_cards(plan, catalog, draft)
+    assert cards.overlaps[0].title == f"{subject} 2개 제품에 들어 있어요"
+
+
+@pytest.mark.parametrize("remaining_field", [None, "efficacy", "usage_instructions"])
+def test_missing_medication_information_is_grouped_without_hiding_partial_guides(remaining_field) -> None:
+    draft = _draft()
+    empty = {
+        field: None
+        for field in ("efficacy", "pre_use_warning", "precautions", "usage_instructions", "adverse_reactions")
+    }
+    first = draft.guide_evidence[0].model_copy(update=empty)
+    second = draft.guide_evidence[1].model_copy(
+        update={**empty, **({remaining_field: "확인된 안내입니다."} if remaining_field else {})}
+    )
+    draft = draft.model_copy(update={"guide_evidence": [first, second]})
+    catalog, plan = _valid_plan(draft)
+    cards = render_cards(plan, catalog, draft)
+    assert cards.medications[0].has_information is False
+    assert cards.medications[1].has_information is bool(remaining_field)
+    markdown = render_cards_markdown(cards, draft)
+    assert "### 확인 불가 약품" in markdown
+    assert "- 첫 약" in markdown
+    assert "### 첫 약" not in markdown.splitlines()
+    assert ("### 둘째 약" in markdown.splitlines()) is bool(remaining_field)
+
+
+def test_overlap_shows_only_known_contributors_without_unknown_product_list() -> None:
     draft = _draft(
         nutrient_totals=[
             IntakeReportNutrientTotal(
@@ -1232,7 +1395,9 @@ def test_overlap_counts_unique_known_contributors_and_does_not_treat_unknown_as_
     assert cards.overlaps[0].product_count == 3
     assert cards.overlaps[0].product_names == ["칼슘 복합제", "오메가3", "멀티비타민"]
     assert "3개 제품" in cards.overlaps[0].title
-    assert "함량 미상 제품" in cards.overlaps[0].summary
+    assert cards.overlaps[0].summary == "칼슘 복합제, 오메가3, 멀티비타민의 확인된 합계는 23 μg입니다."
+    assert "함량 미상 제품" not in cards.overlaps[0].summary
+    assert "함량을 확인할 수 없는 제품" not in cards.overlaps[0].summary
     assert "0" not in cards.overlaps[0].summary
 
 
@@ -1543,31 +1708,53 @@ def test_grouping_does_not_mutate_original_card_objects_or_their_order() -> None
     assert first_markdown == second_markdown
 
 
-@pytest.mark.parametrize("ingredient_summary", ["칼슘 200mg · 비타민 D 10μg", None])
-def test_markdown_filters_stack_by_medication_type_when_item_ids_collide(ingredient_summary: str | None) -> None:
+def test_markdown_omits_registered_intake_metadata_and_matching_detail_labels_but_keeps_clinical_product_data() -> None:
     draft = _draft()
     colliding_supplement = IntakeReportCurrentStackItem(
         item_type=IntakeReportItemType.SUPPLEMENT,
         item_id=101,
         product_name="충돌 영양제",
         registered_intake_info="하루 9정",
-        ingredient_summary=ingredient_summary,
+        ingredient_summary="칼슘 200mg · 비타민 D 10μg",
         evidence_level=IntakeReportEvidenceLevel.REGISTERED_INTAKE,
     )
     draft = draft.model_copy(update={"current_stack": [*draft.current_stack, colliding_supplement]})
     catalog, plan = _valid_plan(draft)
-    markdown = render_cards_markdown(render_cards(validate_card_plan(plan, catalog), catalog, draft), draft)
+    cards = render_cards(validate_card_plan(plan, catalog), catalog, draft)
+    original = cards.medications[0]
+    cards = cards.model_copy(
+        update={
+            "medications": [
+                original.model_copy(
+                    update={
+                        "details": [
+                            *original.details,
+                            CardDetail(label="등록 복용 계획", text="등록한 하루 3회 복용", source_ids=[]),
+                            CardDetail(label="원료 성분", text="아세트아미노펜 500mg", source_ids=[]),
+                        ]
+                    }
+                ),
+                *cards.medications[1:],
+            ]
+        }
+    )
+    markdown = render_cards_markdown(cards, draft)
 
-    medication_section = markdown[markdown.index("## 약 정보") :]
-    first_medication = medication_section[
-        medication_section.index("### 첫 약") : medication_section.index("### 둘째 약")
-    ]
-    assert "1정 · 1일 1회" in first_medication
-    assert "하루 9정" not in first_medication
-    supplement_section = markdown[markdown.index("## 등록한 영양제") : markdown.index("## 비교 기준과 출처")]
-    assert "영양제 성분 · 등록한 하루량 기준" in supplement_section
-    assert (ingredient_summary or "성분·함량 확인 필요") in supplement_section
-    assert "칼슘 200mg" not in first_medication
+    for registered_text in (
+        "1정 · 1일 1회",
+        "등록된 복용 정보 확인 필요",
+        "하루 9정",
+        "등록 복용 계획",
+        "등록한 하루 3회 복용",
+    ):
+        assert registered_text not in markdown
+    assert "### 첫 약" in markdown
+    assert "통증을 완화합니다. 열을 낮춥니다." in markdown
+    assert "## 등록한 영양제" in markdown
+    assert "충돌 영양제 — 칼슘 200mg · 비타민 D 10μg" in markdown
+    assert "**원료 성분**" in markdown
+    assert "아세트아미노펜 500mg" in markdown
+    assert draft.current_stack[-1].ingredient_summary == "칼슘 200mg · 비타민 D 10μg"
 
 
 def test_markdown_escapes_untrusted_markdown_links_but_keeps_catalog_source_link() -> None:
@@ -1643,7 +1830,7 @@ async def test_generator_returns_cards_and_their_deterministic_markdown() -> Non
 
     class ValidClient:
         async def ainvoke(self, messages):
-            raise AssertionError("already spaced canonical evidence must not call the model")
+            return _boundary_response(json.loads(messages[1].content)["fields"])
 
     outcome = await OpenAIIntakeReportCardsGenerator(
         model="offline-test",
@@ -1658,7 +1845,7 @@ async def test_generator_returns_cards_and_their_deterministic_markdown() -> Non
 async def test_generator_defaults_to_evidence_only_even_with_a_display_refiner() -> None:
     class ValidClient:
         async def ainvoke(self, messages):
-            raise AssertionError("already spaced canonical evidence must not call the model")
+            return _boundary_response(json.loads(messages[1].content)["fields"])
 
     class UnrequestedRefiner:
         async def refine(self, cards):
@@ -1733,7 +1920,7 @@ async def test_generator_uses_approved_display_copy_in_cards_and_email_without_l
 
     class ValidClient:
         async def ainvoke(self, messages):
-            raise AssertionError("already spaced canonical evidence must not call the model")
+            return _boundary_response(json.loads(messages[1].content)["fields"])
 
     class ApprovedDisplayRefiner:
         async def refine(self, cards):
@@ -1769,7 +1956,7 @@ async def test_generator_uses_approved_display_copy_in_cards_and_email_without_l
 async def test_display_refinement_uses_only_remaining_generation_budget() -> None:
     class ValidClient:
         async def ainvoke(self, messages):
-            raise AssertionError("already spaced canonical evidence must not call the model")
+            return _boundary_response(json.loads(messages[1].content)["fields"])
 
     class SlowDisplayRefiner:
         async def refine(self, cards):
@@ -1788,15 +1975,23 @@ async def test_display_refinement_uses_only_remaining_generation_budget() -> Non
     assert outcome.cards.original_texts == []
 
 
-async def test_generator_batches_one_medication_per_request_with_at_most_three_concurrent() -> None:
+async def test_generator_reviews_each_medication_full_korean_prose_with_at_most_three_concurrent_requests() -> None:
     class ConcurrentClient:
         active = 0
         max_active = 0
         calls = 0
+        medication_batches = 0
+        composition_batches = 0
 
         async def ainvoke(self, messages):
             fields = json.loads(messages[1].content)["fields"]
-            assert len(fields) == 1
+            categories = {field["key"].split("/")[2] for field in fields}
+            if all(field["key"].startswith("medications/") for field in fields):
+                self.medication_batches += 1
+                assert categories == {"efficacy", "caution", "contraindication", "detail_texts"}
+            else:
+                self.composition_batches += 1
+                assert categories == {"summary_text"}
             self.calls += 1
             self.active += 1
             self.max_active = max(self.max_active, self.active)
@@ -1813,7 +2008,9 @@ async def test_generator_batches_one_medication_per_request_with_at_most_three_c
     assert len(outcome.cards.medications) == 5
     assert all(card.efficacy.text == _SPACED_SOURCE for card in outcome.cards.medications)
     assert client.max_active == 3
-    assert client.calls == 5
+    assert client.calls == 6
+    assert client.medication_batches == 5
+    assert client.composition_batches == 1
 
 
 async def test_generator_cancels_sibling_batches_after_one_request_fails() -> None:
@@ -1899,7 +2096,7 @@ async def test_generator_logs_only_safe_error_codes_not_clinical_text(caplog, mo
     assert _DENSE_SOURCE not in caplog.text
 
 
-async def test_generator_requests_every_dense_field_without_exposing_structure_selection() -> None:
+async def test_generator_reviews_all_korean_prose_fields_without_exposing_structure_selection() -> None:
     draft = _dense_draft()
     guide = draft.guide_evidence[0].model_copy(update={"adverse_reactions": _DENSE_SOURCE})
     draft = draft.model_copy(update={"guide_evidence": [guide, draft.guide_evidence[1]]})
@@ -1907,8 +2104,14 @@ async def test_generator_requests_every_dense_field_without_exposing_structure_s
     class PositionsClient:
         async def ainvoke(self, messages):
             fields = json.loads(messages[1].content)["fields"]
-            assert len(fields) == 3
-            assert {field["key"].split("/")[2] for field in fields} == {"efficacy", "detail_texts"}
+            assert len(fields) == 14
+            assert {field["key"].split("/")[2] for field in fields} == {
+                "efficacy",
+                "caution",
+                "contraindication",
+                "detail_texts",
+                "summary_text",
+            }
             return _natural_position_response(messages)
 
     plan = await OpenAIIntakeReportCardsGenerator(
@@ -1918,21 +2121,28 @@ async def test_generator_requests_every_dense_field_without_exposing_structure_s
     assert _SPACED_SOURCE in plan.medications[0].detail_texts
 
 
-async def test_generator_never_sends_already_valid_fields_for_rewriting() -> None:
+async def test_generator_reviews_already_spaced_korean_prose_without_rewriting_characters() -> None:
     draft = _draft()
     guide = draft.guide_evidence[0].model_copy(update={"adverse_reactions": _DENSE_SOURCE})
     draft = draft.model_copy(update={"guide_evidence": [guide, draft.guide_evidence[1]]})
 
     class PositionsClient:
+        seen = []
+
         async def ainvoke(self, messages):
             fields = json.loads(messages[1].content)["fields"]
-            assert len(fields) == 1
-            assert "/detail_texts/" in fields[0]["key"]
+            self.seen.extend((field["key"], "".join(chunk["text"] for chunk in field["chunks"])) for field in fields)
             return _natural_position_response(messages)
 
-    outcome = await OpenAIIntakeReportCardsGenerator(model="offline-test", spacing_client=PositionsClient()).generate(
-        draft=draft
-    )
+    client = PositionsClient()
+    outcome = await OpenAIIntakeReportCardsGenerator(model="offline-test", spacing_client=client).generate(draft=draft)
+    reviewed_keys = {key for key, _ in client.seen}
+    reviewed_text = "\n".join(text for _, text in client.seen)
+    assert "medications/0/efficacy/text" in reviewed_keys
+    assert "medications/0/caution/text" in reviewed_keys
+    assert "medications/0/detail_texts/1" in reviewed_keys
+    assert "통증을 완화합니다. 열을 낮춥니다." in reviewed_text
+    assert "복용 전 의사와 상담하세요." in reviewed_text
     assert outcome.cards.medications[0].efficacy.text == "통증을 완화합니다. 열을 낮춥니다."
     assert any(detail.text == _SPACED_SOURCE for detail in outcome.cards.medications[0].details)
 

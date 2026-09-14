@@ -13,6 +13,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatSource,
     MedicationChatSourceKind,
 )
+from app import main as main_module
 from app.dependencies import chat as chat_dependencies
 from app.dependencies.chat import get_chat_application_service
 from app.dependencies.security import get_request_user
@@ -101,6 +102,17 @@ class ClosableQdrantClient:
     async def close(self) -> None:
         if self.events is not None:
             self.events.append("qdrant")
+
+
+class StubBackgroundTaskManager:
+    async def recover(self) -> None:
+        return None
+
+    async def start(self) -> None:
+        return None
+
+    async def shutdown(self) -> None:
+        return None
 
 
 async def test_post_chat_persists_conversation_answer_and_sources() -> None:
@@ -238,9 +250,19 @@ async def test_chat_dependency_reuses_core_tracer(monkeypatch) -> None:
     assert request.app.state.chat_tracer is tracer
 
 
-async def test_lifespan_closes_qdrant_before_chat_tracer() -> None:
+async def test_lifespan_closes_qdrant_before_chat_tracer(monkeypatch) -> None:
     events: list[str] = []
     tracer = FixedChatTracer()
+    monkeypatch.setattr(
+        main_module,
+        "build_email_background_task_manager",
+        StubBackgroundTaskManager,
+    )
+    monkeypatch.setattr(
+        main_module,
+        "build_alarm_background_task_manager",
+        StubBackgroundTaskManager,
+    )
 
     async def close_tracer() -> None:
         events.append("tracer")

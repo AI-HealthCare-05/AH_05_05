@@ -6,10 +6,11 @@ import { formatMedicationDoseQuantity, formatMedicationLabel, formatMedicationSt
 import {
   cancelOcrResult,
   confirmOcrResult,
-  getOcrDocumentImageUrl,
-  getOcrProcessedImageUrl,
+  getOcrPreviewSessionFile,
   getOcrResult,
-  releaseOcrDocumentImageUrl,
+  loadOcrPreviewImages,
+  releaseOcrJobImages,
+  releaseOcrPreviewSession,
   uploadDocument,
   type Confidence,
   type OcrRegistrationDraft,
@@ -33,14 +34,13 @@ import {
   RxVitaFeatureCarousel,
   RegistrationProgress,
   StatusBadge,
-  type StatusBadgeType,
 } from '@/shared/ui';
 import { LowConfidenceConfirmDialog } from './LowConfidenceConfirmDialog';
 import { MedicationEditDialog } from './MedicationEditDialog';
 
 interface OcrReviewLocationState {
   batchId?: string;
-  file?: File;
+  previewSessionId?: string;
   scheduleStartDate?: string;
   episodeAlias?: string;
   registrationFlow?: boolean;
@@ -81,17 +81,9 @@ function seoulDateISO(daysAfterToday = 0): string {
   ).padStart(2, '0')}`;
 }
 
-/** 다른 화면이 매핑을 재사용할 수 있으므로 high 항목도 지우지 않습니다. */
-const CONFIDENCE_BADGE: Record<Confidence, { type: StatusBadgeType; label: string }> = {
-  high: { type: 'active', label: '확인됨' },
-  medium: { type: 'dose', label: '확인 권장' },
-  low: { type: 'review', label: '확인 필요' },
-};
-
 function ConfidenceBadge({ confidence }: { confidence?: Confidence }) {
-  if (!confidence || confidence === 'high') return null;
-  const badge = CONFIDENCE_BADGE[confidence];
-  return <StatusBadge type={badge.type}>{badge.label}</StatusBadge>;
+  if (confidence !== 'low') return null;
+  return <StatusBadge type="review">확인 필요</StatusBadge>;
 }
 
 export function OcrReviewPage() {
@@ -108,7 +100,9 @@ export function OcrReviewPage() {
     searchParams.get('mode') === 'registration-edit' &&
     confirmedRecordId !== null &&
     registrationFlow;
-  const initialBatchId = state.batchId ?? queryBatchId ?? (state.file ? null : 'b_mock_9f21');
+  const previewSessionId = state.previewSessionId;
+  const selectedFile = getOcrPreviewSessionFile(previewSessionId);
+  const initialBatchId = state.batchId ?? queryBatchId ?? (previewSessionId ? null : 'b_mock_9f21');
   const initialRegistrationDraft =
     registrationEditMode && state.ocrRegistrationDraft?.batchId === initialBatchId
       ? state.ocrRegistrationDraft
@@ -122,7 +116,7 @@ export function OcrReviewPage() {
       ? {
           batchId: initialRegistrationDraft.batchId,
           ocrStatus: 'complete',
-          documentImageUrl: initialRegistrationDraft.documentImageUrl,
+          documentImageUrl: '',
           fields: {
             ...(initialRegistrationDraft.hospitalNameConfidence
               ? {
@@ -152,9 +146,9 @@ export function OcrReviewPage() {
       : null,
   );
   const [readingStage, setReadingStage] = useState<ReadingStage>(
-    initialRegistrationDraft ? 'complete' : state.file ? 'uploading' : 'reading',
+    initialRegistrationDraft ? 'complete' : selectedFile ? 'uploading' : 'reading',
   );
-  const [progress, setProgress] = useState(initialRegistrationDraft ? 100 : state.file ? 0 : 33);
+  const [progress, setProgress] = useState(initialRegistrationDraft ? 100 : selectedFile ? 0 : 33);
   const [uploadAttempt, setUploadAttempt] = useState(0);
   const [pollAttempt, setPollAttempt] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -196,25 +190,51 @@ export function OcrReviewPage() {
   const [originalImageUrl, setOriginalImageUrl] = useState<string | null>(null);
   const [imageView, setImageView] = useState<'processed' | 'original'>('processed');
   const [imageUnavailable, setImageUnavailable] = useState(false);
+  const previewSessionGeneration = useRef(0);
+  const activePreviewSessionId = useRef<string | undefined>(undefined);
 
   useEffect(() => {
+    const generation = ++previewSessionGeneration.current;
+    const previousSessionId = activePreviewSessionId.current;
+    activePreviewSessionId.current = previewSessionId;
+    if (previousSessionId && previousSessionId !== previewSessionId) {
+      releaseOcrPreviewSession(previousSessionId);
+    }
     setProcessedImageUrl(null);
     setOriginalImageUrl(null);
     setImageView('processed');
     setImageUnavailable(false);
     setImageViewerOpen(false);
     return () => {
-      if (batchId) releaseOcrDocumentImageUrl(batchId);
+      // StrictMode의 development effect 재실행은 다음 generation이 먼저 생기므로 세션을 유지합니다.
+      queueMicrotask(() => {
+        if (previewSessionGeneration.current === generation) {
+          releaseOcrPreviewSession(previewSessionId);
+        }
+      });
     };
-  }, [batchId]);
+  }, [previewSessionId]);
 
   useEffect(() => {
-    if (!state.file || batchId) return;
+    const releaseForPageExit = () => {
+      releaseOcrPreviewSession(previewSessionId);
+      // BFCache로 돌아와도 revoke된 URL을 다시 표시하지 않고, 결과 검토만 계속합니다.
+      setProcessedImageUrl(null);
+      setOriginalImageUrl(null);
+      setImageViewerOpen(false);
+      setImageUnavailable(true);
+    };
+    window.addEventListener('pagehide', releaseForPageExit);
+    return () => window.removeEventListener('pagehide', releaseForPageExit);
+  }, [previewSessionId]);
+
+  useEffect(() => {
+    if (!selectedFile || batchId) return;
     let cancelled = false;
     setReadingStage('uploading');
     setProgress(0);
     setUploadError(null);
-    uploadDocument(state.file)
+    uploadDocument(selectedFile)
       .then((uploaded) => {
         const documentId = uploaded.documentIds[0];
         if (documentId === undefined) {
@@ -227,7 +247,7 @@ export function OcrReviewPage() {
         setProgress(33);
         navigate(location.pathname, {
           replace: true,
-          state: { batchId: uploadedBatchId },
+          state: { batchId: uploadedBatchId, ...(previewSessionId ? { previewSessionId } : {}) },
         });
       })
       .catch((error: unknown) => {
@@ -240,7 +260,7 @@ export function OcrReviewPage() {
     return () => {
       cancelled = true;
     };
-  }, [batchId, location.pathname, navigate, state.file, uploadAttempt]);
+  }, [batchId, location.pathname, navigate, previewSessionId, selectedFile, uploadAttempt]);
 
   useEffect(() => {
     if (!batchId || initialRegistrationDraft) return;
@@ -282,19 +302,26 @@ export function OcrReviewPage() {
             setDispensedDate(data.fields.dispensedDate?.value ?? '');
             setDispensedDateConfidence(data.fields.dispensedDate?.confidence ?? null);
             setMedications(data.medications);
-            if (data.ocrStatus === 'ready_for_review') {
-              void Promise.allSettled([
-                getOcrProcessedImageUrl(batchId, data.documentImageUrl),
-                getOcrDocumentImageUrl(batchId, data.documentImageUrl),
-              ]).then(([processed, original]) => {
-                if (cancelled) return;
-                const nextProcessed = processed.status === 'fulfilled' ? processed.value : null;
-                const nextOriginal = original.status === 'fulfilled' ? original.value : null;
-                setProcessedImageUrl(nextProcessed);
-                setOriginalImageUrl(nextOriginal);
-                setImageView(nextProcessed ? 'processed' : 'original');
-                setImageUnavailable(!nextProcessed && !nextOriginal);
-              });
+            if (data.ocrStatus === 'ready_for_review' && previewSessionId && selectedFile) {
+              void loadOcrPreviewImages(previewSessionId, batchId, data.documentImageUrl)
+                .then((images) => {
+                  if (cancelled) return;
+                  if (!images) {
+                    setImageUnavailable(true);
+                    return;
+                  }
+                  setProcessedImageUrl(images.processedImageUrl);
+                  setOriginalImageUrl(images.originalImageUrl);
+                  setImageView('processed');
+                  // 원본 File과 전처리본이 모두 탭 메모리에 도착한 뒤에만 서버 사진을 지웁니다.
+                  void releaseOcrJobImages(batchId).catch(() => undefined);
+                })
+                .catch(() => {
+                  if (!cancelled) setImageUnavailable(true);
+                });
+            } else {
+              // 사진 자체가 없는 새로고침·직접 링크에서는 서버 저장본을 다시 읽지 않습니다.
+              setImageUnavailable(true);
             }
             navigate(`${location.pathname}${location.search}`, {
               replace: true,
@@ -305,6 +332,7 @@ export function OcrReviewPage() {
                   : {}),
                 ...(state.episodeAlias !== undefined ? { episodeAlias: state.episodeAlias } : {}),
                 ...(registrationFlow ? { registrationFlow: true } : {}),
+                ...(previewSessionId ? { previewSessionId } : {}),
               },
             });
           }, 400);
@@ -335,6 +363,7 @@ export function OcrReviewPage() {
     location.search,
     navigate,
     pollAttempt,
+    previewSessionId,
     registrationEditMode,
     registrationFlow,
   ]);
@@ -392,6 +421,7 @@ export function OcrReviewPage() {
       if (result?.ocrStatus === 'ready_for_review' && batchId) {
         await cancelOcrResult(batchId);
       }
+      releaseOcrPreviewSession(previewSessionId);
       navigate('/document-upload', { replace: true });
     } catch {
       toast.error('기존 OCR 작업을 취소하지 못했어요. 다시 시도해주세요.');
@@ -406,6 +436,7 @@ export function OcrReviewPage() {
       setRetaking(true);
       try {
         await cancelOcrResult(batchId);
+        releaseOcrPreviewSession(previewSessionId);
         navigate('/home', { replace: true });
       } catch {
         toast.error('기존 OCR 작업을 취소하지 못했어요. 다시 시도해주세요.');
@@ -414,8 +445,21 @@ export function OcrReviewPage() {
       }
       return;
     }
-    if (batchId) releaseOcrDocumentImageUrl(batchId);
+    releaseOcrPreviewSession(previewSessionId);
     navigate('/home', { replace: true });
+  }
+
+  async function cancelReading() {
+    if (batchId) {
+      try {
+        await cancelOcrResult(batchId);
+      } catch {
+        toast.error('기존 OCR 작업을 취소하지 못했어요. 다시 시도해주세요.');
+        return;
+      }
+    }
+    releaseOcrPreviewSession(previewSessionId);
+    navigate('/document-upload', { replace: true });
   }
 
   function createRegistrationDraft(): OcrRegistrationDraft | undefined {
@@ -429,7 +473,6 @@ export function OcrReviewPage() {
     }
     return {
       batchId,
-      documentImageUrl: 'documentImageUrl' in result ? result.documentImageUrl : '',
       hospitalName,
       hospitalNameConfidence,
       hospitalNameReviewed,
@@ -485,7 +528,7 @@ export function OcrReviewPage() {
         { registrationEdit: registrationEditMode },
       );
       const ocrRegistrationDraft = createRegistrationDraft();
-      releaseOcrDocumentImageUrl(batchId);
+      releaseOcrPreviewSession(previewSessionId);
       toast.success('저장했어요.');
       if (hasMedication) {
         // 브라우저 뒤로가기도 화살표처럼 저장한 내용을 편집할 수 있어야 합니다.
@@ -579,7 +622,7 @@ export function OcrReviewPage() {
         <ReadingScreen
           stage={readingStage}
           progress={progress}
-          onCancel={() => navigate('/document-upload', { replace: true })}
+          onCancel={() => void cancelReading()}
         />
         <ErrorDialog
           open={uploadError !== null}
@@ -748,7 +791,8 @@ export function OcrReviewPage() {
 
         {imageUnavailable && (
           <Card tone="info" title="사진 미리보기를 사용할 수 없어요">
-            사진 보관 시간이 지났거나 일시적으로 사용할 수 없어요. OCR 결과는 계속 확인하고 저장할 수 있어요.
+            <p>새로고침하면 사진 미리보기를 다시 불러올 수 없어요.</p>
+            <p className="mt-1">OCR 결과는 계속 확인하고 저장할 수 있어요.</p>
           </Card>
         )}
 
@@ -1101,6 +1145,7 @@ function OcrEnvelopeImageViewer({
               className={scaledSize ? 'block max-w-none object-contain' : 'max-h-full w-auto max-w-full object-contain'}
               style={scaledSize ? { width: scaledSize.width, height: scaledSize.height } : undefined}
               onLoad={measureFittedSize}
+              onClick={() => onOpenChange(false)}
             />
           </div>
         </div>

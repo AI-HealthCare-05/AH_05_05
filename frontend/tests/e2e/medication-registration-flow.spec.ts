@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { expect, test, type Page, type Route } from 'playwright/test';
 
 import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
@@ -8,6 +9,9 @@ const OCR_URL = `/api/v1/ocr/jobs/${DOCUMENT_ID}`;
 const ONE_PIXEL_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL8+QAAAABJRU5ErkJggg==',
   'base64',
+);
+const MEDICATION_CAPTURE_GUIDE_PNG = readFileSync(
+  new URL('../../public/images/medication-capture-guide.png', import.meta.url),
 );
 
 test.beforeEach(() => {
@@ -208,6 +212,137 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
     body: JSON.stringify(body),
   });
 }
+
+test('새로고침한 OCR 검토는 사진을 다시 요청하지 않고 결과만 보여준다', async ({ page }) => {
+  await authenticate(page);
+  const imageRequests: string[] = [];
+  await page.route('**/api/v1/ocr/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path === OCR_URL) {
+      await fulfillJson(route, { ...readyOcrResult, batchId: String(DOCUMENT_ID) });
+      return;
+    }
+    if (request.method() === 'GET' && (path.endsWith('/image') || path.endsWith('/processed-image'))) {
+      imageRequests.push(path);
+      await route.fulfill({ status: 200, contentType: 'image/png', body: ONE_PIXEL_PNG });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto(`/ocr-review?batchId=${DOCUMENT_ID}`);
+
+  await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
+  await expect(page.getByText('새로고침하면 사진 미리보기를 다시 불러올 수 없어요.', { exact: true })).toBeVisible();
+  expect(imageRequests).toEqual([]);
+});
+
+test('새 사진 세션은 원본 File과 전처리본을 받은 뒤에만 사진 삭제를 확인한다', async ({ page }) => {
+  await authenticate(page);
+  let processedRequests = 0;
+  let originalRequests = 0;
+  let releaseRequests = 0;
+  let releaseProcessed!: () => void;
+  const processedPending = new Promise<void>((resolve) => { releaseProcessed = resolve; });
+  await page.route('**/api/v1/ocr', async (route) => {
+    if (route.request().method() === 'POST') {
+      await fulfillJson(route, { batchId: 'upload-batch-501', documentIds: [DOCUMENT_ID], ocrStatus: 'queued' });
+      return;
+    }
+    await route.continue();
+  });
+  await page.route('**/api/v1/ocr/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path === OCR_URL) {
+      await fulfillJson(route, { ...readyOcrResult, batchId: String(DOCUMENT_ID) });
+      return;
+    }
+    if (request.method() === 'GET' && path === `${OCR_URL}/processed-image`) {
+      processedRequests += 1;
+      await processedPending;
+      await route.fulfill({ status: 200, contentType: 'image/png', body: ONE_PIXEL_PNG });
+      return;
+    }
+    if (request.method() === 'GET' && path === `${OCR_URL}/image`) {
+      originalRequests += 1;
+      await route.fulfill({ status: 200, contentType: 'image/png', body: ONE_PIXEL_PNG });
+      return;
+    }
+    if (request.method() === 'POST' && path === `${OCR_URL}/release-images`) {
+      releaseRequests += 1;
+      expect(request.postData()).toBeNull();
+      await route.fulfill({ status: 204 });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto('/document-upload');
+  await selectGalleryPng(page);
+  await page.getByRole('button', { name: '등록하기', exact: true }).click();
+  await expect.poll(() => processedRequests).toBe(1);
+  expect(releaseRequests).toBe(0);
+  expect(originalRequests).toBe(0);
+  expect(await page.evaluate(() => (window.history.state?.usr as { file?: unknown } | undefined)?.file)).toBeUndefined();
+
+  releaseProcessed();
+  await expect(page.getByRole('img', { name: '약봉투 미리보기' })).toBeVisible();
+  await expect.poll(() => releaseRequests).toBe(1);
+  expect(originalRequests).toBe(0);
+
+  await page.reload();
+  await expect(page.getByText('새로고침하면 사진 미리보기를 다시 불러올 수 없어요.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('img', { name: '약봉투 미리보기' })).toHaveCount(0);
+  expect(processedRequests).toBe(1);
+  expect(releaseRequests).toBe(1);
+});
+
+test('전처리본 수신 실패는 사진 삭제 확인을 보내지 않는다', async ({ page }) => {
+  await authenticate(page);
+  let originalRequests = 0;
+  let releaseRequests = 0;
+  await page.route('**/api/v1/ocr', async (route) => {
+    if (route.request().method() === 'POST') {
+      await fulfillJson(route, { batchId: 'upload-batch-501', documentIds: [DOCUMENT_ID], ocrStatus: 'queued' });
+      return;
+    }
+    await route.continue();
+  });
+  await page.route('**/api/v1/ocr/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path === OCR_URL) {
+      await fulfillJson(route, { ...readyOcrResult, batchId: String(DOCUMENT_ID) });
+      return;
+    }
+    if (request.method() === 'GET' && path === `${OCR_URL}/processed-image`) {
+      await fulfillJson(route, { code: 'TEMPORARY', message: 'temporary failure' }, 503);
+      return;
+    }
+    if (request.method() === 'GET' && path === `${OCR_URL}/image`) {
+      originalRequests += 1;
+      await route.fulfill({ status: 200, contentType: 'image/png', body: ONE_PIXEL_PNG });
+      return;
+    }
+    if (request.method() === 'POST' && path === `${OCR_URL}/release-images`) {
+      releaseRequests += 1;
+      await route.fulfill({ status: 204 });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto('/document-upload');
+  await selectGalleryPng(page);
+  await page.getByRole('button', { name: '등록하기', exact: true }).click();
+
+  await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
+  await expect(page.getByText('새로고침하면 사진 미리보기를 다시 불러올 수 없어요.', { exact: true })).toBeVisible();
+  expect(releaseRequests).toBe(0);
+  expect(originalRequests).toBe(0);
+});
 
 for (const width of [375, 1280]) {
   test(`OCR 재촬영은 기존 작업 취소 완료 후 촬영 화면으로 이동한다 (${width})`, async ({ page }, testInfo) => {
@@ -439,6 +574,11 @@ async function interceptDocumentRegistration(page: Page): Promise<DocumentApiTra
       return;
     }
 
+    if (request.method() === 'POST' && path === `${OCR_URL}/release-images`) {
+      await route.fulfill({ status: 204 });
+      return;
+    }
+
     await route.continue();
   });
 
@@ -505,26 +645,39 @@ test(`OCR synthetic fixture 미리보기 전환과 선명한 닫기·한 번 클
   await authenticate(page);
   const requestedImages: string[] = [];
 
+  await page.route('**/api/v1/ocr', async (route) => {
+    if (route.request().method() === 'POST') {
+      await fulfillJson(route, { batchId: 'upload-batch-501', documentIds: [DOCUMENT_ID], ocrStatus: 'queued' });
+      return;
+    }
+    await route.continue();
+  });
   await page.route('**/api/v1/ocr/**', async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
-    if (request.method() === 'GET' && path === '/api/v1/ocr/jobs/b_mock_9f21') {
-      await fulfillJson(route, { ...readyOcrResult, batchId: 'b_mock_9f21' });
+    if (request.method() === 'GET' && path === OCR_URL) {
+      await fulfillJson(route, { ...readyOcrResult, batchId: String(DOCUMENT_ID) });
       return;
     }
     if (
       request.method() === 'GET' &&
-      (path === '/api/v1/ocr/jobs/b_mock_9f21/processed-image' ||
-        path === '/api/v1/ocr/jobs/b_mock_9f21/image')
+      (path === `${OCR_URL}/processed-image` || path === `${OCR_URL}/image`)
     ) {
       requestedImages.push(path);
       await route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="600"><rect width="900" height="600" fill="#eee8db"/><rect x="100" y="80" width="700" height="440" fill="white"/><text x="160" y="170" font-size="36">OCR preview sample</text><path d="M160 230h580M160 300h580M160 370h580M160 440h350" stroke="#b7c4c1" stroke-width="12"/></svg>' });
       return;
     }
+    if (request.method() === 'POST' && path === `${OCR_URL}/release-images`) {
+      await route.fulfill({ status: 204 });
+      return;
+    }
     await route.continue();
   });
 
-  await page.goto('/dev/ocr-review');
+  await page.goto('/document-upload');
+  await selectGalleryPng(page);
+  await page.getByRole('button', { name: '등록하기', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
 
   const preview = page.getByRole('img', { name: '약봉투 미리보기' });
   await expect(preview).toBeVisible();
@@ -545,6 +698,7 @@ test(`OCR synthetic fixture 미리보기 전환과 선명한 닫기·한 번 클
     'aria-pressed',
     'true',
   );
+  await page.screenshot({ path: testInfo.outputPath(`image-viewer-${width}.png`) });
 
   await viewer.getByRole('button', { name: '원본 보기' }).click();
   const original = viewer.getByRole('img', { name: '확대한 약봉투 원본' });
@@ -563,14 +717,12 @@ test(`OCR synthetic fixture 미리보기 전환과 선명한 닫기·한 번 클
       getComputedStyle(overlay ?? image).opacity === '1';
   })).toBe(true);
   expect(requestedImages).toEqual([
-    '/api/v1/ocr/jobs/b_mock_9f21/processed-image',
-    '/api/v1/ocr/jobs/b_mock_9f21/image',
+    `${OCR_URL}/processed-image`,
   ]);
   const close = viewer.getByRole('button', { name: '닫기', exact: true });
   const closeBox = await close.boundingBox();
   expect.soft(closeBox!.width).toBeGreaterThanOrEqual(48);
   expect.soft(closeBox!.height).toBeGreaterThanOrEqual(48);
-  await page.screenshot({ path: testInfo.outputPath(`image-viewer-${width}.png`) });
   await viewer.getByRole('img', { name: '확대한 약봉투 원본' }).click();
   await expect(viewer).toBeVisible();
   await close.click();
@@ -1280,20 +1432,84 @@ test('복약안내문 촬영 안내와 입력은 JPG/PNG 한 장만 받는다', 
   await expect(gallery).not.toHaveAttribute('multiple');
 });
 
-test('선택한 약봉투 사진을 누르면 전체 화면 원본을 열고 닫을 수 있다', async ({ page }) => {
-  await authenticate(page);
-  await page.goto('/document-upload');
-  await selectGalleryPng(page);
+for (const width of [320, 390]) {
+  test(`선택한 약봉투 원본을 100~300%로 확대하고 이동한 뒤 다시 열면 초기화한다 (${width}px)`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 844 });
+    await authenticate(page);
+    await page.goto('/document-upload');
+    await page.getByLabel('갤러리에서 약봉투 선택').setInputFiles({
+      name: 'medication-capture-guide.png',
+      mimeType: 'image/png',
+      buffer: MEDICATION_CAPTURE_GUIDE_PNG,
+    });
 
-  await page.getByRole('button', { name: '선택한 약봉투 크게 보기' }).click();
+    const trigger = page.getByRole('button', { name: '선택한 약봉투 크게 보기' });
+    const selectedPreview = page.getByRole('img', { name: '선택한 약봉투 미리보기' });
+    const selectedSrc = await selectedPreview.getAttribute('src');
+    expect(selectedSrc).toMatch(/^blob:/);
+    await trigger.click();
 
-  const viewer = page.getByRole('dialog');
-  await expect(viewer).toBeVisible();
-  await expect(viewer.getByRole('img', { name: '확대한 약봉투 원본' })).toBeVisible();
+    const viewer = page.getByRole('dialog', { name: '선택한 약봉투 크게 보기' });
+    const image = viewer.getByRole('img', { name: '확대한 약봉투 원본' });
+    const scrollArea = viewer.getByRole('region', { name: '확대한 약봉투 이동 영역' });
+    const zoomIn = viewer.getByRole('button', { name: '확대', exact: true });
+    const zoomOut = viewer.getByRole('button', { name: '축소', exact: true });
+    const zoomStatus = viewer.getByRole('status', { name: '확대 비율' });
+    const close = viewer.getByRole('button', { name: '닫기', exact: true });
+    await expect(image).toBeVisible();
+    await expect(image).toHaveAttribute('src', selectedSrc ?? '');
+    await expect(zoomStatus).toHaveText('100%');
+    await expect(zoomOut).toBeDisabled();
+    const baselineBox = await image.boundingBox();
+    expect(baselineBox).not.toBeNull();
 
-  await page.keyboard.press('Escape');
-  await expect(viewer).toHaveCount(0);
-});
+    await zoomIn.click();
+    await expect(zoomStatus).toHaveText('150%');
+    await zoomIn.click();
+    await expect(zoomStatus).toHaveText('200%');
+    await zoomIn.click();
+    await expect(zoomStatus).toHaveText('300%');
+    await expect(zoomIn).toBeDisabled();
+    const zoomedBox = await image.boundingBox();
+    expect(zoomedBox).not.toBeNull();
+    expect(zoomedBox!.width / baselineBox!.width).toBeGreaterThanOrEqual(2.99);
+    expect(zoomedBox!.width / baselineBox!.width).toBeLessThanOrEqual(3.01);
+
+    await scrollArea.evaluate((element) => element.scrollTo({
+      left: element.scrollWidth,
+      top: element.scrollHeight,
+    }));
+    await expect.poll(() => scrollArea.evaluate((element) => ({
+      atRight: Math.abs(element.scrollLeft - (element.scrollWidth - element.clientWidth)) <= 1,
+      atBottom: Math.abs(element.scrollTop - (element.scrollHeight - element.clientHeight)) <= 1,
+    }))).toEqual({ atRight: true, atBottom: true });
+
+    for (const control of [zoomOut, zoomIn, close]) {
+      const box = await control.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.width).toBeGreaterThanOrEqual(44);
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+    }
+    expect(await viewer.evaluate((element) => element.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`document-upload-preview-zoom-${width}.png`) });
+    await image.click();
+    await expect(viewer).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await trigger.click();
+    await expect(zoomStatus).toHaveText('100%');
+    await expect(zoomOut).toBeDisabled();
+    await expect.poll(() => scrollArea.evaluate((element) => ({
+      left: element.scrollLeft,
+      top: element.scrollTop,
+    }))).toEqual({ left: 0, top: 0 });
+    await close.click();
+    await expect(viewer).toHaveCount(0);
+    await trigger.click();
+    await page.keyboard.press('Escape');
+    await expect(viewer).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  });
+}
 
 test('조제일은 서울 오늘로부터 31일 뒤까지 수정하고 저장할 수 있다', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
@@ -2279,7 +2495,7 @@ test('복약 선택 삭제는 오류를 팝업에 남기고 재시도하면 목�
   await page.goto('/medications');
   await page.getByRole('button', { name: '선택', exact: true }).click();
   await page.getByRole('checkbox', { name: /2026년 8월 22일 처방 선택/ }).check();
-  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await page.getByRole('button', { name: '삭제 1개', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('heading', { name: '1개를 삭제할까요?' })).toBeVisible();
   await expect(dialog).toContainText('삭제한 처방은 약봉투를 다시 등록해야 복구할 수 있어요.');
@@ -2323,29 +2539,32 @@ test('업로드 응답에 문서 ID가 없으면 polling을 시작하지 않는�
   expect(pollCount).toBe(0);
 });
 
-test('RAM 이미지가 404여도 medium OCR 결과를 확인하고 저장한다', async ({ page }) => {
+test('RAM 전처리 이미지가 404여도 medium OCR 결과를 확인하고 저장한다', async ({ page }) => {
   await authenticate(page);
   const images: CapturedRequest[] = [];
   const patches: CapturedRequest[] = [];
   const mediumOnlyResult = {
     ...readyOcrResult,
-    batchId: 'b_mock_9f21',
+    batchId: String(DOCUMENT_ID),
     medications: [{ ...readyOcrResult.medications[0], confidence: 'medium' }],
     lowConfidenceCount: 0,
   };
 
+  await page.route('**/api/v1/ocr', async (route) => {
+    if (route.request().method() === 'POST') {
+      await fulfillJson(route, { batchId: 'upload-batch-501', documentIds: [DOCUMENT_ID], ocrStatus: 'queued' });
+      return;
+    }
+    await route.continue();
+  });
   await page.route('**/api/v1/ocr/**', async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
-    if (request.method() === 'GET' && path === '/api/v1/ocr/jobs/b_mock_9f21') {
+    if (request.method() === 'GET' && path === OCR_URL) {
       await fulfillJson(route, mediumOnlyResult);
       return;
     }
-    if (
-      request.method() === 'GET' &&
-      (path === '/api/v1/ocr/jobs/b_mock_9f21/image' ||
-        path === '/api/v1/ocr/jobs/b_mock_9f21/processed-image')
-    ) {
+    if (request.method() === 'GET' && path === `${OCR_URL}/processed-image`) {
       images.push(capture(route));
       await route.fulfill({
         status: 404,
@@ -2354,7 +2573,7 @@ test('RAM 이미지가 404여도 medium OCR 결과를 확인하고 저장한다'
       });
       return;
     }
-    if (request.method() === 'PATCH' && path === '/api/v1/ocr/jobs/b_mock_9f21') {
+    if (request.method() === 'PATCH' && path === OCR_URL) {
       patches.push(capture(route));
       await fulfillJson(route, { recordId: 315, hasMedication: true, statusCode: 'active' });
       return;
@@ -2378,11 +2597,13 @@ test('RAM 이미지가 404여도 medium OCR 결과를 확인하고 저장한다'
     });
   });
 
-  await page.goto('/dev/ocr-review');
+  await page.goto('/document-upload');
+  await selectGalleryPng(page);
+  await page.getByRole('button', { name: '등록하기', exact: true }).click();
   await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
   await expect(page.getByText('내용을 잘 읽었어요')).toBeVisible();
   await expect(page.getByText('1곳만 확인해주세요')).toHaveCount(0);
-  await expect(page.getByText('확인 권장', { exact: true })).toHaveCount(1);
+  await expect(page.getByText('확인 권장', { exact: true })).toHaveCount(0);
   await expect(page.getByText('사진 미리보기를 사용할 수 없어요')).toBeVisible();
   await expect(page.getByRole('img', { name: '등록한 약봉투 원본' })).toHaveCount(0);
 
@@ -2390,10 +2611,12 @@ test('RAM 이미지가 404여도 medium OCR 결과를 확인하고 저장한다'
   await expect(saveButton).toBeEnabled();
   await saveButton.click();
   await expect(page).toHaveURL(
-    '/medication-schedule?recordId=315&ocrJobId=b_mock_9f21&flow=registration',
+    '/medication-schedule?recordId=315&ocrJobId=501&flow=registration',
   );
 
   expect(patches).toHaveLength(1);
+  expect(images).toHaveLength(1);
+  expect(new URL(images[0].url).pathname).toBe(`${OCR_URL}/processed-image`);
   expectAuthenticated(images);
   expectAuthenticated(patches);
 });

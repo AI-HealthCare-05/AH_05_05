@@ -113,13 +113,15 @@ def _reject_excessive_spacing(original: str, selected: set[int]) -> None:
 
 
 def _allowed_boundaries(text: str) -> set[int]:
-    # Only insertion between Korean syllables is allowed. Existing whitespace,
-    # numbers, units, punctuation and encoded entities remain byte-for-byte intact.
+    # Insert between Korean syllables or before a numeric token (e.g. '하루1회').
+    # Never split numbers, units, safety words or encoded entities.
     protected = {index for match in _SAFETY_WORD.finditer(text) for index in range(match.start() + 1, match.end())}
     return {
         index
         for index in range(1, len(text))
-        if index not in protected and all("가" <= ch <= "힣" for ch in text[index - 1 : index + 1])
+        if index not in protected
+        and "가" <= text[index - 1] <= "힣"
+        and ("가" <= text[index] <= "힣" or text[index] in "0123456789")
     }
 
 
@@ -407,19 +409,24 @@ class SpacingRepairRequest:
         return self.apply_batches([(self._all_batch(), response)])
 
 
-def prepare_spacing_repair(plan: IntakeReportCardsPlan, catalog: V11EvidenceCatalog) -> SpacingRepairRequest | None:
+def prepare_spacing_repair(
+    plan: IntakeReportCardsPlan, catalog: V11EvidenceCatalog, *, review_all_text: bool = False
+) -> SpacingRepairRequest | None:
     _validate_plan_structure(plan, catalog)
     failing = {issue.key for issue in _collect_text_issues(plan, catalog)}
-    if not failing:
+    if not failing and not review_all_text:
         return None
     fields = []
     for path, key, canonical in _text_fields(plan, catalog):
-        if key not in failing:
+        if key not in failing and not (review_all_text and _allowed_boundaries(canonical)):
             continue
         chunks = _split_chunks(canonical)
         if chunks is None:
-            return None
+            if key in failing:
+                return None
+            # An optional review must not suppress repairs of other fields.
+            continue
         fields.append(_SpacingField(path, key, canonical, chunks))
-    if {field.plan_key for field in fields} != failing:
+    if not failing.issubset({field.plan_key for field in fields}):
         raise ValueError("SPACING_REPAIR_COVERAGE: unmapped text issue")
-    return SpacingRepairRequest(plan, catalog, fields)
+    return SpacingRepairRequest(plan, catalog, fields) if fields else None

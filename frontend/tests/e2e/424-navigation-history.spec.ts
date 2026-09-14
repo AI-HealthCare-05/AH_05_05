@@ -174,6 +174,7 @@ test.beforeEach(async ({ page }) => {
 test('공식·맞춤 챌린지의 앱/브라우저 뒤로가기가 둘러보기와 순환하지 않는다', async ({ page }, testInfo) => {
   await page.goto('/challenges');
   await page.getByRole('link', { name: '둘러보기', exact: true }).click();
+  await page.getByRole('button', { name: '공식 챌린지 펼치기', exact: true }).click();
   await page.getByRole('button', { name: `${challenge.name} 자세히 보기`, exact: true }).click();
   await expect(page).toHaveURL('/challenges/official/101');
 
@@ -184,12 +185,14 @@ test('공식·맞춤 챌린지의 앱/브라우저 뒤로가기가 둘러보기�
 
   await page.goForward();
   await expect(page).toHaveURL('/challenges/browse');
+  await page.getByRole('button', { name: '맞춤 챌린지 펼치기', exact: true }).click();
   await page.getByRole('button', { name: '영양제 루틴 이어가기 대상 선택', exact: true }).click();
   await expect(page).toHaveURL('/challenges/tailored/supplement?templateId=41');
   await page.getByRole('button', { name: '뒤로 가기', exact: true }).click();
   await expect(page).toHaveURL('/challenges/browse');
   await page.screenshot({ path: testInfo.outputPath('challenge-navigation-mobile.png'), fullPage: true });
 
+  await page.getByRole('button', { name: '맞춤 챌린지 펼치기', exact: true }).click();
   await page.getByRole('button', { name: '영양제 루틴 이어가기 대상 선택', exact: true }).click();
   await page.goBack();
   await expect(page).toHaveURL('/challenges/browse');
@@ -204,7 +207,8 @@ test('배지 상세에서 목록으로 돌아간 뒤 목록 뒤로가기는 챌�
   await expect(page).toHaveURL('/challenges/badges/31');
   await expect(page.getByRole('banner').getByRole('heading', { name: '배지 상세', exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: '내 배지로 돌아가기', exact: true }).click();
+  await expect(page.getByText('내 배지로 돌아가기', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '뒤로 가기', exact: true }).click();
   await expect(page).toHaveURL('/challenges/badges');
   await page.getByRole('button', { name: '뒤로 가기', exact: true }).click();
   await expect(page).toHaveURL('/challenges');
@@ -226,18 +230,23 @@ test('배지 상세 공통 헤더는 로딩 실패와 미존재 상태에서도 
 });
 
 test('마이에서 연 복약 메모는 작성 취소와 수정 저장 뒤에도 마이 복귀 이력을 유지한다', async ({ page }) => {
+  await page.route(/\/api\/v1\/med\/notes\/episodes(?:\?.*)?$/, route => fulfillJson(route, [
+    noteEpisode,
+    { ...noteEpisode, careEpisodeId: 42, alias: '미작성 처방', noteCount: 0 },
+  ]));
   await page.goto('/my');
   await page.getByRole('button', { name: '복약 메모 모아보기', exact: true }).click();
   await expect(page).toHaveURL('/medications/notes');
   await page.reload();
 
-  await page.getByRole('button', { name: '새 메모 작성', exact: true }).click();
+  await page.getByRole('button', { name: /미작성 처방.*펼치기/ }).click();
+  await page.getByRole('button', { name: '이 처방에 메모 작성', exact: true }).click();
   await page.getByRole('button', { name: '뒤로 가기', exact: true }).click();
-  await expect(page).toHaveURL('/medications/notes');
+  await expect(page).toHaveURL('/medications/notes?episodeId=42');
 
   await page.getByRole('tab', { name: '작성한 메모', exact: true }).click();
   await page.getByRole('button', { name: /아침 처방.*펼치기/ }).click();
-  await page.getByRole('button', { name: '처방 전체 기존 메모', exact: true }).click();
+  await page.getByRole('button', { name: '기존 메모', exact: true }).click();
   await page.getByLabel('건강상태 기록').fill('수정한 메모');
   await page.getByRole('button', { name: '수정 저장', exact: true }).click();
   await expect(page).toHaveURL('/medications/notes?episodeId=41');

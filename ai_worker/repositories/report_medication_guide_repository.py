@@ -23,6 +23,7 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
     _DIRECT_TYPO_SCORE = 0.88
     _ASSISTED_TYPO_SCORE = 0.75
     _MIN_RUNNER_UP_MARGIN = 0.12
+    _FULLWIDTH_ASCII = str.maketrans({chr(code): chr(code - 0xFEE0) for code in range(0xFF01, 0xFF5F)})
     _UNIT_ALIASES = {
         "밀리그램": "mg",
         "밀리그람": "mg",
@@ -39,7 +40,7 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
         "ml": "ml",
     }
     _STRENGTH = re.compile(
-        r"(?P<amount>\d+(?:\.\d+)?)(?P<unit>밀리그램|밀리그람|마이크로그램|마이크로그람|그램|그람|mg|mcg|μg|µg|g|ml|밀리리터)"
+        r"(?P<amount>(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)(?P<unit>밀리그램|밀리그람|마이크로그램|마이크로그람|그램|그람|mg|mcg|μg|µg|g|ml|밀리리터)"
     )
 
     def __init__(self, *, candidate_selector: MedicationCandidateSelector | None = None) -> None:
@@ -56,13 +57,16 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
         if len(self._normalize_name(query)) < 2 or len(query) > 256:
             return MedicationGuideLookup()
         direct = await super().find_by_name(query)
-        if direct.guide is not None:
-            if self._matches_product_name(query, direct.guide.product_name):
-                return direct
+        if direct.guide is not None and self._matches_product_name(query, direct.guide.product_name):
+            return direct
 
         # Use one fresh product snapshot for the identity ranking in this lookup.
         async with self._resolution_lock:
             entries = await self._catalog.list_entries()
+
+        catalog_match = await self._find_catalog_product(query, entries)
+        if catalog_match is not None:
+            return catalog_match
 
         ranked = self._rank_products(query, entries)
         selected = await self._select_dominant(query, ranked)
@@ -109,10 +113,51 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
             original_name=query if candidates else None,
         )
 
+    async def _find_catalog_product(
+        self, query: str, entries: list[MedicationCatalogEntry]
+    ) -> MedicationGuideLookup | None:
+        names = {entry.canonical_name for entry in entries if self._matches_product_name(query, entry.canonical_name)}
+        if len(names) > 1:
+            return MedicationGuideLookup(is_ambiguous=True, candidate_names=sorted(names), original_name=query)
+        if names:
+            # Equivalent spelling is identity, not a fuzzy correction. Keep the
+            # exact product lookup's duplicate-ID guard and the registered name.
+            return await super().find_by_name(next(iter(names)))
+        return await self._find_truncated_unit_product(query, entries)
+
+    async def _find_truncated_unit_product(
+        self, query: str, entries: list[MedicationCatalogEntry]
+    ) -> MedicationGuideLookup | None:
+        # OCR may persist a printed ellipsis. Never complete a brand, a numeric
+        # strength, a decimal, or a formulation from a merely similar product.
+        match = re.fullmatch(r"(.+)(?:\.{3}|…)", self._normalize_name(query))
+        if match is None:
+            return None
+        prefix = match[1]
+        names = {
+            entry.canonical_name
+            for entry in entries
+            if self._split_annotations(entry.canonical_name)[0].startswith(prefix)
+        }
+        if len(names) != 1:
+            return None
+        name = next(iter(names))
+        product, _ = self._split_annotations(name)
+        cut_inside_final_unit = any(
+            strength.end() == len(product) and strength.start("unit") <= len(prefix) <= strength.end()
+            for strength in self._STRENGTH.finditer(product)
+        )
+        if not cut_inside_final_unit or self._product_parts(name) is None:
+            return None
+        lookup = await super().find_by_name(name)
+        if lookup.guide is None or lookup.is_ambiguous:
+            return None
+        return lookup.model_copy(update={"original_name": query, "is_inferred": True})
+
     @classmethod
     def _rank_products(cls, query: str, entries: list[MedicationCatalogEntry]) -> list[tuple[float, str]]:
         query_parts = cls._product_parts(query, allow_unknown_form=True)
-        if query_parts is None or not 4 <= len(query_parts[0]) <= 64:
+        if query_parts is None or not 2 <= len(query_parts[0]) <= 64:
             return []
         query_brand = cls._suggestion_key(query_parts[0])
         ranked = []
@@ -135,7 +180,12 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
         product_parts = self._product_parts(name)
         assert query_parts is not None and product_parts is not None
         requires_form_check = self._product_parts(query) is None
-        if requires_form_check and score < self._DIRECT_TYPO_SCORE:
+        requires_identity_check = (
+            requires_form_check or len(query_parts[0]) < 4 or not self._STRENGTH.search(query_parts[1])
+        )
+        if (requires_identity_check and self._has_close_brand_alternative(query_parts[0], ranked[1:])) or (
+            requires_form_check and score < self._DIRECT_TYPO_SCORE
+        ):
             return None
         if (
             RuleBasedMedicationQuestionResolver._edit_distance(
@@ -151,7 +201,7 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
             or not self._matches_product_name(name, lookup.guide.product_name)
         ):
             return None
-        if score < self._DIRECT_TYPO_SCORE or requires_form_check:
+        if score < self._DIRECT_TYPO_SCORE or requires_identity_check:
             if self._candidate_selector is None:
                 return None
             try:
@@ -179,10 +229,38 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
         return lookup.model_copy(update={"original_name": query, "is_inferred": score < 1.0 or requires_form_check})
 
     @classmethod
+    def _has_close_brand_alternative(cls, brand: str, alternatives: list[tuple[float, str]]) -> bool:
+        # Sparse identity must not be settled by a similarity margin or an LLM
+        # when another compatible product is also within the typo edit budget.
+        query_key = cls._suggestion_key(brand)
+        return any(
+            parts is not None
+            and RuleBasedMedicationQuestionResolver._edit_distance(query_key, cls._suggestion_key(parts[0]), limit=2)
+            <= 2
+            for _, name in alternatives
+            for parts in [cls._product_parts(name)]
+        )
+
+    @classmethod
     def _matches_product_name(cls, query: str, product_name: str) -> bool:
         query_name, query_annotations = cls._split_annotations(query)
         candidate_name, candidate_annotations = cls._split_annotations(product_name)
-        return query_name == candidate_name and query_annotations == candidate_annotations[: len(query_annotations)]
+        return (
+            cls._unit_spelling_key(query_name) == cls._unit_spelling_key(candidate_name)
+            and query_annotations == candidate_annotations[: len(query_annotations)]
+        )
+
+    @classmethod
+    def _unit_spelling_key(cls, value: str) -> str:
+        # Only unit spellings are equivalent; never convert doses or forms.
+        def replace(match: re.Match[str]) -> str:
+            whole, _, fraction = match["amount"].replace(",", "").partition(".")
+            whole = whole.lstrip("0") or "0"
+            fraction = fraction.rstrip("0")
+            amount = whole + (f".{fraction}" if fraction else "")
+            return amount + cls._UNIT_ALIASES[match["unit"]]
+
+        return cls._STRENGTH.sub(replace, value)
 
     @classmethod
     def _safe_product_correction(cls, original: str, corrected: str) -> bool:
@@ -212,7 +290,8 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
             # Do not add/drop a whole product variant suffix such as Q/ER.
             and not original_parts[0].startswith(corrected_parts[0])
             and not corrected_parts[0].startswith(original_parts[0])
-            and re.findall(r"\d+(?:\.\d+)?", original_key) == re.findall(r"\d+(?:\.\d+)?", corrected_key)
+            and re.findall(r"\d+(?:\.\d+)?", cls._unit_spelling_key(original_key))
+            == re.findall(r"\d+(?:\.\d+)?", cls._unit_spelling_key(corrected_key))
         )
 
     @classmethod
@@ -226,17 +305,15 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
                 index = strength.start() - 1
                 if re.fullmatch(r"[가-힣]", product[index]):
                     form_start = index
-        if form_start is None or not cls._STRENGTH.search(product[form_start:]):
+        if form_start is None:
             return None
         # Normalize equivalent unit spellings only, never convert amounts or forms.
-        suffix = cls._STRENGTH.sub(
-            lambda match: match["amount"] + cls._UNIT_ALIASES[match["unit"]], product[form_start:]
-        )
+        suffix = cls._unit_spelling_key(product[form_start:])
         return product[:form_start], suffix, annotations
 
     @classmethod
     def _split_annotations(cls, name: str) -> tuple[str, tuple[str, ...]]:
-        product = cls._normalize_name(unicodedata.normalize("NFC", name))
+        product = cls._normalize_name(unicodedata.normalize("NFC", name).translate(cls._FULLWIDTH_ASCII))
         annotations: list[str] = []
         while product.endswith(")"):
             depth = 0

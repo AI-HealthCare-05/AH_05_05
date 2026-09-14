@@ -56,7 +56,7 @@ test('browse filters official and custom entries, keeps routes and disables only
   await expect(rows.nth(3)).toBeDisabled();
   await expect(rows.nth(4)).toBeDisabled();
   await expect(page.getByRole('button', { name: '종료한 걷기 자세히 보기' })).toBeEnabled();
-  await expect(rows.nth(0)).toContainText('모집기간 : 2026년 9월 1일 ~ 2026년 9월 30일');
+  await expect(rows.nth(0)).toContainText('모집기간 : 2026.09.01 ~ 2026.09.30');
   await expect(rows.nth(2)).toContainText('모집기간 : 상시');
   await page.screenshot({ path: testInfo.outputPath('browse-all-390.png'), fullPage: true });
   await filter.click();
@@ -75,7 +75,7 @@ test('official detail shows Korean recruitment dates and the shared header while
   await page.goto('/challenges/official/102');
   await expect(page.locator('header').filter({ has: page.getByRole('heading', { name: '다시 걷기', exact: true }) })).toHaveCSS('border-bottom-width', '1px');
   await expect(page.getByText('모집기간', { exact: true })).toBeVisible();
-  await expect(page.getByText('2026년 9월 1일 ~ 2026년 9월 30일', { exact: true })).toBeVisible();
+  await expect(page.getByText('2026.09.01 ~ 2026.09.30', { exact: true })).toBeVisible();
   await expect(page.getByRole('navigation', { name: '주요 화면' })).toBeInViewport({ ratio: 1 });
   await page.screenshot({ path: testInfo.outputPath('official-detail-390.png'), fullPage: true });
   await page.getByRole('button', { name: '다시 참여하기', exact: true }).click();

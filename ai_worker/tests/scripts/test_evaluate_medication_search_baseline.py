@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import pytest
+from pydantic import SecretStr
+
 from ai_worker.core.config import Config
 from ai_worker.schemas.knowledge import KnowledgeVectorDistance
 from scripts import evaluate_medication_search_baseline as module
@@ -45,19 +48,21 @@ def test_user_expression_manifest_is_frozen_and_covers_failure_classes() -> None
     }.issubset(categories)
 
 
-def test_v3_manifest_is_fixed_to_21_cases_and_tracks_historical_outcomes() -> None:
+def test_v3_manifest_is_fixed_to_20_cases_and_tracks_historical_outcomes() -> None:
     manifest = load_evaluation_manifest(
         Path("data/knowledge/evaluation/user_expression_queries_v3.yaml"),
     )
 
     assert manifest.schema_version == "medication-search-baseline-v3"
-    assert len(manifest.cases) == 21
+    assert len(manifest.cases) == 20
     assert sum(case.phase == "ACTIVE_PHASE" for case in manifest.cases) > 0
     assert all(case.evaluation_rationale for case in manifest.cases)
     assert all(case.historical_outcome is not None for case in manifest.cases)
     assert sum(case.historical_outcome == "PASS" for case in manifest.cases) == 11
     assert sum(case.historical_outcome == "PARTIAL" for case in manifest.cases) == 4
-    assert sum(case.historical_outcome == "FAIL" for case in manifest.cases) == 6
+    assert sum(case.historical_outcome == "FAIL" for case in manifest.cases) == 5
+    assert "20문항" in manifest.experiment_goal
+    assert "20문항" in manifest.activation_rule
     assert "13건" in manifest.activation_rule
 
 
@@ -78,6 +83,33 @@ def test_v3_manifest_expects_authoritative_products_for_user_facing_aliases() ->
         assert entity.entity_type == "PRODUCT_NAME"
 
 
+def test_v3_manifest_treats_tylenol_alcohol_as_source_backed_drug_food_pair() -> None:
+    manifest = load_evaluation_manifest(
+        Path("data/knowledge/evaluation/user_expression_queries_v3.yaml"),
+    )
+    case = {case.query_id: case for case in manifest.cases}["drug-food-tylenol-alcohol"]
+
+    assert case.historical_outcome == "FAIL"
+    assert case.evidence_kind == "QDRANT_GOLD"
+    assert case.expected_interaction_types == ["DRUG_FOOD"]
+    assert {entity.canonical_name for entity in case.expected_entities} == {
+        "아세트아미노펜",
+        "알코올",
+    }
+    alcohol = next(entity for entity in case.expected_entities if entity.canonical_name == "알코올")
+    assert alcohol.entity_type == "FOOD_CATEGORY"
+    assert alcohol.kind == "FOOD"
+    assert alcohol.expected_sources == ["QDRANT"]
+
+
+def test_v3_manifest_excludes_patient_context_only_pair_from_search_baseline() -> None:
+    manifest = load_evaluation_manifest(
+        Path("data/knowledge/evaluation/user_expression_queries_v3.yaml"),
+    )
+
+    assert "deferred-safety-calcium-iron" not in {case.query_id for case in manifest.cases}
+
+
 def test_evaluation_vector_store_uses_runtime_dot_distance() -> None:
     settings = Config(
         _env_file=None,
@@ -92,6 +124,25 @@ def test_evaluation_vector_store_uses_runtime_dot_distance() -> None:
     )
 
     assert vector_store._distance == KnowledgeVectorDistance.DOT
+
+
+def test_evaluation_embedding_provider_omits_legacy_normalization_option(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    received: dict[str, object] = {}
+
+    class FakeEmbeddingProvider:
+        def __init__(self, **kwargs: object) -> None:
+            received.update(kwargs)
+
+    monkeypatch.setattr(module, "OpenAIEmbeddingProvider", FakeEmbeddingProvider)
+
+    module.build_evaluation_embedding_provider(
+        settings=Config(_env_file=None),
+        api_key=SecretStr("test-key"),
+    )
+
+    assert "normalize_vectors" not in received
 
 
 def test_evaluation_expression_catalog_uses_runtime_qdrant_release() -> None:

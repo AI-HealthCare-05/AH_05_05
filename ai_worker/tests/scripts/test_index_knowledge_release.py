@@ -307,6 +307,42 @@ def test_parse_args_accepts_dot_distance() -> None:
     assert args.distance == KnowledgeVectorDistance.DOT
 
 
+def test_build_indexer_uses_openai_provider_without_legacy_normalization_option(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    received: dict[str, object] = {}
+
+    class FakeEmbeddingProvider:
+        def __init__(self, **kwargs: object) -> None:
+            received["embedding_kwargs"] = kwargs
+
+    class FakeVectorStore:
+        def __init__(self, **kwargs: object) -> None:
+            received["store_kwargs"] = kwargs
+
+    monkeypatch.setattr(module, "OpenAIEmbeddingProvider", FakeEmbeddingProvider)
+    monkeypatch.setattr(module, "QdrantKnowledgeStore", FakeVectorStore)
+
+    settings = module.Config(
+        _env_file=None,
+        OPENAI_API_KEY=SecretStr("test-key"),
+    )
+    args = Namespace(
+        distance=KnowledgeVectorDistance.DOT,
+        collection="medication_knowledge_full_v15",
+        embedding_batch_size=64,
+        upsert_batch_size=64,
+    )
+
+    module.build_indexer(
+        settings=settings,
+        args=args,
+        qdrant_client=object(),
+    )
+
+    assert "normalize_vectors" not in received["embedding_kwargs"]
+
+
 def test_parse_args_accepts_interaction_annotation_contract() -> None:
     args = module.parse_args(
         [
