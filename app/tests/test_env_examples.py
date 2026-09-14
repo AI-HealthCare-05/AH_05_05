@@ -1,4 +1,4 @@
-"""envs/example.*.env 의 전용 email-worker 설정을 고정한다."""
+"""envs/example.*.env 의 API 프로세스 이메일 작업 설정을 고정한다."""
 
 from pathlib import Path
 
@@ -19,10 +19,10 @@ def read_env(path: Path) -> dict[str, str]:
 
 
 class TestExampleProdEnv:
-    def test_configures_dedicated_email_worker_queue_and_retry(self) -> None:
+    def test_configures_email_background_task_retry_without_a_queue(self) -> None:
         values = read_env(EXAMPLE_PROD_ENV)
 
-        assert values["EMAIL_QUEUE_NAME"] == "arq:email"
+        assert "EMAIL_QUEUE_NAME" not in values
         assert values["EMAIL_MAX_RETRY_COUNT"] == "3"
         assert values["EMAIL_RETRY_BASE_SECONDS"] == "30"
         assert "EMAIL_BACKEND" not in values
@@ -39,10 +39,10 @@ class TestExampleProdEnv:
 
 
 class TestExampleLocalEnv:
-    def test_uses_same_dedicated_queue_contract_without_console_backend(self) -> None:
+    def test_uses_same_background_task_contract_without_console_backend(self) -> None:
         values = read_env(EXAMPLE_LOCAL_ENV)
 
-        assert values["EMAIL_QUEUE_NAME"] == "arq:email"
+        assert "EMAIL_QUEUE_NAME" not in values
         assert values["EMAIL_MAX_RETRY_COUNT"] == "3"
         assert values["EMAIL_RETRY_BASE_SECONDS"] == "30"
         assert values["EMAIL_PAYLOAD_ENCRYPTION_KEY"] == ""

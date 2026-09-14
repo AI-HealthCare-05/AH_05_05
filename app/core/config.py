@@ -116,7 +116,6 @@ class Config(BaseSettings):
             raise ValueError("each custom challenge type may map to only one template ID")
         return value
 
-    EMAIL_QUEUE_NAME: str = "arq:email"
     EMAIL_MAX_RETRY_COUNT: int = Field(default=3, ge=0)
     EMAIL_RETRY_BASE_SECONDS: int = Field(default=30, gt=0)
     EMAIL_PAYLOAD_ENCRYPTION_KEY: SecretStr | None = None
