@@ -6,7 +6,6 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 from fastapi import HTTPException, status
-from tortoise.exceptions import IntegrityError
 from tortoise.functions import Count
 
 from app.core import config
@@ -196,40 +195,6 @@ class BackgroundJobService:
             total=sum(counts.values()),
             counts=counts,
         )
-
-    @staticmethod
-    def alarm_idempotency_key(alarm_id: int, subscription_id: int, trigger_at: datetime) -> str:
-        return f"alarm:{alarm_id}:{subscription_id}:{trigger_at.isoformat()}"
-
-    async def create_alarm_job(
-        self,
-        alarm: Alarm,
-        subscription: PushSubscription,
-        trigger_at: datetime,
-    ) -> tuple[BackgroundJob, bool]:
-        key = self.alarm_idempotency_key(alarm.id, subscription.id, trigger_at)
-        existing = await self.repository.get_by_idempotency_key(key)
-        if existing is not None:
-            return existing, False
-        try:
-            job = await self.repository.create(
-                {
-                    "idempotency_key": key,
-                    "job_type": BackgroundJobType.ALARM,
-                    "status": BackgroundJobStatus.QUEUED,
-                    "user_id": alarm.user_id,
-                    "reference_table": "alarms",
-                    "reference_id": alarm.id,
-                    "retry_count": 0,
-                    "max_retry_count": config.ALARM_MAX_RETRY_COUNT,
-                }
-            )
-        except IntegrityError:
-            existing = await self.repository.get_by_idempotency_key(key)
-            if existing is None:
-                raise
-            return existing, False
-        return job, True
 
     async def cancel(self, job_id: int) -> BackgroundJob:
         job = await self.get(job_id)

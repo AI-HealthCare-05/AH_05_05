@@ -1,8 +1,9 @@
 import asyncio
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from tortoise.contrib.test import TestCase
+from tortoise.exceptions import DBConnectionError, OperationalError
 
 from app.core import config
 from app.models.alarms import Alarm, AlarmEvent, PushSubscription
@@ -134,6 +135,37 @@ class TestAlarmBackgroundTaskExecutor(TestCase):
         assert len(jobs) == 3
         assert {job.reference_id for job in jobs} == {self.alarm.id, nutrient_alarm.id, visit_alarm.id}
 
+    async def test_due_alarm_fans_out_one_job_per_active_subscription(self) -> None:
+        second = await PushSubscription.create(
+            user=self.user,
+            endpoint="https://push.example.test/background-task-second",
+            p256dh_key="p256dh-2",
+            auth_key="auth-2",
+        )
+
+        job_ids = await self.executor().poll_due_alarm_job_ids()
+
+        assert len(job_ids) == 2
+        keys = set(await BackgroundJob.filter(id__in=job_ids).values_list("idempotency_key", flat=True))
+        assert keys == {
+            self.executor().idempotency_key(self.alarm.id, subscription_id, self.now)
+            for subscription_id in (self.subscription.id, second.id)
+        }
+
+    async def test_due_alarm_without_subscription_records_failure(self) -> None:
+        self.subscription.is_active = False
+        await self.subscription.save(update_fields=["is_active"])
+
+        assert await self.executor().poll_due_alarm_job_ids() == []
+
+        assert await AlarmEvent.filter(
+            alarm=self.alarm,
+            event_type=AlarmEventType.FAILED,
+            error_code="NO_ACTIVE_SUBSCRIPTION",
+        ).exists()
+        await self.alarm.refresh_from_db()
+        assert self.alarm.last_triggered_at == self.now
+
     async def test_concurrent_claim_sends_only_once(self) -> None:
         job = await self.create_job()
         self.push_service.build_payload.return_value = {"title": "아침약"}
@@ -200,6 +232,114 @@ class TestAlarmBackgroundTaskExecutor(TestCase):
         assert job.status == BackgroundJobStatus.CANCELLED
         self.push_service.send.assert_not_awaited()
 
+    async def test_missing_nutrient_context_is_cancelled_without_push(self) -> None:
+        job = await self.create_job()
+        self.alarm.alarm_type = AlarmType.NUTRIENT
+        self.alarm.care_episode_id = None
+        await self.alarm.save(update_fields=["alarm_type", "care_episode_id"])
+
+        await self.executor().run(job.id)
+
+        await job.refresh_from_db()
+        assert job.status == BackgroundJobStatus.CANCELLED
+        self.push_service.send.assert_not_awaited()
+
+    async def test_missing_follow_up_context_is_cancelled_without_push(self) -> None:
+        job = await self.create_job()
+        self.alarm.alarm_type = AlarmType.FOLLOW_UP_VISIT
+        self.alarm.meal_slot = None
+        self.alarm.care_episode_id = None
+        await self.alarm.save(update_fields=["alarm_type", "meal_slot", "care_episode_id"])
+
+        await self.executor().run(job.id)
+
+        await job.refresh_from_db()
+        assert job.status == BackgroundJobStatus.CANCELLED
+        self.push_service.send.assert_not_awaited()
+
+    async def test_cancelled_job_is_not_sent(self) -> None:
+        job = await self.create_job()
+        job.status = BackgroundJobStatus.CANCELLED
+        await job.save(update_fields=["status"])
+
+        await self.executor().run(job.id)
+
+        self.push_service.send.assert_not_awaited()
+
+    async def test_completion_deadlock_retries_database_without_resending_push(self) -> None:
+        job = await self.create_job()
+        self.push_service.build_payload.return_value = {"title": "알림"}
+        self.push_service.send.return_value = PushResult(PushResultKind.SUCCESS, 201)
+        original_save = PushSubscription.save
+        attempts = 0
+
+        async def flaky_save(instance, *args, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise OperationalError(1213, "Deadlock found")
+            return await original_save(instance, *args, **kwargs)
+
+        with patch.object(PushSubscription, "save", autospec=True, side_effect=flaky_save):
+            await self.executor().run(job.id)
+
+        await job.refresh_from_db()
+        assert job.status == BackgroundJobStatus.COMPLETED
+        assert attempts == 2
+        self.push_service.send.assert_awaited_once()
+        assert await AlarmEvent.filter(alarm=self.alarm, event_type=AlarmEventType.SENT).count() == 1
+
+    async def test_failure_deadlock_retries_database_without_resending_push(self) -> None:
+        job = await self.create_job()
+        self.push_service.build_payload.return_value = {"title": "알림"}
+        self.push_service.send.return_value = PushResult(
+            PushResultKind.EXPIRED,
+            410,
+            "PUSH_SUBSCRIPTION_EXPIRED",
+        )
+        original_save = PushSubscription.save
+        attempts = 0
+
+        async def flaky_save(instance, *args, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise OperationalError(1213, "Deadlock found")
+            return await original_save(instance, *args, **kwargs)
+
+        with patch.object(PushSubscription, "save", autospec=True, side_effect=flaky_save):
+            await self.executor().run(job.id)
+
+        await job.refresh_from_db()
+        assert job.status == BackgroundJobStatus.FAILED
+        assert attempts == 2
+        self.push_service.send.assert_awaited_once()
+        assert await AlarmEvent.filter(alarm=self.alarm, event_type=AlarmEventType.FAILED).count() == 1
+
+    async def test_completion_recovers_lost_commit_ack_without_duplicate_event(self) -> None:
+        job = await self.create_job()
+        self.push_service.build_payload.return_value = {"title": "알림"}
+        self.push_service.send.return_value = PushResult(PushResultKind.SUCCESS, 201)
+        executor = self.executor()
+        persist = executor._persist_push_completion
+        attempts = 0
+
+        async def lost_ack(*args):
+            nonlocal attempts
+            attempts += 1
+            await persist(*args)
+            if attempts == 1:
+                raise DBConnectionError("commit acknowledgement lost")
+
+        with patch.object(executor, "_persist_push_completion", side_effect=lost_ack):
+            await executor.run(job.id)
+
+        await job.refresh_from_db()
+        assert job.status == BackgroundJobStatus.COMPLETED
+        assert attempts == 2
+        assert await AlarmEvent.filter(alarm=self.alarm, event_type=AlarmEventType.SENT).count() == 1
+        self.push_service.send.assert_awaited_once()
+
     async def test_legacy_stale_processing_becomes_unknown(self) -> None:
         job = await self.create_job()
         await BackgroundJob.filter(id=job.id).update(
@@ -213,6 +353,19 @@ class TestAlarmBackgroundTaskExecutor(TestCase):
         await job.refresh_from_db()
         assert job.status == BackgroundJobStatus.FAILED
         assert job.error_code == "PUSH_DELIVERY_UNKNOWN"
+
+    async def test_recovery_preserves_processing_job_with_active_lease(self) -> None:
+        job = await self.create_job()
+        await BackgroundJob.filter(id=job.id).update(
+            status=BackgroundJobStatus.PROCESSING,
+            started_at=self.now,
+            lease_expires_at=self.now + timedelta(minutes=1),
+        )
+
+        await self.executor().recover_stalled_processing(self.now)
+
+        await job.refresh_from_db()
+        assert job.status == BackgroundJobStatus.PROCESSING
 
     async def test_recovery_returns_only_queued_and_due_retry_jobs(self) -> None:
         queued = await self.create_job()
@@ -270,6 +423,21 @@ class BlockingExecutor(RecordingExecutor):
         await self.release.wait()
 
 
+class FlakyPollingExecutor(RecordingExecutor):
+    def __init__(self) -> None:
+        super().__init__()
+        self.poll_count = 0
+        self.recovered_after_failure = asyncio.Event()
+
+    async def poll_due_alarm_job_ids(self) -> list[int]:
+        self.poll_count += 1
+        if self.poll_count == 2:
+            raise RuntimeError("temporary database outage")
+        if self.poll_count >= 3:
+            self.recovered_after_failure.set()
+        return []
+
+
 async def test_manager_recovers_then_polls_without_http_requests() -> None:
     executor = RecordingExecutor(recoverable=[11], due=[12])
     manager = AlarmBackgroundTaskManager(executor, poll_seconds=0.01)
@@ -305,3 +473,14 @@ async def test_manager_shutdown_cancels_running_jobs() -> None:
     await manager.shutdown()
 
     assert manager.active_job_ids == set()
+
+
+async def test_manager_continues_polling_after_transient_tick_failure() -> None:
+    executor = FlakyPollingExecutor()
+    manager = AlarmBackgroundTaskManager(executor, poll_seconds=0.01)
+
+    await manager.start()
+    await asyncio.wait_for(executor.recovered_after_failure.wait(), timeout=0.1)
+    await manager.shutdown()
+
+    assert executor.poll_count >= 3

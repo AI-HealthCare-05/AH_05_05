@@ -26,24 +26,6 @@ class TestBackgroundJobService(TestCase):
         self.scheduler = AsyncMock()
         self.service = BackgroundJobService()
 
-    async def test_alarm_job_creation_is_idempotent(self):
-        first, first_created = await self.service.create_alarm_job(
-            self.alarm,
-            self.subscription,
-            self.alarm.next_trigger_at,
-        )
-        second, second_created = await self.service.create_alarm_job(
-            self.alarm,
-            self.subscription,
-            self.alarm.next_trigger_at,
-        )
-
-        assert first.id == second.id
-        assert first_created is True
-        assert second_created is False
-        assert first.reference_table == "alarms"
-        assert first.reference_id == self.alarm.id
-
     async def test_manual_retry_creates_child_of_failed_job(self):
         event = await AlarmEvent.create(
             alarm=self.alarm,

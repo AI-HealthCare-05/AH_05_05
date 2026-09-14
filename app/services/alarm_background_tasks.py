@@ -123,11 +123,12 @@ class AlarmBackgroundTaskManager:
                 try:
                     await asyncio.wait_for(self._stop.wait(), timeout=self.poll_seconds)
                 except TimeoutError:
-                    await self._tick()
+                    try:
+                        await self._tick()
+                    except Exception:
+                        logger.exception("Alarm background-task polling failed")
         except asyncio.CancelledError:
             raise
-        except Exception:
-            logger.exception("Alarm background-task polling failed")
 
     async def _tick(self) -> None:
         now = self.now_provider()
@@ -240,7 +241,7 @@ class AlarmBackgroundTaskExecutor:
                         max_retry_count=config.ALARM_MAX_RETRY_COUNT,
                     )
                 except IntegrityError:
-                    job = await BackgroundJob.get(idempotency_key=key)
+                    job = await BackgroundJob.get(idempotency_key=key).using_db(connection)
             if job.status in {BackgroundJobStatus.QUEUED, BackgroundJobStatus.RETRY_WAITING}:
                 job_ids.append(job.id)
         return job_ids

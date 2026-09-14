@@ -48,6 +48,14 @@ test("task management template exposes pagination below the table", () => {
   assert.ok(tableEnd < html.indexOf("data-task-pagination"));
 });
 
+test("task status help describes background tasks without removed worker infrastructure", () => {
+  const html = readFileSync(templatePath, "utf8");
+
+  assert.doesNotMatch(html, /Redis|ARQ|alarm-worker/);
+  assert.match(html, /백그라운드 작업이 등록되어 실행을 기다릴 때/);
+  assert.match(html, /백그라운드 작업이 실행을 시작했을 때/);
+});
+
 test("task list masks the user name and appends the user ID", () => {
   assert.equal(taskManagement.formatTaskUser({ userName: "김은미", userId: 9 }), "김*미(9)");
   assert.equal(taskManagement.formatTaskUser({ userName: "김미", userId: 10 }), "김미(10)");
