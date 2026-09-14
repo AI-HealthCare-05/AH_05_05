@@ -125,10 +125,14 @@ class EmailBackgroundTaskExecutor:
 
     async def recoverable_job_ids(self, now: datetime) -> list[int]:
         del now
-        rows = await BackgroundJob.filter(
-            job_type=BackgroundJobType.EMAIL,
-            status__in=_UNFINISHED_STATUSES,
-        ).order_by("id").values_list("id", flat=True)
+        rows = (
+            await BackgroundJob.filter(
+                job_type=BackgroundJobType.EMAIL,
+                status__in=_UNFINISHED_STATUSES,
+            )
+            .order_by("id")
+            .values_list("id", flat=True)
+        )
         return list(rows)
 
     async def run(self, job_id: int) -> None:
@@ -169,9 +173,7 @@ class EmailBackgroundTaskExecutor:
         claimable |= Q(status=BackgroundJobStatus.PROCESSING) & (
             Q(lease_expires_at__lte=now) | Q(lease_expires_at=None)
         )
-        updated = await BackgroundJob.filter(
-            Q(id=job_id, job_type=BackgroundJobType.EMAIL) & claimable
-        ).update(
+        updated = await BackgroundJob.filter(Q(id=job_id, job_type=BackgroundJobType.EMAIL) & claimable).update(
             status=BackgroundJobStatus.PROCESSING,
             started_at=now,
             updated_at=now,
@@ -364,11 +366,14 @@ class EmailBackgroundTaskExecutor:
         job: BackgroundJob,
     ) -> str | None:
         if payload.template is EmailTemplate.SIGNUP_VERIFICATION_CODE:
-            sendable = payload.verification_id is not None and await EmailVerification.filter(
-                id=payload.verification_id,
-                expires_at__gt=self.now_provider(),
-                consumed_at=None,
-            ).exists()
+            sendable = (
+                payload.verification_id is not None
+                and await EmailVerification.filter(
+                    id=payload.verification_id,
+                    expires_at__gt=self.now_provider(),
+                    consumed_at=None,
+                ).exists()
+            )
             if not sendable:
                 return "EMAIL_VERIFICATION_EXPIRED"
         elif payload.template is EmailTemplate.USER_PASSWORD_RESET:
