@@ -18,9 +18,7 @@ def test_background_job_exposes_email_recovery_fields_and_indexes() -> None:
 
 
 async def test_email_background_task_migration_adds_recovery_schema() -> None:
-    migration = importlib.import_module(
-        "app.core.db.migrations.models.46_20260914000000_email_background_tasks"
-    )
+    migration = importlib.import_module("app.core.db.migrations.models.46_20260914000000_email_background_tasks")
 
     upgrade_sql = await migration.upgrade(None)
     downgrade_sql = await migration.downgrade(None)
@@ -37,9 +35,7 @@ async def test_email_background_task_migration_adds_recovery_schema() -> None:
 
 
 def test_email_background_task_migration_state_matches_runtime_model() -> None:
-    migration = importlib.import_module(
-        "app.core.db.migrations.models.46_20260914000000_email_background_tasks"
-    )
+    migration = importlib.import_module("app.core.db.migrations.models.46_20260914000000_email_background_tasks")
     state = decompress_dict(migration.MODELS_STATE)
     background_job = state["models.BackgroundJob"]
 
