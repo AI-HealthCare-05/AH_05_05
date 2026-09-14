@@ -1,4 +1,5 @@
 import asyncio
+import importlib
 import sqlite3
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
@@ -764,7 +765,13 @@ async def test_detail_hides_other_users_participation(service: CustomChallengeSe
         await service.get(other, joined.id)
 
 
-async def test_routes_require_auth_and_serialize_camel_case(service: CustomChallengeService) -> None:
+async def test_routes_require_auth_and_serialize_camel_case(
+    service: CustomChallengeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Route-created services must use the same clock as the fixed-date fixtures.
+    monkeypatch.setattr(
+        importlib.import_module("app.apis.v1.challenge_router"), "CustomChallengeService", lambda: service
+    )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         unauthenticated = await client.get("/api/v1/user/custom-challenge-recommendations")
     assert unauthenticated.status_code == 401
@@ -778,10 +785,10 @@ async def test_routes_require_auth_and_serialize_camel_case(service: CustomChall
             f"/api/v1/user/custom-challenge-recommendations/{medication_template.id}/participations",
             json={"targetIds": [episode.id], "idempotencyKey": "route-request"},
         )
+        assert joined.status_code == 201, joined.text
         listed = await client.get("/api/v1/user/custom-challenge-participations")
         detail = await client.get(f"/api/v1/user/custom-challenge-participations/{joined.json()['id']}")
 
-    assert joined.status_code == 201, joined.text
     assert joined.json()["templateId"] == medication_template.id
     assert "targetCount" in joined.json()
     assert listed.json()["items"][0]["targetCount"] == detail.json()["targetCount"]
