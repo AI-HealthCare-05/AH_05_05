@@ -8,13 +8,16 @@ from tortoise.exceptions import DBConnectionError, OperationalError
 from app.core import config
 from app.models.alarms import Alarm, AlarmEvent, PushSubscription
 from app.models.background_jobs import BackgroundJob
+from app.models.care import FollowUpVisit
 from app.models.enums import (
     AccountStatus,
     AlarmEventType,
     AlarmType,
     BackgroundJobStatus,
     MealSlot,
+    SupplementStatus,
 )
+from app.models.supplement_nutrients import UserSupplementNutrient, UserSupplementNutrientSlot
 from app.models.users import UserSettings
 from app.services.alarm_background_tasks import (
     ALARM_TASK_LEASE,
@@ -256,6 +259,67 @@ class TestAlarmBackgroundTaskExecutor(TestCase):
         await job.refresh_from_db()
         assert job.status == BackgroundJobStatus.CANCELLED
         self.push_service.send.assert_not_awaited()
+
+    async def test_nutrient_push_uses_current_active_slot_content(self) -> None:
+        job = await self.create_job()
+        self.alarm.alarm_type = AlarmType.NUTRIENT
+        self.alarm.care_episode_id = None
+        await self.alarm.save(update_fields=["alarm_type", "care_episode_id"])
+        registration = await UserSupplementNutrient.create(
+            user=self.user,
+            supplement_nutrient_id=None,
+            custom_name="현재 복용 중인 영양제",
+            dose_amount=1,
+            dose_unit="정",
+            start_date=self.now.date(),
+            status=SupplementStatus.ACTIVE,
+        )
+        await UserSupplementNutrientSlot.create(user_suppl_nutrient=registration, slot=MealSlot.MORNING)
+        self.push_service.build_payload = WebPushService.build_payload
+        self.push_service.send.return_value = PushResult(PushResultKind.SUCCESS, 201)
+
+        await self.executor().run(job.id)
+
+        payload = self.push_service.send.await_args.args[1]
+        assert payload["title"] == "영양제 알림"
+        assert payload["body"] == "영양제 챙기실 시간이에요"
+
+    async def test_follow_up_push_uses_current_visit_details(self) -> None:
+        job = await self.create_job()
+        visit = await FollowUpVisit.create(
+            user=self.user,
+            visit_date=self.now.date() + timedelta(days=1),
+            visit_time="14:30:00",
+            hospital="서울성모병원",
+        )
+        self.alarm.alarm_type = AlarmType.FOLLOW_UP_VISIT
+        self.alarm.meal_slot = None
+        self.alarm.care_episode_id = None
+        self.alarm.follow_up_visit_id = visit.id
+        await self.alarm.save(update_fields=["alarm_type", "meal_slot", "care_episode_id", "follow_up_visit_id"])
+        self.push_service.build_payload = WebPushService.build_payload
+        self.push_service.send.return_value = PushResult(PushResultKind.SUCCESS, 201)
+
+        await self.executor().run(job.id)
+
+        payload = self.push_service.send.await_args.args[1]
+        assert payload["title"] == "진료 일정 알림"
+        assert payload["body"] == "내일 14:30 서울성모병원 진료가 있어요"
+
+    async def test_guide_push_preserves_alarm_message(self) -> None:
+        job = await self.create_job()
+        self.alarm.alarm_type = AlarmType.GUIDE_CHECK
+        self.alarm.title = "생활가이드 알림"
+        self.alarm.message = "오늘의 생활가이드를 확인해 주세요."
+        await self.alarm.save(update_fields=["alarm_type", "title", "message"])
+        self.push_service.build_payload = WebPushService.build_payload
+        self.push_service.send.return_value = PushResult(PushResultKind.SUCCESS, 201)
+
+        await self.executor().run(job.id)
+
+        payload = self.push_service.send.await_args.args[1]
+        assert payload["title"] == "생활가이드 알림"
+        assert payload["body"] == "오늘의 생활가이드를 확인해 주세요."
 
     async def test_cancelled_job_is_not_sent(self) -> None:
         job = await self.create_job()
