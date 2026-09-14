@@ -119,9 +119,11 @@ async def test_migration_excludes_superseded_draft_fields_and_downgrades_child_f
     ]
 
 
-def test_final_merge_migration_47_preserves_all_models_and_matches_registered_metadata() -> None:
+def test_final_migration_48_preserves_all_models_and_matches_registered_metadata() -> None:
     current = decompress_dict(
-        import_module("app.core.db.migrations.models.47_20260914010000_merge_email_and_medication_heads").MODELS_STATE
+        import_module(
+            "app.core.db.migrations.models.48_20260914214228_remove_unused_chat_and_reference_fields"
+        ).MODELS_STATE
     )
 
     Tortoise.init_models(TORTOISE_APP_MODELS, "models")

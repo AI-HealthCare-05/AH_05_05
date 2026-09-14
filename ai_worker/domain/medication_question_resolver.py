@@ -230,7 +230,10 @@ class RuleBasedMedicationQuestionResolver:
             )
         catalog = catalog_index.catalog
 
-        tokens = self._question_tokens(normalized_question)
+        tokens = self._question_tokens(
+            normalized_question,
+            catalog_index=catalog_index,
+        )
         spacing_resolution = self._spacing_resolution(
             question=normalized_question,
             catalog=catalog,
@@ -847,7 +850,10 @@ class RuleBasedMedicationQuestionResolver:
         question: str,
         catalog_index: _CatalogIndex,
     ) -> MedicationExpressionNormalizationStrategy:
-        tokens = cls._question_tokens(question)
+        tokens = cls._question_tokens(
+            question,
+            catalog_index=catalog_index,
+        )
         for start, end, key in cls._matching_spans(
             question=question,
             tokens=tokens,
@@ -899,7 +905,10 @@ class RuleBasedMedicationQuestionResolver:
         question: str,
         catalog_index: _CatalogIndex,
     ) -> list[MedicationQueryEntity]:
-        tokens = cls._question_tokens(question)
+        tokens = cls._question_tokens(
+            question,
+            catalog_index=catalog_index,
+        )
         matches = cls._matching_spans(
             question=question,
             tokens=tokens,
@@ -1040,14 +1049,30 @@ class RuleBasedMedicationQuestionResolver:
         ]
 
     @classmethod
-    def _question_tokens(cls, question: str) -> list[_QuestionToken]:
+    def _question_tokens(
+        cls,
+        question: str,
+        *,
+        catalog_index: _CatalogIndex,
+    ) -> list[_QuestionToken]:
         tokens: list[_QuestionToken] = []
         for match in cls._TOKEN.finditer(question):
-            surface = match.group()
+            original_surface = match.group()
+            surface = original_surface
             previous = ""
             while previous != surface:
                 previous = surface
                 surface = cls._TRAILING_PARTICLE.sub("", surface)
+            if not surface or cls._has_catalog_expression(
+                original_surface,
+                catalog_index=catalog_index,
+            ):
+                surface = original_surface
+            elif original_surface.endswith("이") and not cls._has_catalog_expression(
+                surface,
+                catalog_index=catalog_index,
+            ):
+                surface = original_surface
             if surface:
                 tokens.append(
                     _QuestionToken(
@@ -1057,6 +1082,15 @@ class RuleBasedMedicationQuestionResolver:
                     )
                 )
         return tokens
+
+    @classmethod
+    def _has_catalog_expression(
+        cls,
+        surface: str,
+        *,
+        catalog_index: _CatalogIndex,
+    ) -> bool:
+        return any(key in catalog_index.entries_by_expression for key in cls._expression_keys(surface))
 
     @classmethod
     def _candidate_surfaces(
