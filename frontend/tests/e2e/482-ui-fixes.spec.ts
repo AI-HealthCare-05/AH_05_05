@@ -62,6 +62,8 @@ test('달력은 범위 밖 날짜를 막고 12월에서 다음 해 1월로 이�
   await sheet.getByRole('button', { name: '시작일 달력 열기' }).click();
   const calendar = sheet.getByRole('region', { name: '시작일 달력' });
   await expect(calendar.getByRole('heading', { name: '2025년 12월' })).toBeVisible();
+  await expect(calendar.getByRole('button', { name: '2025년 12월 31일' }))
+    .toHaveAttribute('aria-pressed', 'true');
   await calendar.getByRole('button', { name: '다음 달' }).click();
   await expect(calendar.getByRole('heading', { name: '2026년 1월' })).toBeVisible();
 
@@ -69,6 +71,36 @@ test('달력은 범위 밖 날짜를 막고 12월에서 다음 해 1월로 이�
   const endCalendar = sheet.getByRole('region', { name: '종료일 달력' });
   await expect(endCalendar.getByRole('button', { name: '2026년 9월 3일', exact: true })).toBeDisabled();
 });
+
+for (const entry of [
+  {
+    name: '허용 범위보다 이른 날짜',
+    typed: '20230101',
+    formatted: '2023-01-01',
+    expectedMonth: '2024년 9월',
+    selectableDate: '2024년 9월 2일',
+  },
+  {
+    name: '허용 범위보다 늦은 날짜',
+    typed: '20270101',
+    formatted: '2027-01-01',
+    expectedMonth: '2026년 9월',
+    selectableDate: '2026년 9월 2일',
+  },
+]) {
+  test(`${entry.name}를 입력해도 달력은 가장 가까운 허용 월에서 복구한다`, async ({ page }) => {
+    const sheet = await openCustomPeriod(page);
+    const from = sheet.getByLabel('시작일', { exact: true });
+    await from.fill(entry.typed);
+    await expect(from).toHaveValue(entry.formatted);
+    await sheet.getByRole('button', { name: '시작일 달력 열기' }).click();
+
+    const calendar = sheet.getByRole('region', { name: '시작일 달력' });
+    await expect(calendar.getByRole('heading', { name: entry.expectedMonth })).toBeVisible();
+    await expect(calendar.getByRole('button', { name: entry.selectableDate, exact: true })).toBeEnabled();
+    await expect(from).toHaveValue(entry.formatted);
+  });
+}
 
 test('직접 입력은 엄격한 ISO 날짜 형식을 검증한다', async ({ page }) => {
   const sheet = await openCustomPeriod(page);

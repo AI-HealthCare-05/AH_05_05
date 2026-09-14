@@ -49,6 +49,13 @@ function koreanDateLabel(date: Date): string {
   return `${date.getFullYear()}년 ${date.getMonth() + 1}월 ${date.getDate()}일`;
 }
 
+function clampDateToRange(date: Date, min: string, max: string): Date {
+  const isoDate = localIsoDate(date);
+  if (isoDate < min) return parseLocalIsoDate(min) ?? date;
+  if (isoDate > max) return parseLocalIsoDate(max) ?? date;
+  return date;
+}
+
 export function MedicationPeriodCalendar({
   label,
   value,
@@ -60,7 +67,9 @@ export function MedicationPeriodCalendar({
   const calendarRef = useRef<HTMLElement>(null);
   const selectedDate = parseLocalIsoDate(value);
   const maxDate = parseLocalIsoDate(max) ?? new Date();
-  const [visibleMonth, setVisibleMonth] = useState(() => monthStart(selectedDate ?? maxDate));
+  const [visibleMonth, setVisibleMonth] = useState(() =>
+    monthStart(clampDateToRange(selectedDate ?? maxDate, min, max)),
+  );
   const previousMonth = shiftMonth(visibleMonth, -1);
   const nextMonth = shiftMonth(visibleMonth, 1);
   const firstWeekday = visibleMonth.getDay();
