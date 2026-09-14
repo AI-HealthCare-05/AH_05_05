@@ -6,6 +6,7 @@ from contextlib import AsyncExitStack
 from pathlib import Path
 
 import yaml
+from pydantic import SecretStr
 from qdrant_client import AsyncQdrantClient
 from tortoise import Tortoise
 
@@ -94,6 +95,21 @@ def build_evaluation_vector_store(
         collection_name=collection_name,
         vector_size=settings.OPENAI_EMBEDDING_DIMENSIONS,
         distance=settings.KNOWLEDGE_VECTOR_DISTANCE,
+    )
+
+
+def build_evaluation_embedding_provider(
+    *,
+    settings: Config,
+    api_key: SecretStr,
+) -> OpenAIEmbeddingProvider:
+    """OpenAI 반환 벡터의 norm 검증 계약으로 평가 임베딩을 생성한다."""
+    return OpenAIEmbeddingProvider(
+        model=settings.OPENAI_EMBEDDING_MODEL,
+        dimensions=settings.OPENAI_EMBEDDING_DIMENSIONS,
+        api_key=api_key,
+        timeout_seconds=settings.OPENAI_TIMEOUT_SECONDS,
+        max_retries=settings.OPENAI_MAX_RETRIES,
     )
 
 
@@ -258,13 +274,9 @@ async def run_cli(
             timeout=resolved_settings.QDRANT_TIMEOUT_SECONDS,
         )
         stack.push_async_callback(qdrant_client.close)
-        embedding_provider = OpenAIEmbeddingProvider(
-            model=resolved_settings.OPENAI_EMBEDDING_MODEL,
-            dimensions=resolved_settings.OPENAI_EMBEDDING_DIMENSIONS,
+        embedding_provider = build_evaluation_embedding_provider(
+            settings=resolved_settings,
             api_key=api_key,
-            timeout_seconds=resolved_settings.OPENAI_TIMEOUT_SECONDS,
-            max_retries=resolved_settings.OPENAI_MAX_RETRIES,
-            normalize_vectors=(resolved_settings.KNOWLEDGE_VECTOR_DISTANCE == KnowledgeVectorDistance.DOT),
         )
         vector_store = build_evaluation_vector_store(
             settings=resolved_settings,

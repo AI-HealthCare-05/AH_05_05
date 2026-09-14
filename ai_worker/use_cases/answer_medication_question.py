@@ -661,6 +661,7 @@ class AnswerMedicationQuestionUseCase:
                         else []
                     ),
                     evidence_coverage=evidence_coverage,
+                    evidence_reasoning=evidence_reasoning,
                 ),
                 route=route,
                 safety_status=safety_status,
@@ -866,13 +867,10 @@ class AnswerMedicationQuestionUseCase:
         interaction_pair_keys: list[str],
     ) -> list[RetrievedKnowledgeChunk]:
         requested_pair_keys = set(interaction_pair_keys)
+        if not requested_pair_keys:
+            return []
         return [
-            chunk
-            for chunk in answer_chunks
-            if (
-                chunk.metadata.section_type is KnowledgeSectionType.INTERACTION
-                or bool(requested_pair_keys.intersection(chunk.metadata.interaction_pair_keys))
-            )
+            chunk for chunk in answer_chunks if requested_pair_keys.intersection(chunk.metadata.interaction_pair_keys)
         ]
 
     async def current_medication_names(
@@ -1668,6 +1666,7 @@ class AnswerMedicationQuestionUseCase:
             or not request.history
             or resolution.scope is not MedicationQuestionScope.IN_SCOPE
             or not resolution.entities
+            or len(resolution.entities) != 1
             or self._is_explicit_entity_guide_request(
                 question=request.question,
                 resolution=resolution,

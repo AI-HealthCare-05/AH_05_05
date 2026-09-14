@@ -6,6 +6,7 @@ import pytest
 from tortoise.contrib.test import TestCase
 from tortoise.transactions import in_transaction
 
+from app.core import config
 from app.core.email.verification import EmailVerificationTokenCodec
 from app.core.exceptions import (
     EmailVerificationAttemptsExceededError,
@@ -33,6 +34,8 @@ class StubEmailJobService:
 class TestEmailVerificationService(TestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
+        self.original_verification_ttl_seconds = config.EMAIL_VERIFICATION_TTL_SECONDS
+        config.EMAIL_VERIFICATION_TTL_SECONDS = 180
         self.now = datetime(2026, 9, 7, 12, 0, tzinfo=SEOUL)
         self.jobs = StubEmailJobService()
         self.codec = EmailVerificationTokenCodec("verification-secret", algorithm="HS256", ttl_seconds=600)
@@ -43,6 +46,10 @@ class TestEmailVerificationService(TestCase):
             now_provider=lambda: self.now,
             secret="verification-secret",
         )
+
+    async def asyncTearDown(self) -> None:
+        config.EMAIL_VERIFICATION_TTL_SECONDS = self.original_verification_ttl_seconds
+        await super().asyncTearDown()
 
     async def test_request_stores_digest_only_and_enqueues_plain_code_in_memory(self) -> None:
         result = await self.service.request("User@Example.com")

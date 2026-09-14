@@ -275,7 +275,7 @@ def test_assemble_labels_active_intake_interactions_separately() -> None:
     assert "☑️ **확인하지 못한 조합**" not in answer
 
 
-def test_assemble_labels_unverified_interaction_without_confirmed_heading() -> None:
+def test_assemble_omits_unverified_interaction_without_confirmed_evidence() -> None:
     answer = MedicationAnswerAssembler().assemble(
         context=ActiveIntakeContext(user_id=1),
         guide=None,
@@ -285,9 +285,8 @@ def test_assemble_labels_unverified_interaction_without_confirmed_heading() -> N
     )
 
     assert "🔁 **확인된 상호작용**" not in answer
-    assert "☑️ **확인하지 못한 조합**" in answer
-    assert "현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 못했습니다." in answer
-    assert "확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다." in answer
+    assert "확인하지 못한 조합" not in answer
+    assert "안전하다는 뜻은 아닙니다" not in answer
 
 
 def test_assemble_separates_question_interaction_from_active_medication_names() -> None:
@@ -318,7 +317,7 @@ def test_assemble_separates_question_interaction_from_active_medication_names() 
 
     assert "💊 **복약정보**\n- 세레콕시브캡슐200mg\n\n---\n\n🔁 **질문 상호작용**" in answer
     assert "**[타이레놀-마그네슘]**" in answer
-    assert "- 현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 못했습니다." in answer
+    assert "확인하지 못한 조합" not in answer
     assert "세레콕시브캡슐200mg ↔" not in answer
 
 
@@ -374,7 +373,7 @@ def test_assemble_places_verified_question_interaction_content_under_its_pair() 
     assert "확인하지 못했습니다" not in answer
 
 
-def test_assemble_does_not_repeat_unverified_interaction_notice_as_missing_evidence() -> None:
+def test_assemble_omits_unverified_interaction_notice_as_missing_evidence() -> None:
     answer = MedicationAnswerAssembler().assemble(
         context=ActiveIntakeContext(user_id=1),
         guide=None,
@@ -388,11 +387,11 @@ def test_assemble_does_not_repeat_unverified_interaction_notice_as_missing_evide
         ),
     )
 
-    assert answer.count("☑️ **확인하지 못한 조합**") == 1
+    assert "☑️ **확인하지 못한 조합**" not in answer
     assert "근거를 확인하지 못한 항목" not in answer
 
 
-def test_assemble_uses_one_generic_notice_when_every_multi_entity_pair_is_unverified() -> None:
+def test_assemble_uses_one_direct_evidence_gap_line_when_every_pair_is_unverified() -> None:
     pairs = [
         MedicationInteractionQueryPair(
             left_name=left_name,
@@ -416,8 +415,4 @@ def test_assemble_uses_one_generic_notice_when_every_multi_entity_pair_is_unveri
         question_interaction_pairs=pairs,
     )
 
-    assert answer == (
-        "☑️ **확인하지 못한 조합**\n"
-        "현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 "
-        "못했습니다. 확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다."
-    )
+    assert answer == "🔁 **질문 상호작용**\n- 질문한 조합에 대한 직접 근거를 찾지 못했습니다."

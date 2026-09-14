@@ -13,12 +13,13 @@ trace_reference_policy: >-
   LangSmith 비교는 질문 SHA-256과 실행 시점의 ChatMessage.langsmith_trace_id로만 수행한다.
   이 fixture에는 실제 사용자·세션·Trace ID를 기록하지 않는다.
 experiment_goal: >-
-  source-backed typed entity와 FOOD 메타데이터 도입 전후를 같은 21문항으로 비교하여,
+  source-backed typed entity와 FOOD 메타데이터 도입 전후를 같은 20문항으로 비교하여,
   정확한 대상·pair·근거가 유지되는지 검증한다.
 activation_rule: >-
-  ACTIVE_PHASE의 모든 문항이 통과하고 잘못된 대상 혼입이 0건이며, 기존 PASS 11건보다
-  2026-09-08 자동 v5 기준선 PASS 13건보다 전체 PASS가 감소하지 않을 때만 새 불변
-  Qdrant 릴리스를 활성화 후보로 검토한다.
+  검색 기준선의 고정 20문항 중 ACTIVE_PHASE의 모든 문항이 통과하고 잘못된 대상 혼입이
+  0건이며, 기존 PASS 11건보다 2026-09-08 자동 v5 기준선 PASS 13건보다 전체 PASS가
+  감소하지 않을 때만 새 불변 Qdrant 릴리스를 활성화 후보로 검토한다. 등록 복약정보를
+  전제로 하는 조합은 Chat Core E2E 고정세트에서 별도로 검증한다.
 metric_rationales:
   recall_at_20: 관련 근거가 재정렬 전 후보 20건 안에 포함되는지 확인한다.
   hit_at_5: 최종 답변에 전달되는 상위 5건에 정답 근거가 있는지 확인한다.
@@ -331,14 +332,23 @@ cases:
     question: 타이레놀과 술을 같이 먹어도 되나요?
     expected_scope: IN_SCOPE
     expected_resolution_status: UNCHANGED
-    expected_entity_names: [타이레놀산500밀리그램(아세트아미노펜)]
+    expected_entity_names: [아세트아미노펜, 알코올]
     expected_entities:
-      - canonical_name: 타이레놀산500밀리그램(아세트아미노펜)
-        entity_type: PRODUCT_NAME
+      - canonical_name: 아세트아미노펜
+        entity_type: INGREDIENT_NAME
         kind: DRUG
         expected_sources: [RDBMS]
-    evidence_kind: NO_EVIDENCE
-    evaluation_rationale: 술이 출처 기반 FOOD 카탈로그에 없으면 약-음식 pair나 임의 음식 근거를 생성하지 않는지 확인한다.
+      - canonical_name: 알코올
+        entity_type: FOOD_CATEGORY
+        kind: FOOD
+        expected_sources: [QDRANT]
+    expected_interaction_types: [DRUG_FOOD]
+    expected_section_types: [INTERACTION]
+    expected_document_ids: [kpicia_pharm_review-3ce7212b15e7c2de]
+    evidence_kind: QDRANT_GOLD
+    evaluation_rationale: 제품명은 성분으로 정규화하고, 술은 출처 기반 FOOD 카탈로그의 알코올로 해석해 직접 약-음식 근거를 검색하는지 확인한다.
+    gold_document_rationales:
+      kpicia_pharm_review-3ce7212b15e7c2de: 아세트아미노펜과 알코올의 직접 상호작용을 설명한다.
 
   - query_id: alphabet-pronunciation-vitamin-d
     phase: ACTIVE_PHASE
@@ -409,25 +419,3 @@ cases:
     expect_no_rag: true
     evidence_kind: NOT_APPLICABLE
     evaluation_rationale: 활성 복용 목록 전체 전개는 patient-context 확장 단계에서 검증한다.
-
-  - query_id: deferred-safety-calcium-iron
-    phase: DEFERRED_SAFETY
-    historical_outcome: FAIL
-    expression_category: SUPPLEMENT_SUPPLEMENT
-    question: 등록한 칼슘과 철분을 같이 먹어도 되나요?
-    expected_scope: IN_SCOPE
-    expected_resolution_status: UNCHANGED
-    expected_entity_names: [칼슘, 철분]
-    expected_entities:
-      - canonical_name: 칼슘
-        entity_type: INGREDIENT_NAME
-        kind: SUPPLEMENT
-        expected_sources: [PATIENT_CONTEXT]
-      - canonical_name: 철분
-        entity_type: INGREDIENT_NAME
-        kind: SUPPLEMENT
-        expected_sources: [PATIENT_CONTEXT]
-    expected_interaction_types: [SUPPLEMENT_SUPPLEMENT]
-    expected_section_types: [INTERACTION]
-    evidence_kind: NOT_APPLICABLE
-    evaluation_rationale: 환자 등록정보와 안전성 validator의 결합은 후속 safety 정밀화에서 처리한다.

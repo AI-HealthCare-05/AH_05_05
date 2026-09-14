@@ -13,6 +13,11 @@ from ai_worker.rag.splitters.knowledge_splitter import (
     KnowledgeSplitter,
     WordTokenCounter,
 )
+from ai_worker.schemas.interaction import (
+    InteractionEntity,
+    InteractionEntityKind,
+    build_interaction_pair_key,
+)
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeBoundingBox,
@@ -322,6 +327,72 @@ def test_split_preserves_manifest_aliases_with_detected_official_ingredient_name
         "DHA",
         "EPA 및 DHA 함유 유지",
     ]
+
+
+def test_split_uses_reviewed_annotation_boundaries_to_scope_warfarin_vitamin_k_pair(
+    tmp_path: Path,
+) -> None:
+    annotation_path = tmp_path / "interaction-annotations.yaml"
+    annotation_path.write_text(
+        """
+schema_version: knowledge-interaction-annotations-v1
+documents:
+  - document_id: reviewed-warfarin
+    section_boundaries: ["1.차", "2.캐모마일"]
+    pairs:
+      - pair_type: DRUG_SUPPLEMENT
+        evidence_phrases: ["비타민 K를 다량 함유"]
+        left:
+          kind: DRUG
+          display_name: 와파린
+          aliases: [와파린, warfarin]
+        right:
+          kind: SUPPLEMENT
+          display_name: 비타민 K
+          aliases: [비타민 K, vitamin K]
+""".strip(),
+        encoding="utf-8",
+    )
+    registry = KnowledgeInteractionAnnotationRegistry.from_yaml(annotation_path)
+    page = build_page(
+        """1.차
+와파린은 비타민 K를 다량 함유한 녹차와 함께 복용할 때 주의가 필요합니다.
+2.캐모마일
+와파린 치료와 함께 캐모마일차를 복용한 환자에게 출혈 위험이 증가했다는 보고가 있습니다.
+""",
+        document_type=KnowledgeDocumentType.PHARM_REVIEW,
+        title="와파린과 생약 및 식품의 상호작용",
+        source_id="kpicia_pharm_review",
+    ).model_copy(
+        update={
+            "metadata": build_page(
+                "placeholder",
+                document_type=KnowledgeDocumentType.PHARM_REVIEW,
+                title="와파린과 생약 및 식품의 상호작용",
+                source_id="kpicia_pharm_review",
+            ).metadata.model_copy(
+                update={
+                    "document_id": "reviewed-warfarin",
+                    "drug_names": ["와파린"],
+                    "ingredient_names": ["비타민 K"],
+                }
+            )
+        }
+    )
+    pair_key = build_interaction_pair_key(
+        InteractionEntity(kind=InteractionEntityKind.DRUG, display_name="와파린"),
+        InteractionEntity(kind=InteractionEntityKind.SUPPLEMENT, display_name="비타민 K"),
+    )
+
+    chunks = KnowledgeSplitter(
+        token_counter=WordTokenCounter(),
+        interaction_annotations=registry,
+    ).split([page])
+
+    vitamin_k_chunk = next(chunk for chunk in chunks if "비타민 K" in chunk.content)
+    chamomile_chunk = next(chunk for chunk in chunks if "캐모마일" in chunk.content)
+    assert pair_key in vitamin_k_chunk.metadata.interaction_pair_keys
+    assert pair_key not in chamomile_chunk.metadata.interaction_pair_keys
 
 
 def build_research_page_with_table(

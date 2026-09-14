@@ -135,6 +135,54 @@ documents:
     )
 
 
+def test_exposes_reviewed_document_section_boundaries(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "annotations.yaml"
+    manifest_path.write_text(
+        """
+schema_version: knowledge-interaction-annotations-v1
+documents:
+  - document_id: reviewed-warfarin
+    section_boundaries: ["1. 차", "2. 캐모마일"]
+    pairs:
+      - pair_type: DRUG_SUPPLEMENT
+        left:
+          kind: DRUG
+          display_name: 와파린
+          aliases: [warfarin]
+        right:
+          kind: SUPPLEMENT
+          display_name: 비타민 K
+          aliases: [vitamin K]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    registry = KnowledgeInteractionAnnotationRegistry.from_yaml(manifest_path)
+
+    assert registry.section_boundaries("reviewed-warfarin") == ["1. 차", "2. 캐모마일"]
+
+
+def test_source_backed_warfarin_vitamin_k_annotation_excludes_chamomile_section() -> None:
+    repo_root = Path(__file__).parents[4]
+    registry = KnowledgeInteractionAnnotationRegistry.from_yaml(
+        repo_root / "data/knowledge/manifests/interaction_annotations.yaml",
+    )
+    document_id = "kpicia_pharm_review-c4ea8e68b35b65b3"
+
+    vitamin_k_matches = registry.find_matches(
+        document_id=document_id,
+        text="와파린은 비타민 K 의존적인 응혈인자를 저해하여 항응고작용을 한다.",
+    )
+    chamomile_matches = registry.find_matches(
+        document_id=document_id,
+        text="와파린 치료와 함께 캐모마일차를 복용한 환자에게 출혈 위험이 증가했다.",
+    )
+
+    assert len(vitamin_k_matches) == 1
+    assert vitamin_k_matches[0].ingredient_names == ["비타민 K"]
+    assert chamomile_matches == []
+
+
 def test_source_backed_calcium_iron_annotation_uses_only_its_review_document() -> None:
     repo_root = Path(__file__).parents[4]
     registry = KnowledgeInteractionAnnotationRegistry.from_yaml(
