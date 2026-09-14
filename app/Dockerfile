@@ -6,6 +6,8 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     python3-dev \
     libffi-dev \
+    redis-server \
+    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 # 1. uv 설치 (공식 이미지에서 복사해오는 가장 깔끔한 방법)
@@ -22,8 +24,8 @@ COPY ./app ./app
 COPY ./ai_worker ./ai_worker
 COPY ./data/reference_seed ./data/reference_seed
 
-# 5. 해당 이미지를 활용하여 도커컨테이너 실행시 실행되는 명령어입니다.
-# FastAPI를 uvicorn을 활용하여 비동기 환경으로 서버를 실행합니다.
-# --no-sync 옵션은 uv run시 uv.lock파일과 환경에 설치된 패키지들을 비교하여 없는 패키지를 설치하기 때문에
-# 불필요한 의존성을 설치하지 않기 위해 사용합니다.
-CMD ["uv", "run", "--no-sync", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "3"]
+RUN mkdir -p /run/ocr-images /run/ocr-runtime
+
+# 5. API, OCR worker, private image Redis를 supervisord 아래에서 함께 실행합니다.
+# venv Python으로 직접 진입해야 combined 런처의 exec 이후 supervisord가 PID 1이 됩니다.
+CMD ["/app/.venv/bin/python", "-m", "app.runtime.combined"]

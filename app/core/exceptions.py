@@ -489,6 +489,12 @@ class OcrJobStateConflictError(AppError):
     message = "현재 OCR 작업 상태에서는 요청을 처리할 수 없습니다."
 
 
+class OcrPreviewCleanupUnavailableError(AppError):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    code = "OCR_PREVIEW_CLEANUP_UNAVAILABLE"
+    message = "임시 사진 정리를 완료하지 못했습니다. 잠시 후 다시 시도해 주세요."
+
+
 class OcrQueueUnavailableError(AppError):
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     code = "OCR_QUEUE_UNAVAILABLE"

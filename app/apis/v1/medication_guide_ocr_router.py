@@ -266,6 +266,30 @@ async def cancel_medication_guide_ocr_job(
     )
 
 
+@medication_guide_ocr_router.post(
+    "/ocr/jobs/{ocrJobId}/release-images",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    responses={
+        status.HTTP_404_NOT_FOUND: {"model": OcrErrorResponse, "description": "OCR 작업 없음"},
+        status.HTTP_409_CONFLICT: {"model": OcrErrorResponse, "description": "처리 중인 사진은 정리할 수 없음"},
+        status.HTTP_503_SERVICE_UNAVAILABLE: {"model": OcrErrorResponse, "description": "임시 사진 정리 재시도 필요"},
+    },
+    summary="브라우저 미리보기 수신 후 서버 임시 사진 정리",
+)
+@api_timeout(OCR_FILE_API_TIMEOUT_SECONDS)
+async def release_medication_guide_ocr_images(
+    ocr_job_id: Annotated[int, Path(alias="ocrJobId")],
+    user: Annotated[User, Depends(get_request_user)],
+    service: Annotated[MedicationGuideOcrJobService, Depends(get_medication_guide_ocr_job_service)],
+) -> Response:
+    await service.release_images(user, ocr_job_id)
+    return Response(
+        status_code=status.HTTP_204_NO_CONTENT,
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
 @medication_guide_ocr_router.patch(
     "/ocr/jobs/{ocrJobId}",
     response_model=DocumentOcrConfirmResponse,

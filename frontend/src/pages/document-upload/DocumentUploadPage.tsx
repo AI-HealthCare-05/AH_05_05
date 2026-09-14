@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { Camera, Check, Image as ImageIcon, RotateCcw } from 'lucide-react';
 import { useNavigate } from 'react-router';
+import { createOcrPreviewSession } from '@/entities/document';
 import { Button, Card, Header, ImageViewer, RegistrationProgress } from '@/shared/ui';
 import { GuidedCamera } from './GuidedCamera';
 
@@ -42,7 +43,8 @@ export function DocumentUploadPage() {
 
   function handleUpload() {
     if (!file) return;
-    navigate('/ocr-review', { replace: true, state: { file } });
+    const previewSessionId = createOcrPreviewSession(file);
+    navigate('/ocr-review', { replace: true, state: { previewSessionId } });
   }
 
   return (

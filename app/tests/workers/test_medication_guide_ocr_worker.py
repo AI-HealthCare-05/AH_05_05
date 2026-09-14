@@ -9,6 +9,12 @@ def test_failed_worker_results_outlive_stale_job_cleanup_window():
     assert worker.WorkerSettings.keep_result >= (worker.config.OCR_REVIEW_TTL_MINUTES + 5) * 60
 
 
+def test_worker_limits_and_health_heartbeat_support_combined_runtime():
+    assert worker.WorkerSettings.max_jobs == worker.config.OCR_MAX_JOBS
+    assert worker.WorkerSettings.job_completion_wait == 60
+    assert worker.WorkerSettings.health_check_interval == 10
+
+
 @pytest.mark.asyncio
 async def test_process_routes_arq_job_try_to_ocr_job_service():
     service = MagicMock()
