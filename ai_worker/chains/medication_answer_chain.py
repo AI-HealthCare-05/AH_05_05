@@ -22,6 +22,7 @@ class MedicationAnswerChainInput(BaseModel):
     request: MedicationChatRequest
     context: ActiveIntakeContext
     result: MedicationChatResult
+    rewrite_instruction: str | None = None
 
 
 def _validate_answer_input(
@@ -37,6 +38,7 @@ def _build_answer_messages(value: MedicationAnswerChainInput):
         request=value.request,
         context=value.context,
         result=value.result,
+        rewrite_instruction=value.rewrite_instruction,
     )
 
 

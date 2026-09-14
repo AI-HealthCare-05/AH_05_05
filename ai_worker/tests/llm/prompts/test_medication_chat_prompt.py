@@ -231,12 +231,15 @@ def test_build_messages_keeps_history_for_confirmed_session_reference() -> None:
 def test_system_prompt_requires_limited_markdown_product_answer() -> None:
     assert "✅ **효능**" in SYSTEM_PROMPT
     assert "🚨 **이상반응**" in SYSTEM_PROMPT
+    assert "🍗 **함께 주의할 약·음식**" in SYSTEM_PROMPT
     assert "`- ` 목록" in SYSTEM_PROMPT
     assert "굵은 제품명만" in SYSTEM_PROMPT
     assert "값이 없는 항목은 출력하지" in SYSTEM_PROMPT
     assert "질문과 직접 관계있는 섹션" in SYSTEM_PROMPT
     assert "각 섹션은 최대 3개 bullet" in SYSTEM_PROMPT
-    assert "약 50자 이내" in SYSTEM_PROMPT
+    assert "10어절 이내의 단문 1~2개" in SYSTEM_PROMPT
+    assert "문자 수 기준으로 잘라 `…`를 붙이지" in SYSTEM_PROMPT
+    assert "목 염증으로 인한 통증과 불편감 완화에 사용함" in SYSTEM_PROMPT
 
 
 def test_system_prompt_uses_v7_six_element_contract_and_private_checklist() -> None:
@@ -264,8 +267,13 @@ def test_system_prompt_forbids_claiming_an_unverified_interaction_is_safe_or_ris
 
 
 def test_system_prompt_limits_each_requested_section_to_short_bullets() -> None:
-    assert "각 bullet은 한 가지 핵심만 약 50자 이내" in SYSTEM_PROMPT
+    assert "각 bullet은 한 가지 핵심을 10어절 이내의 단문 1~2개로" in SYSTEM_PROMPT
     assert "각 섹션은 최대 3개 bullet" in SYSTEM_PROMPT
+    assert "`|`, `(`, `)`는 사용하지 마세요" in SYSTEM_PROMPT
+
+
+def test_system_prompt_limits_an_adverse_reaction_question_to_that_section() -> None:
+    assert "이상반응만 질문하면 `🚨 **이상반응**`만 출력하세요" in SYSTEM_PROMPT
 
 
 def test_prompt_limits_product_output_to_requested_sections() -> None:

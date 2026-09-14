@@ -116,6 +116,70 @@ def test_assemble_groups_product_guide_into_function_caution_and_adverse_reactio
     assert "✅ **복용법**" not in answer
 
 
+def test_assemble_shows_only_adverse_reactions_for_adverse_reaction_only_request() -> None:
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=build_guide(),
+        rules=[],
+        chunks=[],
+        interaction_question=False,
+        adverse_reaction_only=True,
+        evidence_coverage=MedicationEvidenceCoverage(
+            requested_section_types=[KnowledgeSectionType.CAUTION],
+            covered_section_types=[KnowledgeSectionType.CAUTION],
+        ),
+    )
+
+    assert answer.startswith("**마그오캡슐500mg**")
+    assert "🚨 **이상반응**\n- 설사 등이 나타날 수 있습니다." in answer
+    assert "✅ **효능**" not in answer
+    assert "⚠️ **주의사항**" not in answer
+
+
+def test_assemble_includes_drug_food_guidance_for_general_product_question() -> None:
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=build_guide(drug_food_interactions="음주 시 간 손상 위험이 커질 수 있습니다."),
+        rules=[],
+        chunks=[],
+        interaction_question=False,
+        include_drug_food_guidance=True,
+        evidence_coverage=MedicationEvidenceCoverage(
+            requested_section_types=[KnowledgeSectionType.FUNCTION],
+            covered_section_types=[KnowledgeSectionType.FUNCTION],
+        ),
+    )
+
+    assert "🍗 **함께 주의할 약·음식**" in answer
+    assert "음주 시 간 손상 위험이 커질 수 있습니다." in answer
+
+
+def test_assemble_includes_drug_food_guidance_only_once_without_coverage() -> None:
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=build_guide(drug_food_interactions="음주 시 간 손상 위험이 커질 수 있습니다."),
+        rules=[],
+        chunks=[],
+        interaction_question=False,
+        include_drug_food_guidance=True,
+    )
+
+    assert answer.count("🍗 **함께 주의할 약·음식**") == 1
+
+
+def test_assemble_omits_drug_food_guidance_when_product_guide_has_no_evidence() -> None:
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=build_guide(drug_food_interactions=""),
+        rules=[],
+        chunks=[],
+        interaction_question=False,
+        include_drug_food_guidance=True,
+    )
+
+    assert "🍗 **함께 주의할 약·음식**" not in answer
+
+
 def test_assemble_does_not_claim_missing_when_interaction_evidence_exists() -> None:
     chunk = RetrievedKnowledgeChunk(
         point_id="calcium-iron-point",
