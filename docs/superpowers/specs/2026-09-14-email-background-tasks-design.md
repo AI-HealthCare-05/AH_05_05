@@ -43,16 +43,16 @@
 
 1. EMAIL/QUEUED `background_jobs` 행을 생성한다.
 2. 이메일 payload를 암호화해 `encrypted_payload`에 저장한다.
-3. `background_tasks.add_task()`로 작업 ID의 실행을 예약한다.
+3. `background_tasks.add_task()`로 작업 ID의 경량 실행 등록을 예약한다.
 4. 기존 API 응답의 `emailJobId`, `emailJobStatus` 계약을 유지한다.
 
-암호화나 작업 예약 준비가 실패하면 작업을 `FAILED`로 바꾸고 민감 payload를 제거한다. SMTP 발송은 API 응답을 만들기 전에 실행하지 않는다.
+암호화나 작업 예약 준비가 실패하면 작업을 `FAILED`로 바꾸고 민감 payload를 제거한다. SMTP 발송은 API 응답을 만들기 전에 실행하지 않는다. 현재 `ApiTimeoutMiddleware`는 응답 이후 Starlette Background Task까지 기본 3초 제한으로 감싸므로, Background Task 콜백은 SMTP를 직접 기다리지 않고 lifespan manager가 추적하는 `asyncio.Task`를 생성한 뒤 즉시 반환한다. 실제 SMTP·재시도 대기는 manager 소유 task에서 수행한다.
 
 ### 실행기와 상태 전이
 
 신규 이메일 Background Task 실행기는 요청 경로와 시작 시 복구 경로가 함께 사용하는 단일 서비스다.
 
-1. DB 조건부 갱신으로 due 상태의 `QUEUED` 또는 `RETRY_WAITING` 작업을 `PROCESSING`으로 선점하고 SMTP 제한 시간보다 긴 `lease_expires_at`을 기록한다.
+1. DB 조건부 갱신으로 `QUEUED`, due 상태의 `RETRY_WAITING`, 또는 임대가 만료된 `PROCESSING` 작업을 `PROCESSING`으로 선점하고 SMTP 제한 시간보다 긴 `lease_expires_at`을 기록한다.
 2. 암호문을 복호화하고 기존 템플릿 렌더러와 최신 SMTP 설정을 사용해 발송한다.
 3. 발송 성공 후 기존 비밀번호 변경 후처리를 적용하고 `COMPLETED`로 종료한다.
 4. 영구 오류는 `FAILED`, 발송 대상 무효 또는 인증 만료는 `CANCELLED`로 종료한다.
@@ -67,9 +67,9 @@ FastAPI lifespan 시작 시 EMAIL 작업을 다음과 같이 복구한다.
 
 - `QUEUED`: 즉시 실행 예약
 - `RETRY_WAITING`: `next_attempt_at` 이후 실행 예약
-- 이전 프로세스가 남긴 `PROCESSING`: `lease_expires_at`이 지난 작업만 다시 선점해 실행
+- 이전 프로세스가 남긴 `PROCESSING`: 모두 복구 예약하되, `lease_expires_at`이 지난 뒤에만 다시 선점해 실행
 
-복구 예약은 요청 객체의 `BackgroundTasks`가 존재하지 않으므로 애플리케이션 lifespan이 관리하는 `asyncio.Task`로 실행한다. 요청에서 시작된 Background Task와 동일한 실행기·선점 규칙을 사용한다. 종료 시 lifespan 소유 작업을 취소하고 DB의 비종료 상태를 남겨 다음 시작에서 복구한다.
+복구 예약은 요청 객체의 `BackgroundTasks`가 존재하지 않으므로 애플리케이션 lifespan manager가 직접 추적하는 `asyncio.Task`로 실행한다. 미래 시각의 `RETRY_WAITING`과 아직 유효한 임대의 `PROCESSING`도 예약 대상에 포함하고, 실행 코루틴이 각각 `next_attempt_at`과 `lease_expires_at`까지 비동기로 기다린다. 요청의 Background Task도 같은 manager에 실행을 위임하므로 동일한 실행기·선점 규칙과 종료 처리를 사용한다. 종료 시 manager 소유 작업을 취소하고 DB의 비종료 상태를 남겨 다음 시작에서 복구한다.
 
 SMTP 서버가 메시지를 수락한 직후 프로세스가 종료되면 DB 완료 기록 전에 임대가 만료되어 같은 작업이 복구되고 메일이 중복 발송될 수 있다. 외부 SMTP가 idempotency key를 지원하지 않으므로 이 구조의 전달 보장은 at-least-once이며, 이 경계는 기존 ARQ 구조에도 존재한다.
 
