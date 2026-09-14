@@ -14,14 +14,10 @@ class Medication(models.Model):
     name = fields.CharField(max_length=255)
     strength = fields.CharField(max_length=100, null=True)
     dose_quantity = fields.CharField(max_length=50, null=True)
-    efficacy = fields.CharField(max_length=500, null=True)
-    administration = fields.CharField(max_length=500, null=True)
-    precautions = fields.CharField(max_length=500, null=True)
     times_per_day = fields.IntField(
         null=True,
         validators=[MinValueValidator(1), MaxValueValidator(6)],
     )
-    note = fields.CharField(max_length=500, null=True)
     days = fields.IntField(
         null=True,
         validators=[MinValueValidator(1), MaxValueValidator(365)],

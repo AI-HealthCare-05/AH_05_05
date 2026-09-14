@@ -14,27 +14,6 @@ services:
       retries: 5
       start_period: 5s
 
-  # Images only: no snapshots, AOF, disk volume, published port or swap.
-  ocr-images:
-    image: redis:alpine
-    container_name: ocr-images
-    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "384mb", "--maxmemory-policy", "noeviction"]
-    read_only: true
-    mem_limit: 512m
-    memswap_limit: 512m
-    ulimits:
-      core: 0
-    tmpfs:
-      - /data:size=1m,noexec,nosuid
-    restart: always
-    networks:
-      - ocr-private
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # 2. Vector Database
   qdrant:
     image: qdrant/qdrant:v1.19.0
@@ -94,7 +73,9 @@ services:
     env_file: .env
     environment:
       DB_HOST: mysql
-      OCR_IMAGE_REDIS_URL: redis://ocr-images:6379/0
+      OCR_MAX_JOBS: ${OCR_MAX_JOBS:-1}
+      TZ: Asia/Seoul
+      OCR_IMAGE_REDIS_URL: redis://127.0.0.1:6380/0
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_DB: ${REDIS_DB:-0}
@@ -104,23 +85,34 @@ services:
       EMAIL_VERIFICATION_TOKEN_TTL_SECONDS: ${EMAIL_VERIFICATION_TOKEN_TTL_SECONDS:-600}
       EMAIL_VERIFICATION_MAX_ATTEMPTS: ${EMAIL_VERIFICATION_MAX_ATTEMPTS:-5}
       EMAIL_VERIFICATION_RESEND_SECONDS: ${EMAIL_VERIFICATION_RESEND_SECONDS:-60}
-    command: | 
-      sh -c "uv run aerich upgrade && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    command: ["sh", "-c", "uv run --no-sync aerich upgrade && exec /app/.venv/bin/python -m app.runtime.combined"]
     volumes:
       - ./app:/app/app  # 로컬의 app 디렉토리를 컨테이너의 /app/app에 마운트(수정사항 즉시 반영)
       - ./ai_worker:/app/ai_worker:ro
       - ./data/reference_seed:/app/data/reference_seed:ro
       - static_volume:/app/templates
       - media_volume:/app/media
+    tmpfs:
+      - /run/ocr-images:size=1m,noexec,nosuid
+      - /run/ocr-runtime:size=1m,noexec,nosuid
+    stop_grace_period: 120s
+    healthcheck:
+      test: ["CMD", "uv", "run", "--no-sync", "python", "-m", "app.runtime.healthcheck"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: always
     ports:
       - "8000:8000"
     networks:
       - ws
-      - ocr-private
     depends_on:
-      ocr-images:
-        condition: service_healthy
       mysql:
         condition: service_healthy
       redis:
@@ -191,43 +183,6 @@ services:
       redis:
         condition: service_healthy
 
-  # 6. OCR Worker (조제약 복약안내 OCR 비동기 처리)
-  ocr-worker:
-    container_name: ocr-worker
-    mem_limit: 3g
-    memswap_limit: 3g
-    ulimits:
-      core: 0
-    build:
-      context: .
-      dockerfile: app/Dockerfile
-      platforms:
-        - linux/amd64
-        - linux/arm64
-    image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:app-${APP_VERSION}
-    env_file: .env
-    environment:
-      DB_HOST: mysql
-      OCR_IMAGE_REDIS_URL: redis://ocr-images:6379/0
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_DB: ${REDIS_DB:-0}
-      TZ: Asia/Seoul
-    command: uv run --no-sync arq app.workers.medication_guide_ocr_worker.WorkerSettings
-    volumes:
-      - ./app:/app/app
-    restart: always
-    networks:
-      - ws
-      - ocr-private
-    depends_on:
-      ocr-images:
-        condition: service_healthy
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
   # 7. AI Worker (Model 학습 및 추론)
   ai-worker:
     container_name: ai-worker
@@ -283,6 +238,3 @@ volumes:
 networks:
   ws:
     driver: bridge
-  ocr-private:
-    driver: bridge
-    internal: true

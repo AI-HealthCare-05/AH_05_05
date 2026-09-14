@@ -74,7 +74,6 @@ async def test_get_patient_context_reads_confirmed_erd_data(
         name="아스피린",
         dose_quantity="1정",
         times_per_day=1,
-        note="아침 식후 복용",
         days=7,
         prescribed_at=date(2026, 8, 10),
     )

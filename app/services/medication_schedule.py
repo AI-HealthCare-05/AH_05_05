@@ -223,7 +223,7 @@ class MedicationScheduleService:
             name=medication.name,
             dose=medication.strength or "",
             times_per_day=medication.times_per_day,
-            timing=medication.administration or "",
+            timing="",  # Legacy free-text timing was retired; explicit slots remain authoritative.
             slots=slots,
         )
 
