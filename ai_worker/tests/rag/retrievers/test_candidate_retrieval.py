@@ -107,3 +107,31 @@ async def test_retrieve_embeds_query_with_resolved_entities_and_requested_sectio
     assert embedding_provider.queries[0].startswith("[질문] 마그네슘은 왜 먹나요?")
     assert "[대상] 마그네슘" in embedding_provider.queries[0]
     assert "[요청 섹션] FUNCTION" in embedding_provider.queries[0]
+
+
+@pytest.mark.asyncio
+async def test_retrieve_keeps_functional_goal_expansion_in_embedding_query() -> None:
+    embedding_provider = FakeEmbeddingProvider()
+    retriever = MedicationKnowledgeCandidateRetriever(
+        embedding_provider=embedding_provider,
+        vector_store=FakeKnowledgeStore(),
+        dataset_version="knowledge-full-v16",
+        eligibility_evaluator=lambda _result, _plan: "ELIGIBLE",
+        section_coverage_evaluator=lambda _results, _plan: True,
+    )
+    execution_plan = MedicationSearchExecutionPlan(
+        query_plan=MedicationKnowledgeQueryBuilder().build(
+            "잠 잘자기 위해 어떤걸 먹으면 좋아?",
+        ),
+        patient_medication_names=[],
+        patient_supplement_names=[],
+        approved_rule_pair_keys=[],
+        context_hash="a" * 64,
+        approved_rules_hash="b" * 64,
+        limit=5,
+    )
+
+    await retriever.retrieve(execution_plan=execution_plan)
+
+    assert "건강기능식품" in embedding_provider.queries[0]
+    assert "기능성" in embedding_provider.queries[0]

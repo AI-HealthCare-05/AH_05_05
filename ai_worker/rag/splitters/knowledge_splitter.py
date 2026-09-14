@@ -202,6 +202,23 @@ _INLINE_FIGURE_REFERENCE_PATTERN = re.compile(
     r"\s*[\[(]\s*Fig\.?\s*\d+\s*[\])]",
     flags=re.IGNORECASE,
 )
+_SUPPLEMENT_FUNCTION_GUIDE_NUMBERED_ITEM = re.compile(
+    r"(?ms)^\s*(?P<index>\d{1,2})\s*[.)]?\s+"
+    r"(?P<ingredient>[^\n]+?)\s*\n"
+    r"(?P<body>.*?)(?=^\s*\d{1,2}\s*[.)]?\s+\S|\Z)",
+)
+_SUPPLEMENT_FUNCTION_GUIDE_INLINE_CLAIM = re.compile(
+    r"^(?P<ingredient>.+?)\s+(?P<claim>.+?(?:도움을?\s*줄\s*수\s*있음|도움이\s*될\s*수\s*있음))$",
+)
+_SUPPLEMENT_FUNCTION_GUIDE_CLAIM = re.compile(
+    r"(?s)(?P<claim>.*?(?:도움을?\s*줄\s*수\s*있음|도움이\s*될\s*수\s*있음))",
+)
+_SUPPLEMENT_FUNCTION_REPORT_NUMBER = re.compile(
+    r"\(\s*(?:제\s*)?\d{4}\s*-\s*\d+\s*(?:호)?\s*\)",
+)
+_SUPPLEMENT_FUNCTION_LABEL = re.compile(
+    r"(?:분류\s*:\s*)?기능성\s*내용\s*(?:기능성\s*내용\s*)?:?\s*",
+)
 
 _PRIMARY_CARE_HERB_DRUG_REVIEW_BOUNDARIES = (
     "Introduction",
@@ -571,9 +588,9 @@ class KnowledgeSplitter:
             if not self._has_meaningful_body(section):
                 continue
 
-            contents = self._split_section_content(
-                section.content,
-                policy,
+            contents, item_ingredient_names = self._section_contents(
+                section=section,
+                policy=policy,
                 document_type=metadata.document_type,
             )
             for content, local_start, local_end in contents:
@@ -605,11 +622,96 @@ class KnowledgeSplitter:
                         content=cleaned,
                         section=chunk_section,
                         chunk_index=len(chunks),
-                        metadata=metadata,
+                        metadata=self._metadata_for_section_content(
+                            metadata=metadata,
+                            ingredient_name=item_ingredient_names.get((local_start, local_end)),
+                        ),
                     )
                 )
 
         return self._repair_verified_document_chunks(chunks)
+
+    def _section_contents(
+        self,
+        *,
+        section: KnowledgeSection,
+        policy: ChunkingPolicy,
+        document_type: KnowledgeDocumentType,
+    ) -> tuple[list[tuple[str, int, int]], dict[tuple[int, int], str]]:
+        named_function_items = self._supplement_function_guide_items(
+            section,
+            document_type=document_type,
+        )
+        if not named_function_items:
+            return (
+                self._split_section_content(
+                    section.content,
+                    policy,
+                    document_type=document_type,
+                ),
+                {},
+            )
+        return (
+            [(content, local_start, local_end) for content, local_start, local_end, _ in named_function_items],
+            {
+                (local_start, local_end): ingredient_name
+                for _, local_start, local_end, ingredient_name in named_function_items
+            },
+        )
+
+    @staticmethod
+    def _metadata_for_section_content(
+        *,
+        metadata: KnowledgeChunkMetadata,
+        ingredient_name: str | None,
+    ) -> KnowledgeChunkMetadata:
+        if ingredient_name is None:
+            return metadata
+        return metadata.model_copy(
+            update={"ingredient_names": [ingredient_name]},
+        )
+
+    def _supplement_function_guide_items(
+        self,
+        section: KnowledgeSection,
+        *,
+        document_type: KnowledgeDocumentType,
+    ) -> list[tuple[str, int, int, str]]:
+        """기능성 정보집의 번호 목록을 원료별 근거 청크로 분리한다."""
+
+        if (
+            document_type is not KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE
+            or section.section_type is not KnowledgeSectionType.FUNCTION
+            or section.section_title != "기능성 내용"
+        ):
+            return []
+
+        items: list[tuple[str, int, int, str]] = []
+        for match in _SUPPLEMENT_FUNCTION_GUIDE_NUMBERED_ITEM.finditer(section.content):
+            ingredient_name = re.sub(r"\s+", " ", match.group("ingredient")).strip()
+            body_match = _SUPPLEMENT_FUNCTION_GUIDE_CLAIM.search(match.group("body"))
+            body = re.sub(r"\s+", " ", body_match.group("claim")).strip() if body_match is not None else ""
+            if not body:
+                inline_claim = _SUPPLEMENT_FUNCTION_GUIDE_INLINE_CLAIM.fullmatch(ingredient_name)
+                if inline_claim is None:
+                    continue
+                ingredient_name = inline_claim.group("ingredient").strip()
+                body = inline_claim.group("claim").strip()
+            if not ingredient_name or not body:
+                continue
+            content = f"{ingredient_name}\n{body}"
+            if self._token_counter.count(content) > self.policy_for(document_type).hard_max_tokens:
+                continue
+            item_end = match.start("body") + body_match.end() if body_match is not None else match.end()
+            items.append(
+                (
+                    content,
+                    match.start(),
+                    item_end,
+                    ingredient_name,
+                )
+            )
+        return items
 
     def _split_primary_care_herb_drug_review_pages(
         self,
@@ -2301,6 +2403,10 @@ class KnowledgeSplitter:
     ) -> str:
         if not title:
             return content
+        if title == "기능성 내용" and (
+            _SUPPLEMENT_FUNCTION_REPORT_NUMBER.search(content) is not None or "분류:" in content
+        ):
+            content = KnowledgeSplitter._clean_supplement_function_content(content)
         lines = content.splitlines()
         if not lines:
             return content
@@ -2312,6 +2418,22 @@ class KnowledgeSplitter:
         )
         lines = [line for line in lines if re.fullmatch(r"\s*[-–—\u00ad]{4,}\s*", line) is None]
         return "\n".join(lines).strip()
+
+    @staticmethod
+    def _clean_supplement_function_content(content: str) -> str:
+        """기능성 문장 앞의 보고서 식별자와 반복 레이블을 제거한다."""
+
+        cleaned = _SUPPLEMENT_FUNCTION_REPORT_NUMBER.sub("", content)
+        cleaned = _SUPPLEMENT_FUNCTION_LABEL.sub("", cleaned)
+        distinct_parts: list[str] = []
+        seen_parts: set[str] = set()
+        for part in re.split(r"\s*·\s*", cleaned):
+            normalized = re.sub(r"\s+", " ", part).strip(" ,")
+            if not normalized or normalized.casefold() in seen_parts:
+                continue
+            seen_parts.add(normalized.casefold())
+            distinct_parts.append(normalized)
+        return "\n".join(distinct_parts)
 
     @staticmethod
     def _truncate_after_references(

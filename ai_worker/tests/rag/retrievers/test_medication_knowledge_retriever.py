@@ -912,6 +912,61 @@ async def test_search_rejects_unrelated_high_score_and_keeps_exact_ingredient() 
     assert results == [exact]
 
 
+async def test_search_prefers_named_functional_ingredient_over_generic_goal_background() -> None:
+    generic_background = build_chunk(
+        0.82,
+        chunk_id="f" * 64,
+        ingredient_names=[],
+        section_type=KnowledgeSectionType.FUNCTION,
+        title="건강기능식품 기능별 정보집 수면의 질",
+        content="수면은 건강 유지에 중요한 생리 현상입니다.",
+    )
+    named_ingredient = build_chunk(
+        0.74,
+        chunk_id="g" * 64,
+        ingredient_names=["L-테아닌"],
+        section_type=KnowledgeSectionType.FUNCTION,
+        title="L-테아닌 기능성 정보",
+        content="L-테아닌은 수면의 질 개선에 도움을 줄 수 있습니다.",
+    )
+    store = FakeKnowledgeStore(responses=[[generic_background, named_ingredient]])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-baseline-v1",
+        min_similarity_score=0.65,
+    )
+
+    results = await retriever.search(
+        execution_plan=build_execution_plan("수면의 질 개선과 관련된 건강기능식품 기능 정보가 있나요?"),
+    )
+
+    assert results[0] == named_ingredient
+
+
+async def test_search_accepts_named_functional_ingredient_for_natural_goal_question() -> None:
+    named_ingredient = build_chunk(
+        0.59,
+        chunk_id="h" * 64,
+        ingredient_names=["감태추출물"],
+        section_type=KnowledgeSectionType.FUNCTION,
+        title="건강기능식품 기능별 정보집 수면의 질",
+        content="감태추출물은 수면의 질 개선에 도움을 줄 수 있습니다.",
+    )
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=FakeKnowledgeStore(responses=[[named_ingredient]]),
+        dataset_version="knowledge-full-v17",
+        min_similarity_score=0.65,
+    )
+
+    results = await retriever.search(
+        execution_plan=build_execution_plan("잠 잘자기 위해 어떤걸 먹으면 좋아?"),
+    )
+
+    assert results == [named_ingredient]
+
+
 async def test_search_prefers_planned_document_type_without_filtering_candidates() -> None:
     different_document_type = build_chunk(
         0.75,
@@ -1282,8 +1337,18 @@ async def test_search_merges_separate_english_pair_query_results() -> None:
 
     assert results == [target]
     assert embedding_provider.queries == [
-        "칼슘과 철분을 같이 먹으면 철분 흡수가 떨어지나요? 칼슘 철분 상호작용 병용 주의",
-        "calcium iron absorption interaction",
+        (
+            "[질문] 칼슘과 철분을 같이 먹으면 철분 흡수가 떨어지나요?\n"
+            "[대상] 칼슘, 철분\n"
+            "[요청 섹션] INTERACTION\n"
+            "[상호작용 조합] 칼슘-철분"
+        ),
+        (
+            "[질문] calcium iron absorption interaction\n"
+            "[대상] 칼슘, 철분\n"
+            "[요청 섹션] INTERACTION\n"
+            "[상호작용 조합] 칼슘-철분"
+        ),
     ]
 
 

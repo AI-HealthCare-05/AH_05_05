@@ -169,6 +169,37 @@ class FakeGuideRepository:
         return self.lookup
 
 
+class MagnesiumCautionGuideRepository(FakeGuideRepository):
+    async def find_caution_guides_by_ingredient_names(
+        self,
+        ingredient_names: list[str],
+    ) -> dict[str, list[MedicationGuideFact]]:
+        assert ingredient_names == ["수산화마그네슘", "산화마그네슘"]
+        return {
+            "수산화마그네슘": [
+                build_guide().model_copy(
+                    update={
+                        "product_name": "마그밀정(수산화마그네슘)",
+                        "pre_use_warning": "신장 질환이 있으면 복용 전 상담합니다.",
+                        "precautions": "다른 약과의 복용 간격을 확인합니다.",
+                        "adverse_reactions": "설사가 나타날 수 있습니다.",
+                    }
+                )
+            ],
+            "산화마그네슘": [
+                build_guide().model_copy(
+                    update={
+                        "medication_guide_id": 13,
+                        "product_name": "마그오캡슐500mg(산화마그네슘)",
+                        "pre_use_warning": "신장 질환이 있으면 복용 전 상담합니다.",
+                        "precautions": "정해진 용법을 지킵니다.",
+                        "adverse_reactions": "묽은 변이 나타날 수 있습니다.",
+                    }
+                )
+            ],
+        }
+
+
 class ExactNameGuideRepository:
     def __init__(
         self,
@@ -206,6 +237,24 @@ class StaticExpressionCatalog:
 
     async def list_expressions(self) -> list[str]:
         return self.expressions
+
+
+class ClarifyingQuestionResolver:
+    async def resolve(
+        self,
+        *,
+        question: str,
+        additional_entities: list[MedicationCatalogEntry] | None = None,
+    ) -> MedicationQuestionResolution:
+        del additional_entities
+        return MedicationQuestionResolution(
+            original_question=question,
+            resolved_question=question,
+            scope="IN_SCOPE",
+            status="CLARIFICATION_REQUIRED",
+            candidate_names=["유사한 건강기능식품 원료"],
+            entity_resolution_available=True,
+        )
 
 
 class StaticTypedExpressionCatalog(StaticExpressionCatalog):
@@ -1448,6 +1497,336 @@ def test_interaction_evidence_chunks_exclude_unrelated_sections() -> None:
     assert [chunk.chunk_id for chunk in selected] == ["d" * 64, "e" * 64]
 
 
+async def test_direct_pair_evidence_from_summary_chunk_is_confirmed_by_reasoning() -> None:
+    pair_key = build_interaction_pair_key(
+        InteractionEntity(
+            kind=InteractionEntityKind.SUPPLEMENT,
+            display_name="칼슘",
+        ),
+        InteractionEntity(
+            kind=InteractionEntityKind.SUPPLEMENT,
+            display_name="철분",
+        ),
+    )
+    chunk = build_chunk().model_copy(
+        update={
+            "chunk_id": "c" * 64,
+            "content": "In human studies, calcium can temporarily reduce iron absorption.",
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "title": "Calcium and Iron Absorption",
+                    "document_type": KnowledgeDocumentType.RESEARCH_ARTICLE,
+                    "ingredient_names": ["칼슘", "철분"],
+                    "section_type": KnowledgeSectionType.SUMMARY,
+                }
+            ),
+        }
+    )
+    reasoning = EvidenceReasoningOutput(
+        reasoning_status="SUPPORTED",
+        interaction_decision=InteractionEvidenceDecision.INTERACTION_CONFIRMED,
+        claims=[
+            EvidenceClaim(
+                section_type=KnowledgeSectionType.INTERACTION,
+                pair_key=pair_key,
+                statement="인체 연구에서 칼슘은 철분 흡수를 일시적으로 낮출 수 있습니다.",
+                evidence_ids=[f"chunk:{chunk.chunk_id}"],
+            )
+        ],
+    )
+    chain = RecordingEvidenceReasoningChain(reasoning)
+
+    result = await build_use_case(
+        retriever=FakeKnowledgeRetriever([chunk]),
+        interaction_evidence_reasoning_chain=chain,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticTypedExpressionCatalog(
+                [
+                    MedicationCatalogEntry(
+                        canonical_name="칼슘",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.SUPPLEMENT,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    ),
+                    MedicationCatalogEntry(
+                        canonical_name="철분",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.SUPPLEMENT,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    ),
+                ]
+            )
+        ),
+    ).execute(build_request("칼슘과 철분을 같이 먹어도 돼?"))
+
+    assert len(chain.inputs) == 1
+    assert chain.inputs[0].evidence_items[0].section_types == [
+        KnowledgeSectionType.INTERACTION,
+    ]
+    assert chain.inputs[0].evidence_items[0].pair_keys == [pair_key]
+    assert result.evidence_coverage is not None
+    assert result.evidence_coverage.verified_interaction_pair_keys == [pair_key]
+    assert "**[칼슘-철분]**" in result.answer
+    assert "calcium can temporarily reduce iron absorption" in result.answer
+
+
+async def test_functional_supplement_goal_uses_source_backed_ingredient_guidance() -> None:
+    generic_background = build_chunk().model_copy(
+        update={
+            "content": "수면은 건강 유지에 중요한 생리 현상입니다.",
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "title": "건강기능식품 기능별 정보집 수면의 질",
+                    "document_type": KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+                    "ingredient_names": [],
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                }
+            ),
+        }
+    )
+    chunk = build_chunk().model_copy(
+        update={
+            "content": "L-테아닌은 긴장 완화와 수면의 질 개선에 도움을 줄 수 있습니다.",
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "title": "L-테아닌 기능성 정보",
+                    "document_type": KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+                    "ingredient_names": ["L-테아닌"],
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                }
+            ),
+        }
+    )
+
+    result = await build_use_case(
+        retriever=FakeKnowledgeRetriever([generic_background, chunk]),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(
+        build_request("수면의 질 개선과 관련된 건강기능식품 기능 정보가 있나요?"),
+    )
+
+    assert result.route is MedicationChatRoute.SUPPLEMENT_GUIDE
+    assert "제품명 또는 복용 목적" not in result.answer
+    assert result.answer == "**숙면**\n\n🧬 **성분**\n- L-테아닌"
+    assert "수면은 건강 유지" not in result.answer
+
+
+async def test_natural_wellness_goal_uses_the_same_source_backed_supplement_route() -> None:
+    chunk = build_chunk().model_copy(
+        update={
+            "content": "L-테아닌은 긴장 완화와 수면의 질 개선에 도움을 줄 수 있습니다.",
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "title": "L-테아닌 기능성 정보",
+                    "document_type": KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+                    "ingredient_names": ["L-테아닌"],
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                }
+            ),
+        }
+    )
+
+    gate = StaticConversationGate(
+        ConversationClassification(
+            intent="MEDICATION_NOTE_SUMMARY",
+            safety_signal="NONE",
+            confidence="HIGH",
+            note_summary_scope=MedicationNoteSummaryScope.RECENT_SIX_MONTHS,
+        )
+    )
+    result = await build_use_case(
+        retriever=FakeKnowledgeRetriever([chunk]),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+        conversation_gate_chain=gate,
+        medication_note_summary_use_case=StaticMedicationNoteSummaryUseCase(),
+    ).execute(build_request("잠 잘자려면 뭘 먹어야해?"))
+
+    assert result.route is MedicationChatRoute.SUPPLEMENT_GUIDE
+    assert result.answer == "**숙면**\n\n🧬 **성분**\n- L-테아닌"
+    assert "의약품·복약·영양제 정보와 상호작용" not in result.answer
+    assert gate.inputs == []
+
+
+async def test_medication_symptom_question_uses_adverse_case_report_format() -> None:
+    event_chunk = build_chunk().model_copy(
+        update={
+            "content": "독사조신 복용 뒤 현기증이 보고됐습니다.",
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "document_type": KnowledgeDocumentType.ADVERSE_CASE_REPORT,
+                    "drug_names": ["독사조신"],
+                    "section_type": KnowledgeSectionType.ADVERSE_EVENT,
+                }
+            ),
+        }
+    )
+    assessment_chunk = event_chunk.model_copy(
+        update={
+            "content": "WHO-UMC 평가에서 상당히 확실함으로 분류됐습니다.",
+            "metadata": event_chunk.metadata.model_copy(
+                update={
+                    "section_type": KnowledgeSectionType.ASSESSMENT,
+                    "chunk_index": 1,
+                    "content_hash": "c" * 64,
+                }
+            ),
+        }
+    )
+
+    result = await build_use_case(
+        retriever=FakeKnowledgeRetriever([event_chunk, assessment_chunk]),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticTypedExpressionCatalog(
+                [
+                    MedicationCatalogEntry(
+                        canonical_name="독사조신",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.DRUG,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    )
+                ]
+            )
+        ),
+    ).execute(build_request("독사조신 먹고 어지러울 수 있어?"))
+
+    assert result.answer.startswith("🩻 **부작용 보고서**")
+    assert "**이상사례**" in result.answer
+    assert "WHO-UMC 평가" in result.answer
+    assert "✉️ **안내사항**" not in result.answer
+
+
+async def test_functional_supplement_goal_does_not_invent_a_goal_heading_without_named_ingredient() -> None:
+    generic_background = build_chunk().model_copy(
+        update={
+            "content": "수면은 건강 유지에 중요한 생리 현상입니다.",
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "title": "건강기능식품 기능별 정보집 수면의 질",
+                    "document_type": KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+                    "ingredient_names": [],
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                }
+            ),
+        }
+    )
+
+    result = await build_use_case(
+        retriever=FakeKnowledgeRetriever([generic_background]),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(
+        build_request("수면의 질 개선과 관련된 건강기능식품 기능 정보가 있나요?"),
+    )
+
+    assert not result.answer.startswith("**수면의 질 개선 관련 정보**")
+    assert "**멜라토닌**" not in result.answer
+
+
+async def test_functional_supplement_goal_drops_unnamed_generic_background() -> None:
+    generic_background = build_chunk().model_copy(
+        update={
+            "content": "수면은 건강 유지에 중요한 생리 현상입니다.",
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "title": "건강기능식품 기능별 정보집 수면의 질",
+                    "document_type": KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+                    "ingredient_names": [],
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                }
+            ),
+        }
+    )
+
+    result = await build_use_case(
+        retriever=FakeKnowledgeRetriever([generic_background]),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(
+        build_request("잠 잘자기 위해 어떤걸 먹으면 좋아?"),
+    )
+
+    assert "수면은 건강 유지에 중요한 생리 현상" not in result.answer
+    assert "공공자료 추가 설명" not in result.answer
+
+
+def test_functional_supplement_goal_limits_source_backed_ingredients_to_three() -> None:
+    chunks = [
+        build_chunk().model_copy(
+            update={
+                "chunk_id": chr(ord("a") + index) * 64,
+                "metadata": build_chunk().metadata.model_copy(
+                    update={
+                        "document_type": KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+                        "ingredient_names": [f"성분{index}"],
+                        "section_type": KnowledgeSectionType.FUNCTION,
+                    }
+                ),
+            }
+        )
+        for index in range(4)
+    ]
+
+    selected = AnswerMedicationQuestionUseCase._functional_supplement_answer_chunks(
+        question="잠 잘자기 위해 어떤걸 먹으면 좋아?",
+        chunks=chunks,
+    )
+
+    assert selected == chunks[:3]
+
+
+@pytest.mark.parametrize(
+    ("question", "expected_title"),
+    [
+        ("잠 잘자기 위해 어떤 걸 먹으면 좋아?", "숙면"),
+        ("피부 보습에 도움 되는 성분이 있어?", "피부 보습"),
+        ("장 건강에 좋은 건강기능식품 성분은 뭐야?", "장 건강"),
+        ("혈행 개선에 도움 되는 성분을 알려줘.", "혈행 개선"),
+        ("눈 건강에 도움 되는 영양 성분이 있어?", "눈 건강"),
+        ("관절 건강에 도움 되는 성분을 알려줘.", "관절 건강"),
+    ],
+)
+def test_functional_supplement_goal_uses_a_normalized_health_goal_title(
+    question: str,
+    expected_title: str,
+) -> None:
+    assert AnswerMedicationQuestionUseCase._functional_supplement_goal_title(question) == expected_title
+
+
+async def test_functional_supplement_goal_bypasses_spurious_product_clarification() -> None:
+    chunk = build_chunk().model_copy(
+        update={
+            "content": "L-테아닌은 수면의 질 개선에 도움을 줄 수 있습니다.",
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "title": "L-테아닌 기능성 정보",
+                    "document_type": KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+                    "ingredient_names": ["L-테아닌"],
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                }
+            ),
+        }
+    )
+    retriever = RecordingQueryPlanRetriever([chunk])
+
+    result = await build_use_case(
+        retriever=retriever,
+        question_resolver=ClarifyingQuestionResolver(),
+    ).execute(
+        build_request("수면의 질 개선과 관련된 건강기능식품 기능 정보가 있나요?"),
+    )
+
+    assert retriever.received_kwargs is not None
+    assert result.route is MedicationChatRoute.SUPPLEMENT_GUIDE
+    assert "제품명 또는 복용 목적" not in result.answer
+    assert result.answer == "**숙면**\n\n🧬 **성분**\n- L-테아닌"
+
+
 async def test_non_interaction_question_skips_evidence_reasoning_chain() -> None:
     reasoning = EvidenceReasoningOutput(
         reasoning_status="INSUFFICIENT",
@@ -1506,7 +1885,7 @@ async def test_evidence_reasoning_failure_keeps_deterministic_answer() -> None:
     assert result.evidence_reasoning is None
 
 
-async def test_oversized_evidence_input_keeps_deterministic_answer() -> None:
+async def test_oversized_evidence_input_is_trimmed_before_reasoning() -> None:
     context = ActiveIntakeContext(
         user_id=1,
         medications=[
@@ -1566,8 +1945,9 @@ async def test_oversized_evidence_input_keeps_deterministic_answer() -> None:
     ).execute(build_request("현재 먹는 두 약 사이에 상호작용이 있어?"))
 
     assert "승인된 상호작용 근거입니다." in result.answer
-    assert result.evidence_reasoning is None
-    assert chain.inputs == []
+    assert result.evidence_reasoning is not None
+    assert len(chain.inputs) == 1
+    assert len(chain.inputs[0].evidence_items[0].content) == 4000
 
 
 async def test_active_medication_interaction_without_approved_rule_states_uncertainty() -> None:
@@ -1592,8 +1972,8 @@ async def test_active_medication_interaction_without_approved_rule_states_uncert
         ),
     ).execute(build_request("현재 먹는 두 약 사이에 상호작용이 있어?"))
 
-    assert "확인하지 못한 조합" in result.answer
-    assert "안전하다는 뜻은 아닙니다" in result.answer
+    assert "☑️ **확인하지 못한 조합**" not in result.answer
+    assert "근거를 확인하지 못한 항목" in result.answer
 
 
 async def test_harmful_request_is_blocked_before_rag() -> None:
@@ -1980,7 +2360,7 @@ async def test_active_intake_question_without_external_evidence_uses_registered_
     assert result.safety_status == SafetyStatus.RESTRICTED
     assert "💊 **복약정보**\n- 와파린" in result.answer
     assert "💪🏻 **영양제 정보**\n- 비타민 K" in result.answer
-    assert "☑️ **확인하지 못한 조합**" in result.answer
+    assert "☑️ **확인하지 못한 조합**" not in result.answer
     assert "오메가3" not in result.answer
 
 
@@ -2675,8 +3055,8 @@ async def test_active_intake_interaction_without_direct_evidence_keeps_active_me
     ).execute(build_request("내 약과 비타민 D 같이 먹어도 돼?"))
 
     assert "💊 **복약정보**\n- 세레콕시브캡슐200mg" in result.answer
-    assert "---\n\n🔁 **복약정보와 상호작용**" in result.answer
-    assert result.answer.count("☑️ **확인하지 못한 조합**") == 1
+    assert "☑️ **확인하지 못한 조합**" not in result.answer
+    assert "☑️ **확인하지 못한 조합**" not in result.answer
 
 
 async def test_execute_resolves_single_drug_reference_from_explicit_session_memory() -> None:
@@ -2794,6 +3174,51 @@ async def test_execute_routes_general_ingredient_to_supplement_guide_when_drug_m
     assert result.route == MedicationChatRoute.SUPPLEMENT_GUIDE
     assert result.question_interpretation is not None
     assert result.question_interpretation.normalized_entity_names == ["오메가3"]
+
+
+async def test_execute_uses_magnesium_form_cautions_for_general_magnesium_caution_question() -> None:
+    supplement_chunk = build_chunk().model_copy(
+        update={
+            "content": "마그네슘은 에너지 이용과 신경 및 근육 기능 유지에 필요합니다.",
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "document_type": KnowledgeDocumentType.SUPPLEMENT_CODE,
+                    "ingredient_names": ["마그네슘"],
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                }
+            ),
+        }
+    )
+
+    result = await build_use_case(
+        retriever=FakeKnowledgeRetriever(chunks=[supplement_chunk]),
+        guide_repository=MagnesiumCautionGuideRepository(MedicationGuideLookup()),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticTypedExpressionCatalog(
+                [
+                    MedicationCatalogEntry(
+                        canonical_name="마그네슘",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.SUPPLEMENT,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    )
+                ]
+            ),
+        ),
+    ).execute(build_request("마그네슘의 주의사항을 알려줘"))
+
+    assert result.route is MedicationChatRoute.SUPPLEMENT_GUIDE
+    assert "**수산화마그네슘**" in result.answer
+    assert "**산화마그네슘**" in result.answer
+    assert "효능" not in result.answer
+    assert [
+        source.medication_guide_id
+        for source in result.sources
+        if source.kind is MedicationChatSourceKind.MEDICATION_GUIDE
+    ] == [
+        12,
+        13,
+    ]
 
 
 async def test_execute_requests_product_or_purpose_when_product_and_supplement_collide() -> None:
@@ -4091,7 +4516,8 @@ async def test_supplement_evidence_prevents_partial_drug_name_clarification() ->
 
     assert result.route == MedicationChatRoute.SUPPLEMENT_GUIDE
     assert "제품명을 확인" not in result.answer
-    assert "공공자료 추가 설명" in result.answer
+    assert result.answer.startswith("**마그네슘**")
+    assert "✅ **효능**" in result.answer
 
 
 async def test_general_supplement_question_hides_unrelated_active_intakes_from_answer_and_sources() -> None:

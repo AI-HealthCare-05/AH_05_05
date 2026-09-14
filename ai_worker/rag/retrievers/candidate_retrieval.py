@@ -5,6 +5,9 @@ from typing import Protocol
 from langchain_core.runnables import RunnableLambda, RunnableParallel
 
 from ai_worker.domain.interfaces import EmbeddingProvider
+from ai_worker.domain.supplement_function_goal_detector import (
+    is_supplement_function_goal_question,
+)
 from ai_worker.rag.embeddings.embedding_text_builder import (
     build_medical_retrieval_query_text,
 )
@@ -190,8 +193,13 @@ class MedicationKnowledgeCandidateRetriever:
         query: str,
         plan: MedicationKnowledgeQueryPlan,
     ) -> str:
+        question = (
+            query
+            if is_supplement_function_goal_question(plan.original_query)
+            else (plan.original_query if query == plan.expanded_query else query)
+        )
         return build_medical_retrieval_query_text(
-            question=(plan.original_query if query == plan.expanded_query else query),
+            question=question,
             entity_names=plan.entity_names,
             section_types=plan.section_types,
             pair_names=[f"{pair.left_name}-{pair.right_name}" for pair in plan.interaction_pairs],

@@ -25,7 +25,7 @@
 
 [형식(Format)] 지정된 JSON Schema의 intent, safety_signal, confidence, follow_up_fields, note_summary_scope, interaction_reference_names만 반환하세요.
 
-[제약(Constraint)] 
+[제약(Constraint)]
 약·영양제 사실이나 답변 문구는 생성하지 마세요. 
 인사, 일반 대화, 모호한 증상, 구체적인 증상, 증상 대화 뒤 상호작용 확인, 진료 일정, 복약메모 요약, 약·영양제 질문, 범위 밖 질문, 위해 요청을 구분하세요. 
 복약메모 요약은 현재 질문에 복약메모를 정리·요약하거나 진료용으로 준비하려는 목적이 직접 있을 때만 선택하세요. 
@@ -195,10 +195,10 @@ INTERACTION claim, supported action과 충돌 근거는 요청받은 하나의 p
 
 [제약(Constraint)] 
 질문과 직접 관계있는 섹션 중 covered section만 출력하고 값이 없는 항목은 출력하지 마세요. 의료 사실·수치·행동 지침은 초안 또는 검증된 claim 범위를 유지하세요.
-복약정보는 show_active_medication_section=true일 때 active_medication_names의 약 이름만, 영양제 정보는 사용자가 직접 요청한 경우에만 active_supplement_names의 이름을 표시하세요. 
+복약정보는 sh애ow_active_medication_section=true일 때 active_medication_names의 약 이름만, 영양제 정보는 사용자가 직접 요청한 경우에만 active_supplement_names의 이름을 표시하세요.
 제품명 앞에 `# 제목`을 만들지 말고 굵은 제품명만 사용하세요.
-원문 문장이나 나열을 그대로 옮기지 말고, 각 bullet은 한 가지 핵심만 약 50자 이내로 요약하세요. 
-각 섹션은 최대 3개 bullet으로 제한하세요. 확인하지 못한 조합은 한 번만 표시하세요. 
+원문 문장이나 나열을 그대로 옮기지 말고, 각 bullet은 한 가지 핵심만 약 50자 이내로 요약하세요.
+각 섹션은 최대 3개 bullet으로 제한하세요. 확인하지 못한 조합은 한 번만 표시하세요.
 서버 초안에 질문 상호작용의 근거 부족 안내가 있으면 해당 대상 바로 아래에서 유지하세요. 
 입력에 없는 공식기관·링크와 프론트 고정 면책 문구를 추가하지 마세요.
 
@@ -237,6 +237,25 @@ INTERACTION claim, supported action과 충돌 근거는 요청받은 하나의 p
 🔁 **질문 상호작용**
 **[성분1-성분2]**
 -현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 못했습니다. 확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다.
+
+건강기능식품 기능별 정보집에서 가지고 설명하는 대답은 아래와 같이 설명
+
+**수면의 질 개선 관련 기능성 원료**
+✅ 효능
+수면의 질 개선에 도움을 줌.
+신경전달물질과 멜라토닌 관련.
+스트레스 감소와 수면 주기 조절.
+
+✅ 복용법
+규칙적인 복용이 중요함.
+자기 전 따뜻한 목욕 추천.
+카페인 섭취 줄이기.
+
+⚠️ 주의사항
+과도한 운동은 수면 방해.
+음주 후 수면 질 저하 가능.
+개인의 건강 상태에 따라 다름.
+
 <!-- prompt:answer_generation:examples:end -->
 
 ---

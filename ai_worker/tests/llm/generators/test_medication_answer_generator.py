@@ -24,15 +24,20 @@ from ai_worker.schemas.medication_chat import (
 
 
 class FakeAnswerClient:
-    def __init__(self, response=None, error: Exception | None = None) -> None:
+    def __init__(self, response=None, responses: list | None = None, error: Exception | None = None) -> None:
         self.response = response
+        self.responses = list(responses or [])
         self.error = error
         self.messages = None
+        self.all_messages = []
 
     async def ainvoke(self, messages):
         self.messages = messages
+        self.all_messages.append(messages)
         if self.error is not None:
             raise self.error
+        if self.responses:
+            return self.responses.pop(0)
         return self.response
 
 
@@ -87,6 +92,257 @@ async def test_generator_rewrites_draft_and_preserves_grounding_metadata() -> No
     assert client.messages is not None
 
 
+async def test_generator_repairs_an_overlong_bullet_once() -> None:
+    client = FakeAnswerClient(
+        responses=[
+            {
+                "answer": (
+                    "⚠️ **주의사항**\n- 이 문장은 원문을 그대로 옮긴 매우 긴 주의사항으로 "
+                    "사용자가 휴대폰 화면에서 빠르게 읽기 어려운 내용을 포함합니다."
+                ),
+                "section_types": ["CAUTION"],
+            },
+            {
+                "answer": "⚠️ **주의사항**\n- 정기적 음주 시 의료진과 상담하세요.",
+                "section_types": ["CAUTION"],
+            },
+        ]
+    )
+    result = build_result().model_copy(
+        update={
+            "evidence_coverage": MedicationEvidenceCoverage(
+                requested_section_types=[KnowledgeSectionType.CAUTION],
+                covered_section_types=[KnowledgeSectionType.CAUTION],
+            )
+        }
+    )
+    generator = OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client)
+
+    outcome = await generator.generate(
+        request=build_request(),
+        context=ActiveIntakeContext(user_id=1),
+        result=result,
+    )
+
+    assert outcome.result.answer == "⚠️ **주의사항**\n- 정기적 음주 시 의료진과 상담하세요."
+    assert len(client.all_messages) == 2
+    assert "형식 보정" in str(client.all_messages[-1])
+
+
+async def test_generator_keeps_official_warning_verbatim_when_rewrite_changes_a_stop_instruction() -> None:
+    """공식 주의사항을 풀어 쓴 중단 지시는 초안으로 되돌려 안전성 차단을 막는다."""
+
+    warning = "이 약 복용 후 피부 발진 또는 과민반응의 징후가 나타나는 경우 즉시 복용을 중단하십시오."
+    initial = build_result().model_copy(
+        update={
+            "answer": "⚠️ **주의사항**\n- " + warning,
+            "official_warning_texts": [warning],
+            "evidence_coverage": MedicationEvidenceCoverage(
+                requested_section_types=[KnowledgeSectionType.CAUTION],
+                covered_section_types=[KnowledgeSectionType.CAUTION],
+            ),
+        }
+    )
+    generator = OpenAIMedicationAnswerGenerator(
+        model="gpt-4o-mini",
+        client=FakeAnswerClient(
+            response={
+                "answer": "⚠️ **주의사항**\n- 피부 발진이나 과민반응이 나타나면 이 약 복용을 중단하세요.",
+                "section_types": ["CAUTION"],
+            }
+        ),
+    )
+
+    outcome = await generator.generate(
+        request=build_request(),
+        context=ActiveIntakeContext(user_id=1),
+        result=initial,
+    )
+
+    assert outcome.result.answer == initial.answer
+
+
+async def test_generator_restores_named_ingredient_heading_omitted_by_llm() -> None:
+    client = FakeAnswerClient(
+        response={
+            "answer": "✅ **효능**\n- 수면의 질 개선에 도움을 줄 수 있습니다.\n\n⚠️ **주의사항**\n- 섭취 전 제품 안내를 확인하세요.",
+            "section_types": ["FUNCTION", "CAUTION"],
+        }
+    )
+    result = build_result().model_copy(
+        update={
+            "answer": (
+                "**멜라토닌**\n\n"
+                "✅ **효능**\n- 수면의 질 개선에 도움을 줄 수 있습니다.\n\n"
+                "⚠️ **주의사항**\n- 섭취 전 제품 안내를 확인하세요."
+            ),
+            "route": MedicationChatRoute.SUPPLEMENT_GUIDE,
+            "evidence_coverage": MedicationEvidenceCoverage(
+                requested_section_types=[KnowledgeSectionType.FUNCTION, KnowledgeSectionType.CAUTION],
+                covered_section_types=[KnowledgeSectionType.FUNCTION, KnowledgeSectionType.CAUTION],
+            ),
+        }
+    )
+    generator = OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client)
+
+    outcome = await generator.generate(
+        request=MedicationChatRequest(
+            request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+            user_id=1,
+            question="수면의 질 개선과 관련된 건강기능식품 기능 정보가 있나요?",
+        ),
+        context=ActiveIntakeContext(user_id=1),
+        result=result,
+    )
+
+    assert outcome.result.answer.startswith("**멜라토닌**\n\n✅ **효능**")
+
+
+async def test_generator_repairs_interaction_to_the_requested_pair_only() -> None:
+    client = FakeAnswerClient(
+        responses=[
+            {
+                "answer": (
+                    "🔁 **질문 상호작용**\n\n**[와파린-비타민 K]**\n"
+                    "- 녹차와 홍차와 캐모마일과 크랜베리 등 여러 식품의 상세 내용을 포함한 긴 원문입니다."
+                ),
+                "section_types": ["INTERACTION"],
+            },
+            {
+                "answer": (
+                    "🔁 **질문 상호작용**\n\n**[와파린-비타민 K]**\n"
+                    "- 비타민 K는 와파린의 항응고 효과를 낮출 수 있습니다."
+                ),
+                "section_types": ["INTERACTION"],
+            },
+        ]
+    )
+    result = build_result().model_copy(
+        update={
+            "answer": "🔁 **질문 상호작용**\n\n**[와파린-비타민 K]**\n- 직접 근거를 확인했습니다.",
+            "route": MedicationChatRoute.INTERACTION,
+            "evidence_coverage": MedicationEvidenceCoverage(
+                requested_section_types=[KnowledgeSectionType.INTERACTION],
+                covered_section_types=[KnowledgeSectionType.INTERACTION],
+            ),
+        }
+    )
+    generator = OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client)
+
+    outcome = await generator.generate(
+        request=MedicationChatRequest(
+            request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+            user_id=1,
+            question="와파린과 비타민 K를 같이 먹어도 되나요?",
+        ),
+        context=ActiveIntakeContext(user_id=1),
+        result=result,
+    )
+
+    assert "**[와파린-비타민 K]**" in outcome.result.answer
+    assert "녹차" not in outcome.result.answer
+    assert len(client.all_messages) == 2
+
+
+async def test_generator_compacts_an_unrepaired_adverse_case_report() -> None:
+    raw_report = (
+        "🩻 **부작용 보고서**\n\n"
+        "**이상사례**\n\n"
+        "- 2) 이상사례: 현기증 (어지러움)\n\n"
+        "**상세 사항**\n\n"
+        "- 상세 사항 → WHO-UMC 평가기준 '상당히 확실함'입니다. "
+        "약물투여와 이상사례 발생간에 시간적 연관성이 있고 질병이나 다른 약물에 의한 것으로 보이지 않으며 "
+        "약물 복용을 중단했을 때 어지러움증이 호전되는 임상적 변화가 있었습니다. "
+        "참고로 탐스로신이 독사조신보다 효과적일 수 있다는 비교 연구도 있습니다."
+    )
+    client = FakeAnswerClient(
+        responses=[
+            {
+                "answer": raw_report,
+                "section_types": ["ADVERSE_EVENT", "CASE_SUMMARY", "ASSESSMENT"],
+            },
+            {
+                "answer": raw_report,
+                "section_types": ["ADVERSE_EVENT", "CASE_SUMMARY", "ASSESSMENT"],
+            },
+        ]
+    )
+    result = build_result().model_copy(
+        update={
+            "answer": raw_report,
+            "route": MedicationChatRoute.GENERAL_GUIDANCE,
+            "evidence_coverage": MedicationEvidenceCoverage(
+                requested_section_types=[],
+                covered_section_types=[],
+            ),
+        }
+    )
+    generator = OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client)
+
+    outcome = await generator.generate(
+        request=MedicationChatRequest(
+            request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+            user_id=1,
+            question="독사조신 복용 후 심한 어지러움이 보고된 사례가 있나요?",
+        ),
+        context=ActiveIntakeContext(user_id=1),
+        result=result,
+    )
+
+    assert "현기증" in outcome.result.answer
+    assert "WHO-UMC 평가에서 상당히 확실함으로 분류됨." in outcome.result.answer
+    assert "탐스로신" not in outcome.result.answer
+    assert "비교 연구" not in outcome.result.answer
+    assert all(
+        len(line.removeprefix("- ").split()) <= 10
+        for line in outcome.result.answer.splitlines()
+        if line.startswith("- ")
+    )
+
+
+async def test_generator_compacts_adverse_case_report_when_evidence_coverage_falls_back() -> None:
+    raw_report = (
+        "🩻 **부작용 보고서**\n\n"
+        "**이상사례**\n\n"
+        "- 2) 이상사례: 현기증 (어지러움)\n\n"
+        "**상세 사항**\n\n"
+        "- 상세 사항 → WHO-UMC 평가기준 '상당히 확실함'입니다. "
+        "약물투여와 이상사례 발생간에 시간적 연관성이 있습니다."
+    )
+    client = FakeAnswerClient(
+        response={
+            "answer": "🩻 **부작용 보고서**\n\n**이상사례**\n- 현기증이 보고됨.",
+            "section_types": ["ADVERSE_EVENT", "ASSESSMENT"],
+        }
+    )
+    result = build_result().model_copy(
+        update={
+            "answer": raw_report,
+            "route": MedicationChatRoute.GENERAL_GUIDANCE,
+            "evidence_coverage": MedicationEvidenceCoverage(
+                requested_section_types=[],
+                covered_section_types=[],
+            ),
+        }
+    )
+    generator = OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client)
+
+    outcome = await generator.generate(
+        request=MedicationChatRequest(
+            request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+            user_id=1,
+            question="독사조신 복용 후 심한 어지러움이 보고된 사례가 있나요?",
+        ),
+        context=ActiveIntakeContext(user_id=1),
+        result=result,
+    )
+
+    assert outcome.observation.status == MedicationAnswerRewriteStatus.DRAFT_FALLBACK
+    assert "현기증이 보고됨." in outcome.result.answer
+    assert "WHO-UMC 평가에서 상당히 확실함으로 분류됨." in outcome.result.answer
+    assert "시간적 연관성" not in outcome.result.answer
+
+
 async def test_generator_uses_accurate_model_for_interaction_answer_when_enabled() -> None:
     fast_client = FakeAnswerClient(error=AssertionError("빠른 모델을 호출하면 안 됩니다."))
     accurate_client = FakeAnswerClient(
@@ -122,6 +378,51 @@ async def test_generator_uses_accurate_model_for_interaction_answer_when_enabled
     assert outcome.result.model_name == "gpt-4o-2024-11-20"
 
 
+async def test_generator_restores_required_question_interaction_pair_labels() -> None:
+    client = FakeAnswerClient(
+        response={
+            "answer": (
+                "🔁 **질문 상호작용**\n- 펙소페나딘은 과일 주스와 함께 복용하면 흡수에 영향을 받을 수 있습니다."
+            ),
+            "section_types": ["INTERACTION"],
+        }
+    )
+    result = build_result().model_copy(
+        update={
+            "answer": (
+                "🔁 **질문 상호작용**\n\n"
+                "**[펙소페나딘-자몽주스]**\n"
+                "- 자몽주스와 함께 복용하면 흡수에 영향을 받을 수 있습니다.\n\n"
+                "**[펙소페나딘-사과주스]**\n"
+                "- 사과주스와 함께 복용하면 흡수에 영향을 받을 수 있습니다."
+            ),
+            "route": MedicationChatRoute.INTERACTION,
+            "evidence_coverage": MedicationEvidenceCoverage(
+                requested_section_types=[KnowledgeSectionType.INTERACTION],
+                covered_section_types=[KnowledgeSectionType.INTERACTION],
+            ),
+        }
+    )
+    generator = OpenAIMedicationAnswerGenerator(
+        model="gpt-4o-mini",
+        client=client,
+    )
+
+    outcome = await generator.generate(
+        request=MedicationChatRequest(
+            request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+            user_id=1,
+            question="펙소페나딘과 자몽주스, 사과주스를 같이 먹어도 돼?",
+        ),
+        context=ActiveIntakeContext(user_id=1),
+        result=result,
+    )
+
+    assert outcome.observation.status == MedicationAnswerRewriteStatus.REWRITTEN
+    assert "**[펙소페나딘-자몽주스]**" in outcome.result.answer
+    assert "**[펙소페나딘-사과주스]**" in outcome.result.answer
+
+
 def test_generator_preserves_warning_and_contraindication_section_markdown() -> None:
     answer = OpenAIMedicationAnswerGenerator._to_limited_markdown(
         "⚠️ **주의사항**\n- 정기적 음주자는 복용 전 확인합니다."
@@ -138,6 +439,36 @@ def test_generator_preserves_adverse_reaction_section_markdown() -> None:
     )
 
     assert answer.startswith("🚨 **이상반응**")
+
+
+def test_generator_preserves_standalone_bold_product_name() -> None:
+    answer = OpenAIMedicationAnswerGenerator._to_limited_markdown(
+        "**타이레놀산(아세트아미노펜)**\n\n✅ **효능**\n- 감기로 인한 발열 및 통증에 사용합니다."
+    )
+
+    assert answer.startswith("**타이레놀산(아세트아미노펜)**")
+
+
+def test_generator_restores_magnesium_formulation_cautions_when_rewrite_merges_them() -> None:
+    draft_answer = (
+        "**마그네슘**\n\n"
+        "⚠️ **주의사항**\n\n"
+        "**수산화마그네슘**\n"
+        "- 신장 질환이 있으면 복용 전 상담합니다.\n\n"
+        "**산화마그네슘**\n"
+        "- 묽은 변이 나타날 수 있습니다."
+    )
+    generated_answer = "**마그네슘**\n\n⚠️ **주의사항**\n- 복용 전 주의사항을 확인합니다."
+
+    answer = OpenAIMedicationAnswerGenerator._format_generated_answer(
+        draft_answer=draft_answer,
+        generated_answer=generated_answer,
+    )
+
+    assert "**수산화마그네슘**" in answer
+    assert "신장 질환이 있으면 복용 전 상담합니다." in answer
+    assert "**산화마그네슘**" in answer
+    assert "묽은 변이 나타날 수 있습니다." in answer
 
 
 def test_generator_preserves_active_intake_section_markdown() -> None:

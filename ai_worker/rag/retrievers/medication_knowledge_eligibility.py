@@ -42,6 +42,7 @@ class MedicationKnowledgeEligibilityPolicy:
         dense_confidence_score: DenseScore,
         eligibility_margin: Margin,
         effective_section_types: SectionTypes,
+        is_source_backed_function_goal_candidate: CandidateMatcher,
         entity_match_bonus: EntityBonus,
         relevance_score: RelevanceScore,
     ) -> None:
@@ -55,6 +56,7 @@ class MedicationKnowledgeEligibilityPolicy:
         self._dense_confidence_score = dense_confidence_score
         self._eligibility_margin = eligibility_margin
         self._effective_section_types = effective_section_types
+        self._is_source_backed_function_goal_candidate = is_source_backed_function_goal_candidate
         self._entity_match_bonus = entity_match_bonus
         self._relevance_score = relevance_score
 
@@ -107,6 +109,8 @@ class MedicationKnowledgeEligibilityPolicy:
             self._effective_section_types(result),
         ):
             return MedicationKnowledgeEligibilityReason.BELOW_SCORE
+        if self._is_source_backed_function_goal_candidate(result, plan):
+            return MedicationKnowledgeEligibilityReason.ELIGIBLE
         if self._entity_match_bonus(result, plan) <= 0.0:
             return MedicationKnowledgeEligibilityReason.ENTITY_MISMATCH
         if self._relevance_score(result, plan, confidence_score) < self._min_similarity_score:

@@ -291,6 +291,7 @@ async def load_reusable_vectors_from_collection(
         raise ValueError("벡터 재사용 기준 청크가 없습니다.")
 
     reused_vectors: dict[str, list[float]] = {}
+    conflicting_texts: set[str] = set()
     offset = None
     while True:
         points, next_offset = await client.scroll(
@@ -301,28 +302,49 @@ async def load_reusable_vectors_from_collection(
             with_vectors=True,
         )
         for point in points:
-            payload = point.payload or {}
-            embedding_text = payload.get("embedding_text")
-            if not isinstance(embedding_text, str) or embedding_text not in expected_texts:
-                continue
-            vector = point.vector
-            if not isinstance(vector, list) or not all(isinstance(value, (int, float)) for value in vector):
-                raise ValueError("벡터 재사용 원본은 단일 Dense 벡터 구조여야 합니다.")
-            normalized_vector = [float(value) for value in vector]
-            previous_vector = reused_vectors.get(embedding_text)
-            if previous_vector is not None and previous_vector != normalized_vector:
-                raise ValueError("같은 embedding_text에 서로 다른 원본 벡터가 있습니다.")
-            reused_vectors[embedding_text] = normalized_vector
+            _record_reusable_vector(
+                point=point,
+                expected_texts=expected_texts,
+                reused_vectors=reused_vectors,
+                conflicting_texts=conflicting_texts,
+            )
         if next_offset is None:
             break
         offset = next_offset
 
-    missing_texts = expected_texts - reused_vectors.keys()
+    missing_texts = expected_texts - reused_vectors.keys() - conflicting_texts
     if missing_texts:
         raise ValueError(
             f"벡터 재사용 원본 컬렉션에 baseline embedding_text가 없습니다: missing_count={len(missing_texts)}"
         )
     return reused_vectors
+
+
+def _record_reusable_vector(
+    *,
+    point: object,
+    expected_texts: set[str],
+    reused_vectors: dict[str, list[float]],
+    conflicting_texts: set[str],
+) -> None:
+    payload = getattr(point, "payload", None) or {}
+    embedding_text = payload.get("embedding_text")
+    if not isinstance(embedding_text, str) or embedding_text not in expected_texts:
+        return
+
+    vector = getattr(point, "vector", None)
+    if not isinstance(vector, list) or not all(isinstance(value, (int, float)) for value in vector):
+        raise ValueError("벡터 재사용 원본은 단일 Dense 벡터 구조여야 합니다.")
+    if embedding_text in conflicting_texts:
+        return
+
+    normalized_vector = [float(value) for value in vector]
+    previous_vector = reused_vectors.get(embedding_text)
+    if previous_vector is not None and previous_vector != normalized_vector:
+        conflicting_texts.add(embedding_text)
+        reused_vectors.pop(embedding_text)
+        return
+    reused_vectors[embedding_text] = normalized_vector
 
 
 def ensure_preprocessing_approved(

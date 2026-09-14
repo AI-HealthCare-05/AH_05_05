@@ -562,6 +562,31 @@ async def test_loads_reusable_vectors_only_for_verified_baseline_embedding_texts
     ]
 
 
+async def test_skips_conflicting_baseline_vectors_and_requires_reembedding() -> None:
+    class ConflictingVectorReuseClient:
+        async def scroll(self, **_kwargs):
+            return [
+                SimpleNamespace(
+                    vector=[0.1, 0.2, 0.3],
+                    payload={"embedding_text": "[문서] 중복 근거\n[원문] 내용"},
+                ),
+                SimpleNamespace(
+                    vector=[0.4, 0.5, 0.6],
+                    payload={"embedding_text": "[문서] 중복 근거\n[원문] 내용"},
+                ),
+            ], None
+
+    reusable = await module.load_reusable_vectors_from_collection(
+        client=ConflictingVectorReuseClient(),
+        collection_name="medication_knowledge_full_v16",
+        baseline_chunks=[
+            SimpleNamespace(embedding_text="[문서] 중복 근거\n[원문] 내용"),
+        ],
+    )
+
+    assert reusable == {}
+
+
 def test_rejects_chunks_from_source_without_completed_approval(
     tmp_path: Path,
 ) -> None:

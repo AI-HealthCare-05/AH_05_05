@@ -221,7 +221,7 @@ def test_system_prompt_requires_limited_markdown_product_answer() -> None:
     assert "✅ **효능**" in SYSTEM_PROMPT
     assert "🚨 **이상반응**" in SYSTEM_PROMPT
     assert "`- ` 목록" in SYSTEM_PROMPT
-    assert "굵은 제품명만" in SYSTEM_PROMPT
+    assert "초안에 있는 이름만 독립한 굵은 줄" in SYSTEM_PROMPT
     assert "값이 없는 항목은 출력하지" in SYSTEM_PROMPT
     assert "질문과 직접 관계있는 섹션" in SYSTEM_PROMPT
     assert "각 섹션은 최대 3개 bullet" in SYSTEM_PROMPT

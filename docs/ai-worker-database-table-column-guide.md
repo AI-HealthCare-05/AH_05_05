@@ -199,7 +199,6 @@ e약은요 자료에서 품목별 공식 안내를 저장한다. 상호작용 �
 | `drug_food_interactions` | TEXT | 함께 주의할 약 또는 음식 |
 | `adverse_reactions` | TEXT | 가능한 이상반응 |
 | `storage_instructions` | TEXT | 보관 방법 |
-| `item_image_url` | TEXT, NULL | e약은요 낱알이미지 URL. 원본 값이 없으면 `NULL` |
 | `created_at`, `updated_at` | DATETIME | 적재·갱신 시각 |
 
 ### 사용 규칙
@@ -246,7 +245,6 @@ e약은요 자료에서 품목별 공식 안내를 저장한다. 상호작용 �
 | `alias_type` | `INGREDIENT_NAME`, `PRODUCT_NAME`, `SYNONYM`, `SOURCE_NAME` |
 | `alias` | 원래 표시 문자열 |
 | `normalized_alias` | 검색용 정규화 문자열 |
-| `is_preferred` | 여러 별칭 중 우선 표시 여부 |
 | `created_at` | 생성 시각 |
 
 예: `타이레놀`과 `타이레놀정500mg`을 아세트아미노펜 엔티티에 연결한다.
@@ -528,8 +526,6 @@ group 1 / order 2: DAILY_DOSE GT 20 mg/day
 | `route_type` | 질문 분류 결과 경로 |
 | `safety_status` | 출력 안전성 검사 결과 |
 | `safety_reason_code` | 제한·차단 이유 |
-| `verification_status` | 근거 검증 상태 |
-| `conflict_status` | 환자정보·공공자료 충돌 상태 |
 | `model_name`, `model_version` | 사용 모델 정보 |
 | `prompt_version` | 프롬프트 버전 |
 | `schema_version` | 응답 스키마 버전 |

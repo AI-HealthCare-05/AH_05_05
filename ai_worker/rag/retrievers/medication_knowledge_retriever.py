@@ -1,6 +1,9 @@
 import re
 
 from ai_worker.domain.interfaces import EmbeddingProvider
+from ai_worker.domain.supplement_function_goal_detector import (
+    is_supplement_function_goal_question,
+)
 from ai_worker.rag.metadata.supplement_interaction_registry import (
     supplement_pair_matches_text,
 )
@@ -52,6 +55,7 @@ class MedicationKnowledgeRetriever:
     _DOCUMENT_TYPE_BONUS = 0.03
     _INTERACTION_TYPE_BONUS = 0.03
     _EXACT_TOPIC_TITLE_BONUS = 0.15
+    _NAMED_FUNCTIONAL_INGREDIENT_BONUS = 0.15
     _BOOST_ELIGIBILITY_MARGIN = 0.10
     _PAIR_BOOST_ELIGIBILITY_MARGIN = 0.15
     _VERIFIED_RELATION_ELIGIBILITY_MARGIN = 0.20
@@ -100,6 +104,7 @@ class MedicationKnowledgeRetriever:
                 plan=plan,
             ),
             effective_section_types=self._effective_section_types,
+            is_source_backed_function_goal_candidate=(self._is_source_backed_function_goal_candidate),
             entity_match_bonus=lambda result, plan: self._entity_match_bonus(
                 result,
                 plan=plan,
@@ -337,7 +342,46 @@ class MedicationKnowledgeRetriever:
             in {interaction_type.value for interaction_type in plan.interaction_types}
             else 0.0
         )
-        return document_type_bonus + interaction_type_bonus
+        named_functional_ingredient_bonus = (
+            cls._NAMED_FUNCTIONAL_INGREDIENT_BONUS
+            if cls._is_generic_supplement_function_goal(plan) and result.metadata.ingredient_names
+            else 0.0
+        )
+        return document_type_bonus + interaction_type_bonus + named_functional_ingredient_bonus
+
+    @staticmethod
+    def _is_generic_supplement_function_goal(
+        plan: MedicationKnowledgeQueryPlan,
+    ) -> bool:
+        """목표 기반 질문은 일반 배경보다 성분이 명시된 기능성 근거를 우선한다."""
+
+        return (
+            not plan.entities
+            and KnowledgeSectionType.FUNCTION in plan.section_types
+            and {
+                KnowledgeDocumentType.SUPPLEMENT_CODE,
+                KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+            }.issubset(set(plan.document_types))
+        )
+
+    @classmethod
+    def _is_source_backed_function_goal_candidate(
+        cls,
+        result: RetrievedKnowledgeChunk,
+        plan: MedicationKnowledgeQueryPlan,
+    ) -> bool:
+        """목표형 질문은 성분명이 있는 공공 기능성 근거만 낮은 점수에서도 수용한다."""
+
+        return (
+            is_supplement_function_goal_question(plan.original_query)
+            and result.metadata.document_type
+            in {
+                KnowledgeDocumentType.SUPPLEMENT_CODE,
+                KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+            }
+            and result.metadata.section_type is KnowledgeSectionType.FUNCTION
+            and bool(result.metadata.ingredient_names)
+        )
 
     @classmethod
     def _effective_section_types(

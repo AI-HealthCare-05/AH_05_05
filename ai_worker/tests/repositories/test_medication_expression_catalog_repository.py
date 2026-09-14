@@ -69,7 +69,6 @@ async def test_catalog_combines_product_entity_and_alias_names(
         alias_type=InteractionAliasType.PRODUCT_NAME,
         alias="해열진통제",
         normalized_alias="해열진통제",
-        is_preferred=True,
     )
 
     result = await DbMedicationExpressionCatalog().list_expressions()
@@ -111,6 +110,36 @@ async def test_catalog_includes_product_name_without_parenthetical_ingredient(
     assert "마그오캡슐500mg(산화마그네슘)" in result
     assert "마그오캡슐500mg" in result
     assert "마그오" in result
+
+
+@pytest.mark.asyncio
+async def test_catalog_does_not_turn_a_product_name_ending_in_san_into_another_brand_alias(
+    initialized_db: None,
+) -> None:
+    """`타이레놀`과 `타이레놀산`은 서로 다른 제품명으로 해석한다."""
+
+    for item_seq, product_name in (
+        ("301", "타이레놀정500밀리그람(아세트아미노펜)"),
+        ("302", "타이레놀산500밀리그램(아세트아미노펜)"),
+    ):
+        await MedicationProductGuide.create(
+            item_seq=item_seq,
+            product_name=product_name,
+            manufacturer_name="테스트제약",
+            efficacy="통증 완화",
+            usage_instructions="정해진 용법을 따릅니다.",
+            pre_use_warning="주의사항을 확인합니다.",
+            precautions="",
+            drug_food_interactions="",
+            adverse_reactions="",
+            storage_instructions="",
+        )
+
+    entries = await DbMedicationExpressionCatalog().list_entries()
+    aliases_by_product = {entry.canonical_name: entry.aliases for entry in entries}
+
+    assert "타이레놀" in aliases_by_product["타이레놀정500밀리그람(아세트아미노펜)"]
+    assert "타이레놀" not in aliases_by_product["타이레놀산500밀리그램(아세트아미노펜)"]
 
 
 @pytest.mark.asyncio

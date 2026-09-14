@@ -1,5 +1,6 @@
 from typing import Any
 
+from langchain_core.messages import HumanMessage
 from langchain_core.runnables import Runnable, RunnableLambda
 from pydantic import BaseModel, ConfigDict
 
@@ -22,6 +23,7 @@ class MedicationAnswerChainInput(BaseModel):
     request: MedicationChatRequest
     context: ActiveIntakeContext
     result: MedicationChatResult
+    format_repair_answer: str | None = None
 
 
 def _validate_answer_input(
@@ -33,11 +35,29 @@ def _validate_answer_input(
 
 
 def _build_answer_messages(value: MedicationAnswerChainInput):
-    return build_medication_chat_messages(
+    messages = build_medication_chat_messages(
         request=value.request,
         context=value.context,
         result=value.result,
     )
+    if value.format_repair_answer is None:
+        return messages
+    return [
+        *messages,
+        HumanMessage(
+            content=(
+                "[형식 보정]\n"
+                "아래 생성 답변을 같은 근거 범위에서 다시 작성하세요. 원문을 인용하거나 "
+                "문장을 잘라내지 말고 의미를 요약하세요. 각 bullet은 10어절 이내로 작성하고, "
+                "섹션당 3개를 넘기지 마세요.\n"
+                "상호작용은 질문한 pair의 직접 관계만 남기고, 제3 성분·비교 연구·참고문헌은 "
+                "제외하세요. 부작용 보고서는 이상사례와 질문에 직접 관련된 경위만 남기세요.\n"
+                "기능성 원료 질문은 성분명과 확인된 기능만 남기고 일반 건강 설명은 제외하세요.\n\n"
+                "[보정 대상 답변]\n"
+                f"{value.format_repair_answer.strip()}"
+            )
+        ),
+    ]
 
 
 def _validate_answer_payload(

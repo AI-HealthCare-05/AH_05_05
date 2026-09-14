@@ -324,6 +324,59 @@ def test_split_preserves_manifest_aliases_with_detected_official_ingredient_name
     ]
 
 
+def test_split_function_guide_creates_named_chunks_from_numbered_function_rows() -> None:
+    page = build_page(
+        """
+기능성 내용
+1 감태추출물
+수면의 질 개선에 도움을 줄 수 있음
+수면의 일반적인 생리와 생활 습관에 관한 긴 배경 설명입니다.
+2 유단백가수분해물(락티움)
+수면 건강에 도움을 줄 수 있음
+3 미강주정추출물
+수면에 도움을 줄 수 있음
+""",
+        document_type=KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+        title="건강기능식품 기능별 정보집",
+    ).model_copy(
+        update={
+            "metadata": build_page(
+                "placeholder",
+                document_type=KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+                title="건강기능식품 기능별 정보집",
+            ).metadata.model_copy(update={"ingredient_names": []})
+        }
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert [chunk.metadata.ingredient_names for chunk in chunks] == [
+        ["감태추출물"],
+        ["유단백가수분해물(락티움)"],
+        ["미강주정추출물"],
+    ]
+    assert [chunk.content for chunk in chunks] == [
+        "감태추출물\n수면의 질 개선에 도움을 줄 수 있음",
+        "유단백가수분해물(락티움)\n수면 건강에 도움을 줄 수 있음",
+        "미강주정추출물\n수면에 도움을 줄 수 있음",
+    ]
+
+
+def test_clean_function_content_removes_report_numbers_labels_and_duplicate_claims() -> None:
+    content = (
+        "(제2023-44호) 분류: 기능성 내용 기능성 내용: 관절 및 연골 건강에 도움을 줄 수 있음"
+        "·( 2024-12 ) 분류: 기능성 내용 기능성 내용: ·관절 및 연골 건강에 도움을 줄 수 있음"
+        "·(제2022-12호) 분류: 기능성 내용 기능성 내용: ·관절 및 연골 건강에 도움을 줄 수 있음"
+    )
+
+    cleaned = KnowledgeSplitter._clean_section_content(
+        content,
+        title="기능성 내용",
+    )
+
+    assert cleaned == "관절 및 연골 건강에 도움을 줄 수 있음"
+
+
 def build_research_page_with_table(
     *,
     table_rows: list[list[str]],

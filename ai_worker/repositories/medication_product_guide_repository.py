@@ -53,6 +53,52 @@ class DbMedicationProductGuideRepository:
             return self._ambiguous(normalized_name, partial_matches)
         return MedicationGuideLookup()
 
+    async def find_caution_guides_by_ingredient_names(
+        self,
+        ingredient_names: list[str],
+    ) -> dict[str, list[MedicationGuideFact]]:
+        """일반 성분 질문에 쓸 제형별 공식 제품 주의사항을 모은다."""
+
+        normalized_names = list(dict.fromkeys(name.strip() for name in ingredient_names if name.strip()))
+        matches_by_id: dict[int, MedicationProductGuide] = {}
+        for ingredient_name in normalized_names:
+            matches = await (
+                MedicationProductGuide.filter(
+                    product_name__icontains=ingredient_name,
+                )
+                .order_by("product_name", "id")
+                .limit(12)
+            )
+            matches_by_id.update({guide.id: guide for guide in matches})
+
+        guides_by_ingredient: dict[str, list[MedicationGuideFact]] = {
+            ingredient_name: [] for ingredient_name in normalized_names
+        }
+        seen_cautions_by_ingredient: dict[str, set[tuple[str, str, str]]] = defaultdict(set)
+        for match in sorted(matches_by_id.values(), key=lambda guide: (guide.product_name, guide.id)):
+            normalized_product_name = self._normalize_name(match.product_name)
+            matching_ingredients = [
+                ingredient_name
+                for ingredient_name in normalized_names
+                if self._normalize_name(ingredient_name) in normalized_product_name
+            ]
+            if not matching_ingredients:
+                continue
+            ingredient_name = max(matching_ingredients, key=lambda name: len(self._normalize_name(name)))
+            fact = self._to_fact(match)
+            caution_values = (
+                fact.pre_use_warning.strip(),
+                fact.precautions.strip(),
+                fact.adverse_reactions.strip(),
+            )
+            if caution_values in seen_cautions_by_ingredient[ingredient_name]:
+                continue
+            seen_cautions_by_ingredient[ingredient_name].add(caution_values)
+            if any(caution_values):
+                guides_by_ingredient[ingredient_name].append(fact)
+
+        return {ingredient_name: guides for ingredient_name, guides in guides_by_ingredient.items() if guides}
+
     @classmethod
     def _ambiguous(
         cls,

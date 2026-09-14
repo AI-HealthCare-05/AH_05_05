@@ -5,6 +5,9 @@ from collections import Counter
 from typing import NamedTuple, Protocol
 
 from ai_worker.domain.interaction_question_detector import is_interaction_question
+from ai_worker.domain.supplement_function_goal_detector import (
+    is_supplement_function_goal_question,
+)
 from ai_worker.rag.metadata.supplement_ingredient_family_registry import (
     find_supplement_ingredient_family,
 )
@@ -87,6 +90,10 @@ class RuleBasedMedicationQuestionResolver:
     _CANONICAL_RELATION_ENDING = "돼"
     _RELATION_INTAKE_MAX_JAMO_DISTANCE = 2
     _TRAILING_PRODUCT_INGREDIENT = re.compile(r"\((?P<ingredient>[^()]+)\)\s*$")
+    _PRODUCT_STRENGTH_SUFFIX = re.compile(
+        r"(?:\d+(?:[.,]\d+)?\s*(?:mg|mcg|μg|㎍|g|mL|ml|밀리그램|마이크로그램|그램)).*$",
+        flags=re.IGNORECASE,
+    )
     _NON_ENTITY_TOKENS = {
         "같이",
         "관련",
@@ -391,7 +398,7 @@ class RuleBasedMedicationQuestionResolver:
         entries_by_expression: dict[str, list[MedicationCatalogEntry]] = {}
         catalog: dict[str, str] = {}
         for entry in entries:
-            for expression in entry.expressions:
+            for expression in [*entry.expressions, *cls._derived_product_stem_aliases(entry)]:
                 for normalized_expression in cls._expression_keys(expression):
                     catalog.setdefault(normalized_expression, expression)
                     entries_by_expression.setdefault(
@@ -426,6 +433,16 @@ class RuleBasedMedicationQuestionResolver:
             candidates_by_length=candidates_by_length,
             candidates_by_bigram=candidates_by_bigram,
         )
+
+    @classmethod
+    def _derived_product_stem_aliases(cls, entry: MedicationCatalogEntry) -> list[str]:
+        """RDB 제품명에서만 용량·괄호 성분을 뺀 짧은 제품명을 보강한다."""
+
+        if entry.source is not MedicationQueryEntitySource.RDBMS or entry.entity_type not in cls._PRODUCT_ENTITY_TYPES:
+            return []
+        without_ingredient = cls._TRAILING_PRODUCT_INGREDIENT.sub("", entry.canonical_name).strip()
+        stem = cls._PRODUCT_STRENGTH_SUFFIX.sub("", without_ingredient).strip()
+        return [stem] if len(cls._normalize_expression(stem)) >= 3 and stem != entry.canonical_name else []
 
     @classmethod
     def _entry_selection_priority(
@@ -1398,7 +1415,11 @@ class RuleBasedMedicationQuestionResolver:
 
     @classmethod
     def _is_domain_related(cls, question: str) -> bool:
-        return bool(cls._DOMAIN_CUE.search(question) or cls._PRODUCT_FORM_CUE.search(question))
+        return bool(
+            cls._DOMAIN_CUE.search(question)
+            or cls._PRODUCT_FORM_CUE.search(question)
+            or is_supplement_function_goal_question(question)
+        )
 
     @staticmethod
     def _result(

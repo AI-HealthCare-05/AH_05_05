@@ -90,7 +90,7 @@ def test_assemble_only_includes_guide_sections_with_requested_evidence() -> None
     assert "복용법: 현재 근거에서 확인하지 못했습니다" in answer
 
 
-def test_assemble_groups_product_guide_into_function_caution_and_adverse_reaction_sections() -> None:
+def test_assemble_groups_product_guide_into_only_requested_sections() -> None:
     answer = MedicationAnswerAssembler().assemble(
         context=ActiveIntakeContext(user_id=1),
         guide=build_guide(),
@@ -112,8 +112,124 @@ def test_assemble_groups_product_guide_into_function_caution_and_adverse_reactio
     assert answer.startswith("**마그오캡슐500mg**")
     assert "✅ **효능**\n- 위산 과다 증상 완화와 변비 치료에 사용합니다." in answer
     assert "⚠️ **주의사항**\n- 신장 질환이 있으면 복용 전 상담합니다." in answer
-    assert "🚨 **이상반응**\n- 설사 등이 나타날 수 있습니다." in answer
+    assert "🚨 **이상반응**" not in answer
     assert "✅ **복용법**" not in answer
+
+
+def test_assemble_product_guide_returns_only_requested_caution_section() -> None:
+    """주의사항 질문은 이상반응·복용법을 함께 노출하지 않는다."""
+
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=build_guide(),
+        rules=[],
+        chunks=[],
+        interaction_question=False,
+        evidence_coverage=MedicationEvidenceCoverage(
+            requested_section_types=[KnowledgeSectionType.CAUTION],
+            covered_section_types=[KnowledgeSectionType.CAUTION],
+        ),
+    )
+
+    assert "⚠️ **주의사항**" in answer
+    assert "🚨 **이상반응**" not in answer
+    assert "✅ **복용법**" not in answer
+    assert "✅ **효능**" not in answer
+
+
+def test_assemble_product_guide_returns_only_adverse_reaction_section() -> None:
+    """이상반응 질문은 공식 이상반응 필드만 사용한다."""
+
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=build_guide(),
+        rules=[],
+        chunks=[],
+        interaction_question=False,
+        adverse_reaction_question=True,
+        evidence_coverage=MedicationEvidenceCoverage(
+            requested_section_types=[KnowledgeSectionType.CAUTION],
+            covered_section_types=[KnowledgeSectionType.CAUTION],
+        ),
+    )
+
+    assert "🚨 **이상반응**\n- 설사 등이 나타날 수 있습니다." in answer
+    assert "⚠️ **주의사항**" not in answer
+    assert "✅ **복용법**" not in answer
+    assert "✅ **효능**" not in answer
+
+
+def test_assemble_groups_magnesium_form_cautions_under_each_formulation() -> None:
+    """일반 마그네슘 요청은 각 제형의 RDB 경고를 구분해 보인다."""
+
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=[],
+        chunks=[],
+        interaction_question=False,
+        form_caution_guides={
+            "수산화마그네슘": [
+                build_guide(
+                    product_name="마그밀정(수산화마그네슘)",
+                    pre_use_warning="신장 질환이 있으면 복용 전 상담합니다.",
+                    precautions="다른 약과의 복용 간격을 확인합니다.",
+                    adverse_reactions="설사가 나타날 수 있습니다.",
+                )
+            ],
+            "산화마그네슘": [
+                build_guide(
+                    product_name="마그오캡슐500mg(산화마그네슘)",
+                    pre_use_warning="신장 질환이 있으면 복용 전 상담합니다.",
+                    precautions="정해진 용법을 지킵니다.",
+                    adverse_reactions="묽은 변이 나타날 수 있습니다.",
+                )
+            ],
+        },
+        evidence_coverage=MedicationEvidenceCoverage(
+            requested_section_types=[KnowledgeSectionType.CAUTION],
+            covered_section_types=[KnowledgeSectionType.CAUTION],
+        ),
+        response_subject="마그네슘",
+    )
+
+    assert answer == (
+        "**마그네슘**\n\n"
+        "⚠️ **주의사항**\n\n"
+        "**수산화마그네슘**\n"
+        "- 신장 질환이 있으면 복용 전 상담합니다.\n"
+        "- 다른 약과의 복용 간격을 확인합니다.\n"
+        "- 설사가 나타날 수 있습니다.\n\n"
+        "**산화마그네슘**\n"
+        "- 신장 질환이 있으면 복용 전 상담합니다.\n"
+        "- 정해진 용법을 지킵니다.\n"
+        "- 묽은 변이 나타날 수 있습니다."
+    )
+
+
+def test_assemble_cleans_rdb_delimited_efficacy_into_readable_list() -> None:
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=build_guide(
+            product_name="타이레놀산500밀리그램(아세트아미노펜)",
+            efficacy=(
+                "감기로인한발열및동통(통증)|두통|신경통|근육통|월경통|"
+                "염좌통(삔통증)|치통|관절통|류마티양동통(통증)에사용합니다."
+            ),
+        ),
+        rules=[],
+        chunks=[],
+        interaction_question=False,
+        evidence_coverage=MedicationEvidenceCoverage(
+            requested_section_types=[KnowledgeSectionType.FUNCTION],
+            covered_section_types=[KnowledgeSectionType.FUNCTION],
+        ),
+    )
+
+    assert answer.startswith("**타이레놀산500밀리그램(아세트아미노펜)**")
+    assert "- 감기로 인한 발열 및 통증, 두통, 신경통, 근육통, 월경통" in answer
+    assert "|" not in answer
+    assert "(통증)" not in answer
 
 
 def test_assemble_does_not_claim_missing_when_interaction_evidence_exists() -> None:
@@ -154,6 +270,311 @@ def test_assemble_does_not_claim_missing_when_interaction_evidence_exists() -> N
     assert "확인하지 못했습니다" not in answer
     assert "검색된 상호작용 연구 근거" in answer
     assert "칼슘이 철분 흡수를" in answer
+
+
+def test_assemble_uses_resolved_subject_and_section_for_public_drug_evidence() -> None:
+    chunk = RetrievedKnowledgeChunk(
+        point_id="doxazosin-point",
+        chunk_id="d" * 64,
+        content="독사조신 복용 후 심한 어지러움이 보고된 사례가 있습니다.",
+        embedding_text="독사조신 심한 어지러움",
+        token_count=20,
+        similarity_score=0.8,
+        metadata=KnowledgeChunkMetadata(
+            source_id="drug-encyclopedia",
+            document_id="doxazosin",
+            title="독사조신 안전성 정보",
+            provider="시험기관",
+            access_scope=KnowledgeAccessScope.PUBLIC,
+            document_type=KnowledgeDocumentType.DRUG_ENCYCLOPEDIA,
+            dataset_version="knowledge-full-v16-te3large",
+            drug_names=["독사조신"],
+            section_type=KnowledgeSectionType.CAUTION,
+            page_start=1,
+            page_end=1,
+            chunk_index=0,
+            content_hash="e" * 64,
+        ),
+    )
+
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=[],
+        chunks=[chunk],
+        interaction_question=False,
+        response_subject="독사조신",
+        adverse_reaction_question=True,
+    )
+
+    assert answer.startswith("**독사조신**")
+    assert "🚨 **이상반응**" in answer
+    assert "공공자료 추가 설명" not in answer
+
+
+def test_assemble_uses_named_functional_ingredient_as_the_public_knowledge_title() -> None:
+    chunk = RetrievedKnowledgeChunk(
+        point_id="melatonin-function",
+        chunk_id="h" * 64,
+        content="멜라토닌은 수면의 질 개선에 도움을 줄 수 있습니다.",
+        embedding_text="멜라토닌 수면의 질 개선",
+        token_count=20,
+        similarity_score=0.8,
+        metadata=KnowledgeChunkMetadata(
+            source_id="supplement-function-guide",
+            document_id="melatonin-sleep",
+            title="멜라토닌 기능성 정보",
+            provider="시험기관",
+            access_scope=KnowledgeAccessScope.PUBLIC,
+            document_type=KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+            dataset_version="knowledge-full-v16-te3large",
+            ingredient_names=["멜라토닌"],
+            section_type=KnowledgeSectionType.FUNCTION,
+            page_start=1,
+            page_end=1,
+            chunk_index=0,
+            content_hash="i" * 64,
+        ),
+    )
+
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=[],
+        chunks=[chunk],
+        interaction_question=False,
+        response_subject=None,
+    )
+
+    assert answer.startswith("**멜라토닌**")
+    assert "공공자료 추가 설명" not in answer
+
+
+def test_assemble_groups_functional_ingredients_under_the_requested_health_goal() -> None:
+    base_chunk = RetrievedKnowledgeChunk(
+        point_id="joint-function-0",
+        chunk_id="i" * 64,
+        content="발효우슬등복합물은 관절 건강에 도움을 줄 수 있습니다.",
+        embedding_text="발효우슬등복합물 관절 건강",
+        token_count=20,
+        similarity_score=0.8,
+        metadata=KnowledgeChunkMetadata(
+            source_id="supplement-function-guide",
+            document_id="joint-health",
+            title="관절 건강 기능성 정보",
+            provider="시험기관",
+            access_scope=KnowledgeAccessScope.PUBLIC,
+            document_type=KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+            ingredient_names=["발효우슬등복합물"],
+            dataset_version="knowledge-full-v17-function-ingredients",
+            section_type=KnowledgeSectionType.FUNCTION,
+            page_start=1,
+            page_end=1,
+            chunk_index=0,
+            content_hash="j" * 64,
+        ),
+    )
+    chunks = [
+        base_chunk.model_copy(
+            update={
+                "chunk_id": chr(ord("i") + index) * 64,
+                "metadata": base_chunk.metadata.model_copy(update={"ingredient_names": [ingredient_name]}),
+            }
+        )
+        for index, ingredient_name in enumerate(
+            [
+                "발효우슬등복합물",
+                "타마린드강황주정추출복합물",
+                "구절초추출물",
+                "가자추출물",
+            ]
+        )
+    ]
+
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=[],
+        chunks=chunks,
+        interaction_question=False,
+        functional_goal_title="관절 건강",
+    )
+
+    assert answer == (
+        "**관절 건강**\n\n🧬 **성분**\n- 발효우슬등복합물\n- 타마린드강황주정추출복합물\n- 구절초추출물\n- 가자추출물"
+    )
+
+
+def test_assemble_functional_goal_uses_named_ingredients_even_when_topic_is_resolved() -> None:
+    """기능성 목표는 TOPIC이 잡혀도 공공자료 원문 대신 성분명만 보여 준다."""
+
+    base = RetrievedKnowledgeChunk(
+        point_id="eye-function-0",
+        chunk_id="q" * 64,
+        content="(제2022-44호) 분류: 기능성 내용 기능성 내용: 눈 건강에 도움을 줄 수 있음",
+        embedding_text="눈 건강 기능성 내용",
+        token_count=20,
+        similarity_score=0.8,
+        metadata=KnowledgeChunkMetadata(
+            source_id="supplement-function-guide",
+            document_id="eye-health",
+            title="눈 건강 기능성 정보",
+            provider="시험기관",
+            access_scope=KnowledgeAccessScope.PUBLIC,
+            document_type=KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+            ingredient_names=["루테인지아잔틴복합추출물"],
+            dataset_version="knowledge-full-v17-function-ingredients",
+            section_type=KnowledgeSectionType.FUNCTION,
+            page_start=1,
+            page_end=1,
+            chunk_index=0,
+            content_hash="q" * 64,
+        ),
+    )
+    chunks = [
+        base,
+        base.model_copy(
+            update={
+                "chunk_id": "r" * 64,
+                "metadata": base.metadata.model_copy(update={"ingredient_names": ["감잎주정추출분말"]}),
+            }
+        ),
+        base.model_copy(update={"chunk_id": "s" * 64}),
+    ]
+
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=[],
+        chunks=chunks,
+        interaction_question=False,
+        response_subject="눈 건강",
+        functional_goal_title="눈 건강",
+    )
+
+    assert answer == "**눈 건강**\n\n🧬 **성분**\n- 루테인지아잔틴복합추출물\n- 감잎주정추출분말"
+    assert "제2022" not in answer
+    assert "기능성 내용" not in answer
+
+
+def test_assemble_lists_up_to_three_ingredients_with_function_for_broad_health_goal() -> None:
+    base = RetrievedKnowledgeChunk(
+        point_id="health-function-0",
+        chunk_id="z" * 64,
+        content="복분자동결건조분말은 항산화에 도움을 줄 수 있습니다.",
+        embedding_text="복분자동결건조분말 항산화",
+        token_count=20,
+        similarity_score=0.8,
+        metadata=KnowledgeChunkMetadata(
+            source_id="supplement-function-guide",
+            document_id="health-goal",
+            title="건강 기능성 정보",
+            provider="시험기관",
+            access_scope=KnowledgeAccessScope.PUBLIC,
+            document_type=KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+            ingredient_names=["복분자동결건조분말"],
+            dataset_version="knowledge-full-v17-function-ingredients",
+            section_type=KnowledgeSectionType.FUNCTION,
+            page_start=1,
+            page_end=1,
+            chunk_index=0,
+            content_hash="z" * 64,
+        ),
+    )
+    chunks = [
+        base,
+        base.model_copy(
+            update={
+                "chunk_id": "y" * 64,
+                "content": "작약추출물등복합물은 위 건강에 도움을 줄 수 있습니다.",
+                "metadata": base.metadata.model_copy(update={"ingredient_names": ["작약추출물등복합물"]}),
+            }
+        ),
+    ]
+
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=[],
+        chunks=chunks,
+        interaction_question=False,
+        functional_goal_title="건강 증진",
+    )
+
+    assert answer == (
+        "**건강 증진**\n\n🧬 **성분**\n"
+        "- 복분자동결건조분말: 항산화에 도움을 줄 수 있음\n"
+        "- 작약추출물등복합물: 위 건강에 도움을 줄 수 있음"
+    )
+
+
+def test_assemble_omits_unverified_notice_for_active_intake_interaction() -> None:
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=[],
+        chunks=[],
+        interaction_question=True,
+        active_intake_interaction=True,
+        unsupported_pairs=["등록약 ↔ 비타민 D"],
+    )
+
+    assert "확인하지 못한 조합" not in answer
+
+
+def test_assemble_groups_adverse_case_report_into_event_and_detail_sections() -> None:
+    event_chunk = RetrievedKnowledgeChunk(
+        point_id="doxazosin-event",
+        chunk_id="f" * 64,
+        content="독사조신 복용 뒤 심한 어지러움이 보고됐습니다.",
+        embedding_text="독사조신 심한 어지러움 이상사례",
+        token_count=20,
+        similarity_score=0.83,
+        metadata=KnowledgeChunkMetadata(
+            source_id="drug-safety-report",
+            document_id="doxazosin-case",
+            title="독사조신 이상사례 보고",
+            provider="의약품 안전기관",
+            access_scope=KnowledgeAccessScope.PUBLIC,
+            document_type=KnowledgeDocumentType.ADVERSE_CASE_REPORT,
+            dataset_version="knowledge-full-v16-te3large",
+            drug_names=["독사조신"],
+            section_type=KnowledgeSectionType.ADVERSE_EVENT,
+            page_start=1,
+            page_end=1,
+            chunk_index=0,
+            content_hash="f" * 64,
+        ),
+    )
+    detail_chunk = event_chunk.model_copy(
+        update={
+            "point_id": "doxazosin-detail",
+            "chunk_id": "g" * 64,
+            "content": "증상 발생 시점과 함께 복용한 약을 검토했습니다.",
+            "metadata": event_chunk.metadata.model_copy(
+                update={
+                    "section_type": KnowledgeSectionType.ASSESSMENT,
+                    "chunk_index": 1,
+                    "content_hash": "g" * 64,
+                }
+            ),
+        }
+    )
+
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=[],
+        chunks=[event_chunk, detail_chunk],
+        interaction_question=False,
+        response_subject="독사조신",
+        adverse_reaction_question=True,
+    )
+
+    assert answer.startswith("🩻 **부작용 보고서**")
+    assert "**이상사례**\n- 독사조신 복용 뒤 심한 어지러움이 보고됐습니다." in answer
+    assert "**상세 사항**\n- 증상 발생 시점과 함께 복용한 약을 검토했습니다." in answer
+    assert "공공자료 추가 설명" not in answer
 
 
 def test_assemble_adds_specific_member_choices_for_ingredient_family() -> None:
