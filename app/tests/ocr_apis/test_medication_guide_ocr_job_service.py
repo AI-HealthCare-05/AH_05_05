@@ -1452,10 +1452,7 @@ class TestMedicationGuideOcrJobService(TestCase):
             assert medications[0].prescribed_at == date(2026, 8, 25)
             assert medications[0].strength == "10mg"
             assert medications[0].dose_quantity == "1.5정"
-            assert all(item.efficacy is None for item in medications)
-            assert all(item.administration is None for item in medications)
-            assert all(item.precautions is None for item in medications)
-            assert all(item.note is None for item in medications)
+            assert {"efficacy", "administration", "precautions", "note"}.isdisjoint(Medication._meta.fields_map)
             assert all(item.source_ocr_job_id == job.id for item in medications)
             stored_job = await OcrJob.get(id=job.id)
             assert stored_job.status is OcrJobStatus.COMPLETE
@@ -1626,7 +1623,6 @@ class TestMedicationGuideOcrJobService(TestCase):
 
         medication = await Medication.get(care_episode_id=int(confirmation.care_episode_id))
         assert medication.times_per_day is None
-        assert medication.note is None
         stored_job = await OcrJob.get(id=job.id)
         assert "timesPerDay" not in stored_job.structured_result["medications"][0]
         assert stored_job.user_review_match_rate is None

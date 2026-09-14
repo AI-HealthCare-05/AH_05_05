@@ -76,9 +76,12 @@ class Config(BaseSettings):
     # Only the explicit legacy-file maintenance command uses this directory.
     OCR_TEMP_DIR: Path = Path("media/ocr-tmp")
     # Dedicated instance with RDB/AOF disabled. Never point this at the ARQ broker.
-    OCR_IMAGE_REDIS_URL: str = "redis://ocr-images:6379/0"
+    OCR_IMAGE_REDIS_URL: str = "redis://127.0.0.1:6380/0"
+    OCR_MAX_JOBS: int = Field(default=1, ge=1, le=2)
     OCR_QUEUE_NAME: str = "arq:ocr"
     OCR_REVIEW_TTL_MINUTES: int = Field(default=60, gt=0, le=60)
+    # Once OCR is ready, photos only wait briefly for browser-memory delivery.
+    OCR_IMAGE_HANDOFF_TTL_SECONDS: int = Field(default=300, ge=30, le=600)
     OCR_RETRY_BASE_SECONDS: int = Field(default=5, gt=0)
 
     INTERNAL_API_KEY: str = ""
@@ -116,7 +119,6 @@ class Config(BaseSettings):
             raise ValueError("each custom challenge type may map to only one template ID")
         return value
 
-    EMAIL_QUEUE_NAME: str = "arq:email"
     EMAIL_MAX_RETRY_COUNT: int = Field(default=3, ge=0)
     EMAIL_RETRY_BASE_SECONDS: int = Field(default=30, gt=0)
     EMAIL_PAYLOAD_ENCRYPTION_KEY: SecretStr | None = None

@@ -24,6 +24,7 @@ from app.core.exceptions import (
     OcrIdempotencyConflictError,
     OcrJobNotFoundError,
     OcrJobStateConflictError,
+    OcrPreviewCleanupUnavailableError,
     OcrProviderError,
     OcrProviderTimeoutError,
     OcrProviderTransientError,
@@ -382,7 +383,9 @@ class MedicationGuideOcrJobService:
             await self._publish_review(job, publication, manifest)
 
     async def _refresh_preview_ttl(self, manifest: dict[str, object]) -> None:
-        if isinstance(self.storage, VolatileOcrStorage) and not await self.storage.touch(manifest):
+        if isinstance(self.storage, VolatileOcrStorage) and not await self.storage.touch(
+            manifest, ttl_seconds=min(config.OCR_IMAGE_HANDOFF_TTL_SECONDS, config.OCR_REVIEW_TTL_MINUTES * 60)
+        ):
             raise OSError("OCR preview images expired before review became ready")
 
     async def _publish_review(self, job: OcrJob, publication: dict[str, Any], manifest: dict[str, object]) -> None:
@@ -520,6 +523,28 @@ class MedicationGuideOcrJobService:
         except (OSError, ValueError) as error:
             raise OcrJobNotFoundError() from error
 
+    async def release_images(self, user: User, job_id: int) -> None:
+        """Acknowledge browser receipt without cancelling or expiring the review."""
+        async with in_transaction() as connection:
+            job = await OcrJob.filter(id=job_id, user_id=user.id).using_db(connection).select_for_update().first()
+            if job is None:
+                raise OcrJobNotFoundError()
+            if job.status in {OcrJobStatus.QUEUED, OcrJobStatus.PROCESSING}:
+                # In-flight processing/retries still own these bytes.
+                raise OcrJobStateConflictError()
+            manifest = dict(self._manifest(job))
+            if manifest.get("imagesPurgedAt"):
+                return
+            if self._uses_legacy_disk_manifest(manifest):
+                raise OcrJobStateConflictError()
+            try:
+                await self.storage.delete(manifest)
+            except (OSError, ValueError) as error:
+                raise OcrPreviewCleanupUnavailableError() from error
+            manifest["imagesPurgedAt"] = datetime.now(config.TIMEZONE).isoformat()
+            job.input_manifest = manifest
+            await job.save(using_db=connection, update_fields=["input_manifest"])
+
     async def confirm(
         self,
         user: User,
@@ -546,6 +571,7 @@ class MedicationGuideOcrJobService:
             and job.status == OcrJobStatus.READY_FOR_REVIEW
             and job.expires_at is not None
             and job.expires_at > datetime.now(config.TIMEZONE)
+            and not MedicationGuideOcrJobService._manifest(job).get("imagesPurgedAt")
         )
 
     async def _purge_terminal_images(self, job: OcrJob) -> None:

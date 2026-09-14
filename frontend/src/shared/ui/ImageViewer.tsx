@@ -108,6 +108,7 @@ export function ImageViewer({
               className={scaledSize ? 'block max-w-none object-contain' : 'max-h-full w-auto max-w-full object-contain'}
               style={scaledSize ? { width: scaledSize.width, height: scaledSize.height } : undefined}
               onLoad={measureFittedSize}
+              onClick={() => onOpenChange(false)}
             />
           </div>
         </div>

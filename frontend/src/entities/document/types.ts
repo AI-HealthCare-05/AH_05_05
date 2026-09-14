@@ -54,7 +54,6 @@ export interface EditableOcrMedication extends Omit<OcrMedication, 'timesPerDay'
 /** OCR 확정 직후 복약시간 설정에서 검토 화면으로 즉시 돌아가기 위한 등록 중 초안. */
 export interface OcrRegistrationDraft {
   batchId: string;
-  documentImageUrl: string;
   hospitalName: string;
   hospitalNameConfidence: Confidence | null;
   hospitalNameReviewed: boolean;

@@ -5,7 +5,7 @@ from httpx import ASGITransport, AsyncClient
 from starlette import status
 from tortoise.contrib.test import TestCase
 
-from app.apis.v1.job_router import get_background_job_service
+from app.apis.v1.job_router import get_alarm_task_scheduler, get_background_job_service
 from app.core import config
 from app.main import app
 from app.models.alarms import AlarmEvent, PushSubscription
@@ -165,9 +165,9 @@ class TestJobAPI(TestCase):
             reference_table="alarm_events",
             reference_id=event.id,
         )
-        redis_pool = AsyncMock()
-        redis_pool.enqueue_job.return_value = object()
-        app.dependency_overrides[get_background_job_service] = lambda: BackgroundJobService(redis_pool=redis_pool)
+        scheduler = AsyncMock()
+        app.dependency_overrides[get_background_job_service] = lambda: BackgroundJobService()
+        app.dependency_overrides[get_alarm_task_scheduler] = lambda: scheduler
         try:
             with patch.object(config, "INTERNAL_API_KEY", "test-internal-key"):
                 async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -177,6 +177,8 @@ class TestJobAPI(TestCase):
                     )
         finally:
             app.dependency_overrides.pop(get_background_job_service, None)
+            app.dependency_overrides.pop(get_alarm_task_scheduler, None)
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["parent_job_id"] == failed.id
+        scheduler.start_job.assert_awaited_once_with(response.json()["id"])

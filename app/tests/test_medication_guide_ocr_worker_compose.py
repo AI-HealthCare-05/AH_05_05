@@ -57,43 +57,42 @@ def _load_compose_config(compose_path: Path) -> dict:
     "compose_path",
     [PROJECT_ROOT / "docker-compose.yml", PROJECT_ROOT / "infra/docker/docker-compose.prod.yml"],
 )
-def test_ocr_worker_uses_volatile_image_store_and_required_dependencies(compose_path: Path):
+def test_api_hosts_ocr_and_private_volatile_store_without_extra_containers(compose_path: Path):
     compose = _load_compose_config(compose_path)
-    worker = compose["services"]["ocr-worker"]
     fastapi = compose["services"]["fastapi"]
-
-    assert "app.workers.medication_guide_ocr_worker.WorkerSettings" in str(worker["command"])
-    assert set(worker["depends_on"]) >= {"mysql", "redis"}
-    assert worker["environment"]["DB_HOST"] == "mysql"
-    assert worker["environment"]["REDIS_HOST"] == "redis"
+    assert "ocr-worker" not in compose["services"]
+    assert "ocr-images" not in compose["services"]
+    assert "app.runtime.combined" in str(fastapi["command"])
+    assert "/app/.venv/bin/python" in str(fastapi["command"])
+    assert set(fastapi["depends_on"]) >= {"mysql", "redis", "qdrant"}
+    assert fastapi["environment"]["DB_HOST"] == "mysql"
     assert fastapi["environment"]["REDIS_HOST"] == "redis"
     assert fastapi["environment"]["REDIS_PORT"] == "6379"
-    assert worker["environment"]["TZ"] == "Asia/Seoul"
-    assert not _has_media_volume(worker)
+    assert fastapi["environment"]["OCR_MAX_JOBS"] == "1"
+    assert fastapi["environment"]["TZ"] == "Asia/Seoul"
     assert _has_media_volume(fastapi)
-    volatile = compose["services"]["ocr-images"]
-    assert volatile.get("ports", []) == []
-    assert volatile.get("volumes", []) == []
-    assert volatile["read_only"] is True
-    assert volatile["memswap_limit"] == volatile["mem_limit"]
-    command = volatile["command"]
-    assert command[command.index("--save") + 1] == ""
-    assert command[command.index("--appendonly") + 1] == "no"
-    assert command[command.index("--maxmemory-policy") + 1] == "noeviction"
-    assert "ocr-images" in worker["depends_on"]
-    assert "ocr-images" in fastapi["depends_on"]
-    assert worker["environment"]["OCR_IMAGE_REDIS_URL"] == "redis://ocr-images:6379/0"
-    assert fastapi["environment"]["OCR_IMAGE_REDIS_URL"] == "redis://ocr-images:6379/0"
-    assert compose["networks"]["ocr-private"]["internal"] is True
-    assert set(volatile["networks"]) == {"ocr-private"}
-    assert {"ws", "ocr-private"} <= set(worker["networks"])
-    assert {"ws", "ocr-private"} <= set(fastapi["networks"])
-    private_members = {
-        service_name
-        for service_name, service in compose["services"].items()
-        if "ocr-private" in service.get("networks", [])
-    }
-    assert private_members == {"ocr-images", "fastapi", "ocr-worker"}
+    assert fastapi["memswap_limit"] == fastapi["mem_limit"]
+    # Compose's JSON encoder omits zero-valued soft/hard fields.
+    assert fastapi["ulimits"]["core"].get("hard", 0) == 0
+    assert fastapi["ulimits"]["core"].get("soft", 0) == 0
+    assert fastapi["environment"]["OCR_IMAGE_REDIS_URL"] == "redis://127.0.0.1:6380/0"
+    assert any(entry.startswith("/run/ocr-images:") for entry in fastapi["tmpfs"])
+    assert all(port["target"] != 6380 for port in fastapi.get("ports", []))
+    assert "app.runtime.healthcheck" in str(fastapi["healthcheck"]["test"])
+    assert fastapi["stop_grace_period"] == "2m0s"
+    assert "ocr-private" not in compose.get("networks", {})
+
+
+@pytest.mark.parametrize("jobs", [0, 3])
+def test_ocr_concurrency_rejects_unbounded_or_disabled_execution(jobs: int) -> None:
+    with pytest.raises(ValidationError):
+        Config(_env_file=None, OCR_MAX_JOBS=jobs)
+
+
+def test_ocr_defaults_use_one_job_and_loopback_image_store() -> None:
+    settings = Config(_env_file=None)
+    assert settings.OCR_MAX_JOBS == 1
+    assert settings.OCR_IMAGE_REDIS_URL == "redis://127.0.0.1:6380/0"
 
 
 @pytest.mark.parametrize("ttl_minutes", [0, 61])
