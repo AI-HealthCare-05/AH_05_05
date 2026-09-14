@@ -119,11 +119,9 @@ async def test_migration_excludes_superseded_draft_fields_and_downgrades_child_f
     ]
 
 
-def test_final_merge_migration_45_preserves_custom_models_and_matches_registered_metadata() -> None:
+def test_final_merge_migration_47_preserves_all_models_and_matches_registered_metadata() -> None:
     current = decompress_dict(
-        import_module(
-            "app.core.db.migrations.models.45_20260910190000_merge_custom_challenge_finalization_heads"
-        ).MODELS_STATE
+        import_module("app.core.db.migrations.models.47_20260914010000_merge_email_and_medication_heads").MODELS_STATE
     )
 
     Tortoise.init_models(TORTOISE_APP_MODELS, "models")
@@ -136,6 +134,18 @@ def test_final_merge_migration_45_preserves_custom_models_and_matches_registered
         "models.RecoveryGuide",
         "models.RecoveryGuideSource",
     }.isdisjoint(current)
+    assert {field["name"] for field in current["models.BackgroundJob"]["data_fields"]} >= {
+        "encrypted_payload",
+        "next_attempt_at",
+        "lease_expires_at",
+    }
+    assert {index["name"] for index in current["models.BackgroundJob"]["indexes"] if isinstance(index, dict)} >= {
+        "idx_email_job_retry_due",
+        "idx_email_job_lease",
+    }
+    assert {"efficacy", "administration", "precautions", "note"}.isdisjoint(
+        field["name"] for field in current["models.Medication"]["data_fields"]
+    )
 
     expected_columns = {
         "models.CustomChallengeParticipation": {

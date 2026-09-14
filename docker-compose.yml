@@ -120,30 +120,6 @@ services:
       qdrant:
         condition: service_started
 
-    build:
-      context: .
-      dockerfile: app/Dockerfile
-      platforms:
-        - linux/amd64
-        - linux/arm64
-    image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:app-${APP_VERSION}
-    env_file: .env
-    environment:
-      DB_HOST: mysql
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_DB: ${REDIS_DB:-0}
-      TZ: Asia/Seoul
-    volumes:
-      - ./app:/app/app
-    restart: always
-    networks:
-      - ws
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
   # 7. AI Worker (Model 학습 및 추론)
   ai-worker:
     container_name: ai-worker
