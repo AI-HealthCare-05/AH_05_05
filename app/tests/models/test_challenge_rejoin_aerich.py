@@ -358,9 +358,11 @@ async def _run_chain(start_version: int) -> None:
         assert (await service.get(user, old.id)).status == "CANCELLED"
         assert await db.execute_query_dict("SHOW TABLES LIKE 'custom_challenge_badge_awards'")
         assert await command.downgrade(version=-1, delete=False, fake=False) == [VERSION_48]
+        assert await command.downgrade(version=-1, delete=False, fake=False) == [VERSION_47]
+        assert await command.downgrade(version=-1, delete=False, fake=False) == [VERSION_46_SESSION_REFERENCES]
         with pytest.raises(RuntimeError, match="intentionally irreversible"):
             await command.downgrade(version=-1, delete=False, fake=False)
-        expected_restore = [VERSION_48]
+        expected_restore = [VERSION_46_SESSION_REFERENCES, VERSION_47, VERSION_48]
         assert await command.heads() == expected_restore
         assert await command.upgrade(fake=False) == expected_restore
         restored = await Aerich.all().order_by("id").values()
