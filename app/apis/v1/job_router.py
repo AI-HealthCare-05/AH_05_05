@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.dependencies.internal_auth import require_internal_api_key
 from app.dtos.background_jobs import (
@@ -12,7 +12,7 @@ from app.dtos.background_jobs import (
 )
 from app.models.background_jobs import BackgroundJob
 from app.models.enums import BackgroundJobStatus, BackgroundJobType
-from app.services.background_jobs import BackgroundJobService
+from app.services.background_jobs import AlarmTaskScheduler, BackgroundJobService
 
 job_router = APIRouter(
     prefix="/internal/jobs",
@@ -23,6 +23,10 @@ job_router = APIRouter(
 
 def get_background_job_service() -> BackgroundJobService:
     return BackgroundJobService()
+
+
+def get_alarm_task_scheduler(request: Request) -> AlarmTaskScheduler:
+    return request.app.state.alarm_background_task_manager
 
 
 def background_job_list_item(job: BackgroundJob) -> BackgroundJobResponse:
@@ -88,9 +92,10 @@ async def get_background_job(
 async def retry_background_job(
     job_id: int,
     service: Annotated[BackgroundJobService, Depends(get_background_job_service)],
+    scheduler: Annotated[AlarmTaskScheduler, Depends(get_alarm_task_scheduler)],
 ) -> BackgroundJobResponse:
-    """실패한 작업을 원본과 연결된 새 자식 작업으로 생성하고 ARQ 큐에 다시 등록한다."""
-    return BackgroundJobResponse.model_validate(await service.retry_failed(job_id))
+    """실패한 작업을 원본과 연결된 새 자식 작업으로 생성하고 API 프로세스에서 다시 실행한다."""
+    return BackgroundJobResponse.model_validate(await service.retry_failed(job_id, scheduler=scheduler))
 
 
 @job_router.post(

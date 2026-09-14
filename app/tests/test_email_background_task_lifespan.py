@@ -23,10 +23,19 @@ class RecordingManager:
         self.shutdown_called = True
 
 
+class RecordingAlarmManager:
+    async def start(self) -> None:
+        pass
+
+    async def shutdown(self) -> None:
+        pass
+
+
 @pytest.mark.asyncio
 async def test_lifespan_recovers_and_shuts_down_email_manager(monkeypatch: pytest.MonkeyPatch) -> None:
     manager = RecordingManager()
     monkeypatch.setattr(main_module, "build_email_background_task_manager", lambda: manager)
+    monkeypatch.setattr(main_module, "build_alarm_background_task_manager", RecordingAlarmManager)
     test_app = SimpleNamespace(state=SimpleNamespace())
 
     async with lifespan(test_app):

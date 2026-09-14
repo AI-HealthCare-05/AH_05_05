@@ -128,36 +128,7 @@ services:
       qdrant:
         condition: service_started
 
-  # 4. Alarm Worker (스케줄링 및 Web Push 발송)
-  alarm-worker:
-    container_name: alarm-worker
-    build:
-      context: .
-      dockerfile: app/Dockerfile
-      platforms:
-        - linux/amd64
-        - linux/arm64
-    image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:app-${APP_VERSION}
-    env_file: .env
-    environment:
-      DB_HOST: mysql
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_DB: ${REDIS_DB:-0}
-      TZ: Asia/Seoul
-    command: uv run --no-sync arq app.workers.alarm_worker.WorkerSettings
-    volumes:
-      - ./app:/app/app
-    restart: always
-    networks:
-      - ws
-    depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  # 5. OCR Worker (조제약 복약안내 OCR 비동기 처리)
+  # 4. OCR Worker (조제약 복약안내 OCR 비동기 처리)
   ocr-worker:
     container_name: ocr-worker
     mem_limit: 3g
