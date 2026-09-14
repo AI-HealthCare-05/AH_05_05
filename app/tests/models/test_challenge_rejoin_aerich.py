@@ -188,6 +188,10 @@ async def _run_chain(start_version: int) -> None:
                 ADD COLUMN precautions VARCHAR(500) NULL,
                 ADD COLUMN note VARCHAR(500) NULL;
         """)
+        # Migration 17 was already applied before this test's replay window.
+        # The current runtime schema no longer has this column after migration 48,
+        # but reference-seed migration 43 still reads it during the historical replay.
+        await db.execute_script("ALTER TABLE medication_product_guides ADD COLUMN item_image_url LONGTEXT NULL;")
         await db.execute_script("DROP TABLE custom_challenge_badge_awards;")
         await db.execute_script(await previous_40.downgrade(db))
         await _add_historical_ocr_error_code_check(db, current_40_ocr)
