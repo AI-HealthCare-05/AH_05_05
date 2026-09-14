@@ -88,6 +88,7 @@ export interface CustomChallengeBadgeAward {
 export interface CustomChallengeBadgeAwardListResponse {
   items: CustomChallengeBadgeAward[];
   totalCount: number;
+  availableBadges?: CustomChallengeRewardBadge[];
 }
 
 export interface CustomChallengeRewardClaimResponse {

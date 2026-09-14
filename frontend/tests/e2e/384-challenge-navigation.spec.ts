@@ -213,17 +213,18 @@ test('내 배지의 뒤로가기는 공식·맞춤 배지 통합 목록을 유�
   await expect(page.getByText('모은 배지 2종 · 총 2회 획득')).toBeVisible();
   await expect(page.getByRole('link', { name: '튼튼 걷기 배지, 1회 획득', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: '꾸준한 복약 배지, 1회 획득', exact: true }))
-    .toHaveAttribute('href', '/challenges/custom-participations/601');
+    .toHaveAttribute('href', '/challenges/custom-badges/32');
   await page.getByRole('link', { name: '튼튼 걷기 배지, 1회 획득', exact: true }).click();
   await expect(page).toHaveURL('/challenges/badges/31');
-  await page.getByRole('button', { name: '내 배지로 돌아가기', exact: true }).click();
+  await expect(page.getByText('내 배지로 돌아가기', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '뒤로 가기', exact: true }).click();
   await expect(page).toHaveURL('/challenges/badges');
   await page.getByRole('banner').getByRole('button', { name: '뒤로 가기', exact: true }).click();
   await expect(page).toHaveURL(/\/challenges$/);
   expect(writes).toEqual([]);
 });
 
-test('참여 상세에서 연 배지의 명명 CTA는 참여 화면이 아니라 내 배지 목록으로 이동한다', async ({ page }) => {
+test('참여 상세에서 연 배지는 상단 뒤로가기로 원래 참여 화면에 돌아간다', async ({ page }) => {
   await page.route('**/api/v1/user/challenges/501', route => route.fulfill({
     json: {
       ...participation,
@@ -238,8 +239,7 @@ test('참여 상세에서 연 배지의 명명 CTA는 참여 화면이 아니라
   await page.getByRole('link', { name: `${badge.name} 자세히 보기`, exact: true }).click();
   await expect(page).toHaveURL('/challenges/badges/31');
 
-  await page.getByRole('button', { name: '내 배지로 돌아가기', exact: true }).click();
-  await expect(page).toHaveURL('/challenges/badges');
-  await page.goBack();
+  await expect(page.getByText('내 배지로 돌아가기', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '뒤로 가기', exact: true }).click();
   await expect(page).toHaveURL('/challenges/participations/501');
 });

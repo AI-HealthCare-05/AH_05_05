@@ -279,6 +279,7 @@ export function CustomChallengeParticipationPage() {
 
   const days = customChallengeDayProgress(participation);
   const rate = progressValue(days.rate);
+  const isIntakeChallenge = participation.challengeType === 'SUPPLEMENT' || participation.challengeType === 'MEDICATION';
   const finalized = participation.status !== 'ACTIVE';
   const displayedTargets = participation.status === 'ACTIVE'
     ? participation.targets.filter(target => !target.isExcluded)
@@ -297,9 +298,10 @@ export function CustomChallengeParticipationPage() {
       ) : null}
 
       <section className="flex flex-col gap-3 rounded-card bg-warning-bg p-5" aria-labelledby="custom-progress-title">
-        <div className="flex items-center justify-between gap-3"><h2 id="custom-progress-title" className="text-base font-bold">{finalized ? '최종 결과' : '내 진행률'}</h2><strong className="text-primary">{rate.toFixed(2)}%</strong></div>
+        <div className="flex items-center justify-between gap-3"><h2 id="custom-progress-title" className="text-base font-bold">{finalized ? '최종 결과' : '내 진행률'}</h2>{!isIntakeChallenge ? <strong className="text-primary">{rate.toFixed(2)}%</strong> : null}</div>
         <div role="progressbar" aria-label="맞춤 챌린지 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={rate} className="h-2 overflow-hidden rounded-pill bg-border"><div className="h-full rounded-pill bg-primary" style={{ width: `${rate}%` }} /></div>
         <p className="text-sm text-foreground">{days.completed} / {days.target}일</p>
+        {isIntakeChallenge ? <p className="text-caption leading-5 text-muted-foreground">오늘 할당량을 다 먹어야 기록이 인정돼요</p> : null}
         <p className="text-caption text-muted-foreground">{participation.actualEndDate
           ? `${dateLabel(participation.joinedAt)} ~ ${dateLabel(participation.actualEndDate)}`
           : '예정된 목표 없음'}</p>

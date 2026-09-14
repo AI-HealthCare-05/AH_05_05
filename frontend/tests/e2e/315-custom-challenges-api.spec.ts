@@ -8,6 +8,7 @@ test.beforeEach(async ({ page }) => {
   await page.route('https://fonts.googleapis.com/**', route => route.abort());
   await page.route('https://fonts.gstatic.com/**', route => route.abort());
   await page.route(url => url.pathname.startsWith('/api/'), route => route.fulfill({ status: 404, json: {} }));
+  await page.route('**/api/v1/user/custom-challenges/badges', route => route.fulfill({ json: { items: [], totalCount: 0 } }));
   page.setDefaultTimeout(5_000);
   page.setDefaultNavigationTimeout(60_000);
 });
@@ -417,8 +418,8 @@ test('My lists custom participation independently and detail renders only server
   await expect(page.getByRole('progressbar', { name: '맞춤 챌린지 진행률' })).toHaveAttribute('aria-valuenow', '28.57');
   const selectedRecords = recordsForDate(page, '2026-09-09');
   await expect(selectedRecords.getByRole('listitem')).toHaveCount(2);
-  await expect(selectedRecords.getByRole('listitem').first()).toContainText('아침');
-  await expect(selectedRecords.getByRole('listitem').last()).toContainText('저녁');
+  await expect(selectedRecords.getByRole('region', { name: '아침 복용 기록', exact: true }).getByRole('listitem')).toContainText('서울의원 1차 처방');
+  await expect(selectedRecords.getByRole('region', { name: '저녁 복용 기록', exact: true }).getByRole('listitem')).toContainText('서울의원 1차 처방');
   await expect(selectedRecords.getByRole('listitem').first()).toContainText('완료');
   await expect(page.getByText('2 / 2회 완료', { exact: true })).toBeVisible();
   const detail = page.locator('main');
@@ -777,7 +778,7 @@ test('completed medication detail keeps the server final snapshot and its awarde
   await expect(page.getByText(/7일/)).toHaveCount(0);
 });
 
-test('My badges shows official and custom awards with the same numeric badge id independently', async ({ page }) => {
+test('My badges counts a shared badge ID once while keeping official and custom history links separate', async ({ page }) => {
   await authenticate(page);
   await page.route('**/api/v1/user/challenge-catalog?*', route => route.fulfill({ json: {
     items: [{
@@ -830,9 +831,9 @@ test('My badges shows official and custom awards with the same numeric badge id 
 
   await page.goto('/challenges/badges');
 
-  await expect(page.getByText('모은 배지 2종 · 총 2회 획득')).toBeVisible();
+  await expect(page.getByText('모은 배지 1종 · 총 2회 획득')).toBeVisible();
   await expect(page.getByRole('link', { name: '공식 걷기 배지, 1회 획득' })).toHaveAttribute('href', '/challenges/badges/9');
-  await expect(page.getByRole('link', { name: '복약 루틴 배지, 1회 획득' })).toHaveAttribute('href', '/challenges/custom-participations/701');
+  await expect(page.getByRole('link', { name: '복약 루틴 배지, 1회 획득' })).toHaveAttribute('href', '/challenges/custom-badges/9');
 });
 
 test('custom badge failure is retryable without hiding official badges', async ({ page }) => {
@@ -928,6 +929,31 @@ test.describe('Asia/Seoul occurrence boundary', () => {
 });
 
 for (const kind of ['MEDICATION', 'SUPPLEMENT']) {
+  test(`${kind} detail shows the appropriate progress guidance`, async ({ page }, testInfo) => {
+    await page.clock.setFixedTime('2026-09-10T03:00:00Z');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await authenticate(page);
+    await page.route('**/api/v1/user/custom-challenge-participations/701', route => route.fulfill({
+      json: participation({
+        challengeType: kind,
+        challengeName: kind === 'SUPPLEMENT' ? '영양제 챌린지' : medicationA.challengeName,
+        targets: [{ id: 801, sourceId: 101, name: kind === 'SUPPLEMENT' ? '종합비타민' : '서울의원 1차 처방' }],
+      }),
+    }));
+    await page.goto('/challenges/custom-participations/701');
+    const progress = page.getByRole('region', { name: '내 진행률', exact: true });
+    await expect(progress).toBeVisible();
+    await expect(progress.getByText('2 / 7일', { exact: true })).toBeVisible();
+    await expect(progress.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '28.57');
+    await expect(progress.getByText(/\d+(\.\d+)?%/)).toHaveCount(0);
+    await expect(progress.getByText('오늘 할당량을 다 먹어야 기록이 인정돼요', { exact: true })).toBeVisible();
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      expect(await progress.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`${kind.toLowerCase()}-detail-${width}.png`), fullPage: true });
+    }
+  });
+
   test(`${kind} calendar groups completion and browses future records without writes`, async ({ page }, testInfo) => {
     await page.clock.setFixedTime('2026-09-10T03:00:00Z');
     await page.setViewportSize({ width: 390, height: 844 });
