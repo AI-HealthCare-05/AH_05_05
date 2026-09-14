@@ -34,6 +34,7 @@ VERSION_44 = "44_20260910093000_merge_therapeutic_classification_heads.py"
 VERSION_45 = "45_20260910190000_merge_custom_challenge_finalization_heads.py"
 VERSION_46_EMAIL = "46_20260914000000_email_background_tasks.py"
 VERSION_46_MEDICATION = "46_20260914000000_remove_medication_legacy_fields.py"
+VERSION_46_SESSION_REFERENCES = "46_20260914204559_persist_chat_session_references.py"
 VERSION_47 = "47_20260914010000_merge_email_and_medication_heads.py"
 VERSION_48 = "48_20260914214228_remove_unused_chat_and_reference_fields.py"
 CUSTOM_TABLES = ("custom_challenge_participations", "custom_challenge_targets", "custom_challenge_occurrences")
@@ -231,10 +232,12 @@ async def _run_chain(start_version: int) -> None:
             VERSION_45,
             VERSION_46_EMAIL,
             VERSION_46_MEDICATION,
+            VERSION_46_SESSION_REFERENCES,
             VERSION_47,
             VERSION_48,
         ]
-        assert await command.heads() == expected
+        actual_heads = await command.heads()
+        assert actual_heads == expected, (actual_heads, expected)
         assert await command.upgrade(fake=False) == expected
         assert await command.heads() == []
         assert await command.upgrade(fake=False) == []
