@@ -500,7 +500,7 @@ export function MedicationsPage({
                   <h2 id="active-episode-list-title" className="text-xl font-bold text-foreground">
                     복용 중
                   </h2>
-                  <span className="text-sm text-muted-foreground tnum">{activeOverviews.length}개</span>
+                  <span className="text-xl font-bold text-foreground tnum">{activeOverviews.length}개</span>
                 </div>
                 {renderListActions('flex shrink-0 items-center gap-2')}
               </div>
