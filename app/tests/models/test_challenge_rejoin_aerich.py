@@ -190,6 +190,15 @@ async def _run_chain(start_version: int) -> None:
         """)
         # The replay starts before migration 46 added this field.
         await db.execute_script("ALTER TABLE chat_messages DROP COLUMN session_reference;")
+        # Migration 48 removes these legacy columns. Recreate the pre-48 schema
+        # in this disposable database so the real migration can exercise its drops.
+        await db.execute_script("""
+            ALTER TABLE chat_messages
+                ADD COLUMN verification_status VARCHAR(12) NOT NULL DEFAULT 'NOT_REQUIRED',
+                ADD COLUMN conflict_status VARCHAR(22) NOT NULL DEFAULT 'NOT_APPLICABLE';
+            ALTER TABLE interaction_entity_aliases
+                ADD COLUMN is_preferred BOOL NOT NULL DEFAULT 0;
+        """)
         # Migration 17 was already applied before this test's replay window.
         # The current runtime schema no longer has this column after migration 48,
         # but reference-seed migration 43 still reads it during the historical replay.
@@ -349,14 +358,20 @@ async def _run_chain(start_version: int) -> None:
         assert (await service.get(user, old.id)).status == "CANCELLED"
         assert await db.execute_query_dict("SHOW TABLES LIKE 'custom_challenge_badge_awards'")
         assert await command.downgrade(version=-1, delete=False, fake=False) == [VERSION_48]
+        assert await command.downgrade(version=-1, delete=False, fake=False) == [VERSION_47]
+        assert await command.downgrade(version=-1, delete=False, fake=False) == [VERSION_46_SESSION_REFERENCES]
         with pytest.raises(RuntimeError, match="intentionally irreversible"):
             await command.downgrade(version=-1, delete=False, fake=False)
-        expected_restore = [VERSION_48]
+        expected_restore = [VERSION_46_SESSION_REFERENCES, VERSION_47, VERSION_48]
         assert await command.heads() == expected_restore
         assert await command.upgrade(fake=False) == expected_restore
         restored = await Aerich.all().order_by("id").values()
-        assert restored[:-1] == after[:-1]
-        assert [row["version"] for row in restored[-1:]] == expected_restore
+        restored_count = len(expected_restore)
+        assert restored[:-restored_count] == after[:-restored_count]
+        assert [row["version"] for row in restored[-restored_count:]] == expected_restore
+        assert [row["content"] for row in restored[-restored_count:]] == [
+            row["content"] for row in after[-restored_count:]
+        ]
         assert restored[-1]["content"] == final_state
         assert await UserChallenge.filter(user_id=user.id, challenge_id=challenge.id).count() == 2
         print(
