@@ -11,6 +11,7 @@ from app.dependencies.admin import (
     require_admin,
     require_admin_or_staff,
 )
+from app.dependencies.email_background_tasks import get_email_task_scheduler
 from app.dtos.admin_auth import AdminPasswordChangeRequest, AdminPasswordChangeResponse
 from app.dtos.admin_dashboard import DashboardSummaryQuery, DashboardSummaryResponse
 from app.dtos.admin_users import (
@@ -69,6 +70,7 @@ from app.services.admin_users import AdminUserQueryService
 from app.services.admins import AdminQueryService
 from app.services.background_jobs import BackgroundJobService
 from app.services.common_codes import CommonCodeService
+from app.services.email_jobs import EmailTaskScheduler
 from app.services.supplement_nutrients import SupplementNutrientService
 from app.services.supplement_rank_displays import SupplementRankDisplayService
 
@@ -334,6 +336,7 @@ async def list_admins(
 async def create_admin(
     actor: AdminOnly,
     request: AdminCreateRequest,
+    scheduler: Annotated[EmailTaskScheduler, Depends(get_email_task_scheduler)],
     service: Annotated[AdminQueryService, Depends(AdminQueryService)],
 ) -> AdminCreateResponse:
     """관리자 계정을 새로 만든다. ADMIN 전용. (REQ-ADMIN-008)
@@ -343,14 +346,14 @@ async def create_admin(
 
     `isActive` 가 false 면 PENDING 으로 만들어져 첫 로그인 후 비밀번호를 바꿔야 한다.
 
-    이메일은 전용 worker가 비동기로 발송한다. 응답의 `emailJobId`와
-    `emailJobStatus`로 작업 등록 결과를 확인할 수 있다. 큐 등록이 실패해도 계정 생성은
+    이메일은 FastAPI 응답 후 Background Task가 비동기로 발송한다. 응답의 `emailJobId`와
+    `emailJobStatus`로 작업 등록 결과를 확인할 수 있다. 작업 등록이 실패해도 계정 생성은
     되돌리지 않으며 상태는 `FAILED`로 반환한다.
 
     - **409 EMAIL_ALREADY_EXISTS** — 이미 등록된 이메일
     - **403 FORBIDDEN** — STAFF 계정
     """
-    return await service.create_admin(request, actor_admin_id=actor.admin_id)
+    return await service.create_admin(request, actor_admin_id=actor.admin_id, scheduler=scheduler)
 
 
 @admin_router.patch(
@@ -519,6 +522,7 @@ async def update_admin_name(
 async def reset_admin_password(
     actor: AdminOnly,
     admin_id: Annotated[int, Path(ge=1)],
+    scheduler: Annotated[EmailTaskScheduler, Depends(get_email_task_scheduler)],
     service: Annotated[AdminQueryService, Depends(AdminQueryService)],
 ) -> AdminPasswordResetResponse:
     """대상 관리자의 임시 비밀번호를 새로 발급해 메일로 보낸다. ADMIN 전용. (REQ-ADMIN-003)
@@ -535,7 +539,7 @@ async def reset_admin_password(
     **이전 보유자의 리프레시 토큰은 남는다.** 계정을 넘겨받는 상황이라 끊는 게 맞지만
     발급된 JWT 를 개별 폐기할 수단이 없다. 수명이 다할 때까지 기다려야 한다.
 
-    등록과 같은 정책으로 이메일은 전용 worker가 비동기로 발송한다. 응답의
+    등록과 같은 정책으로 이메일은 FastAPI 응답 후 Background Task가 비동기로 발송한다. 응답의
     `emailJobId`와 `emailJobStatus`로 작업 등록 결과를 확인할 수 있으며, 작업 등록이
     실패해도 비밀번호 변경은 되돌리지 않는다.
 
@@ -543,7 +547,7 @@ async def reset_admin_password(
     - **409 CANNOT_RESET_WITHDRAWN** — 탈퇴한 계정
     - **404 ADMIN_NOT_FOUND**
     """
-    return await service.reset_password(admin_id, actor_admin_id=actor.admin_id)
+    return await service.reset_password(admin_id, actor_admin_id=actor.admin_id, scheduler=scheduler)
 
 
 @admin_router.get(

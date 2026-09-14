@@ -279,7 +279,7 @@ def test_legacy_report_keeps_existing_markdown_path():
     assert render_intake_report_email(IntakeReportResponse.from_result(IntakeReportResult.empty(user_id=1))) is None
 
 
-async def test_generation_to_send_endpoint_to_encrypted_queue_keeps_web_snapshot(monkeypatch):
+async def test_generation_to_send_endpoint_to_encrypted_background_task_keeps_web_snapshot(monkeypatch):
     from app.apis.v1.intake_report_router import generate_intake_report, send_intake_report_email
     from app.core.email.payload import EmailPayloadCodec
     from app.core.email.renderer import EmailTemplateRenderer
@@ -306,17 +306,26 @@ async def test_generation_to_send_endpoint_to_encrypted_queue_keeps_web_snapshot
         async def require_verified_recipient(self, *, user):
             return user.email  # Authentication/verification DB boundary only.
 
-    class Queue:
-        args = None
+    class Scheduler:
+        job_id = None
 
-        async def enqueue_job(self, *args, **kwargs):
-            self.args = args
+        def schedule(self, job_id):
+            self.job_id = job_id
+
+    created = {}
 
     async def create_job(**kwargs):
-        return SimpleNamespace(id=42, **kwargs)
+        job = SimpleNamespace(id=42, encrypted_payload=None, next_attempt_at=None, updated_at=None, **kwargs)
+
+        async def save(*, update_fields):
+            return None
+
+        job.save = save
+        created["job"] = job
+        return job
 
     monkeypatch.setattr(BackgroundJob, "create", create_job)
-    queue = Queue()
+    scheduler = Scheduler()
     service = VerifiedEmailService(encryption_key=key)
     response = await generate_intake_report(
         data=GenerateIntakeReportRequest(), user=user, service=ReportService(), email_service=service
@@ -325,10 +334,11 @@ async def test_generation_to_send_endpoint_to_encrypted_queue_keeps_web_snapshot
         data=SendIntakeReportEmailRequest(email_token=response.email_token),
         user=user,
         email_service=service,
-        email_job_service=EmailJobService(redis_pool=queue, codec=codec),
+        email_job_service=EmailJobService(codec=codec),
+        scheduler=scheduler,
     )
-    assert queue.args[0] == "send_email" and queue.args[1] == 42
-    payload = codec.decrypt(queue.args[2])
+    assert scheduler.job_id == 42
+    payload = codec.decrypt(created["job"].encrypted_payload)
     message = EmailTemplateRenderer().render(payload)
     attachment_html = decrypt_attachment(message.attachments[0].data)
     assert "영양제 성분 합계" in attachment_html

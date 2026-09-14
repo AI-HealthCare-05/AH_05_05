@@ -10,4 +10,5 @@ def test_compose_keeps_api_and_other_workers_without_a_challenge_scheduler() -> 
 
     services = compose["services"]
     assert "custom-challenge-worker" not in services
-    assert {"fastapi", "mysql", "redis", "alarm-worker", "email-worker", "ai-worker"} <= services.keys()
+    assert {"fastapi", "mysql", "redis", "ai-worker"} <= services.keys()
+    assert "alarm-worker" not in services

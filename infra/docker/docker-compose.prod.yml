@@ -108,30 +108,7 @@ services:
       qdrant:
         condition: service_started
 
-  # 4. Alarm Worker (스케줄링 및 Web Push 발송)
-  alarm-worker:
-    container_name: alarm-worker
-    image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:app-${APP_VERSION}
-    env_file: .env
-    environment:
-      DB_HOST: mysql
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_DB: ${REDIS_DB:-0}
-      TZ: Asia/Seoul
-    command: uv run --no-sync arq app.workers.alarm_worker.WorkerSettings
-    restart: always
-    networks:
-      - ws
-    depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
 
-  # 5. Email Worker (전용 ARQ 큐 소비 및 SMTP 발송)
-  email-worker:
-    container_name: email-worker
     image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:app-${APP_VERSION}
     env_file: .env
     environment:
@@ -140,16 +117,6 @@ services:
       REDIS_PORT: 6379
       REDIS_DB: ${REDIS_DB:-0}
       TZ: Asia/Seoul
-      EMAIL_VERIFICATION_SECRET: ${EMAIL_VERIFICATION_SECRET:-}
-      EMAIL_VERIFICATION_TTL_SECONDS: ${EMAIL_VERIFICATION_TTL_SECONDS:-180}
-      EMAIL_VERIFICATION_TOKEN_TTL_SECONDS: ${EMAIL_VERIFICATION_TOKEN_TTL_SECONDS:-600}
-      EMAIL_VERIFICATION_MAX_ATTEMPTS: ${EMAIL_VERIFICATION_MAX_ATTEMPTS:-5}
-      EMAIL_VERIFICATION_RESEND_SECONDS: ${EMAIL_VERIFICATION_RESEND_SECONDS:-60}
-    command: uv run --no-sync arq app.workers.email_worker.WorkerSettings
-    restart: always
-    networks:
-      - ws
-    depends_on:
       mysql:
         condition: service_healthy
       redis:

@@ -1,5 +1,4 @@
 from datetime import UTC, date, datetime
-from unittest.mock import AsyncMock
 
 from cryptography.fernet import Fernet
 from tortoise.contrib.test import TestCase
@@ -16,13 +15,25 @@ class FailingCodec:
         raise EmailPayloadConfigurationError("secret-value-must-not-leak")
 
 
+class RecordingScheduler:
+    def __init__(self) -> None:
+        self.job_ids: list[int] = []
+
+    def schedule(self, job_id: int) -> None:
+        self.job_ids.append(job_id)
+
+
+class FailingScheduler:
+    def schedule(self, _job_id: int) -> None:
+        raise RuntimeError("scheduler contains Temp1234!")
+
+
 class TestEmailJobService(TestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
-        self.redis_pool = AsyncMock()
-        self.redis_pool.enqueue_job.return_value = object()
+        self.scheduler = RecordingScheduler()
         self.codec = EmailPayloadCodec(Fernet.generate_key().decode())
-        self.service = EmailJobService(redis_pool=self.redis_pool, codec=self.codec)
+        self.service = EmailJobService(codec=self.codec)
 
     async def test_creates_email_job_and_enqueues_only_encrypted_payload(self) -> None:
         job = await self.service.enqueue_admin_temporary_password(
@@ -30,6 +41,7 @@ class TestEmailJobService(TestCase):
             recipient_email="recipient@example.com",
             recipient_name="홍길동",
             temporary_password="Temp1234!",
+            scheduler=self.scheduler,
         )
 
         assert job.job_type is BackgroundJobType.EMAIL
@@ -37,50 +49,47 @@ class TestEmailJobService(TestCase):
         assert job.reference_table == "admin"
         assert job.reference_id == 17
         assert job.max_retry_count == config.EMAIL_MAX_RETRY_COUNT
-        call = self.redis_pool.enqueue_job.await_args
-        assert call.args[:2] == ("send_email", job.id)
-        encrypted_payload = call.args[2]
+        await job.refresh_from_db()
+        encrypted_payload = job.encrypted_payload or ""
         assert "recipient@example.com" not in encrypted_payload
         assert "홍길동" not in encrypted_payload
         assert "Temp1234!" not in encrypted_payload
         assert self.codec.decrypt(encrypted_payload).recipient_name == "홍길동"
-        assert call.kwargs == {
-            "_job_id": job.idempotency_key,
-            "_queue_name": config.EMAIL_QUEUE_NAME,
-        }
-        self.redis_pool.aclose.assert_not_awaited()
+        assert job.next_attempt_at is not None
+        assert self.scheduler.job_ids == [job.id]
 
-    async def test_marks_job_failed_when_redis_enqueue_fails(self) -> None:
-        self.redis_pool.enqueue_job.side_effect = ConnectionError("redis contains Temp1234!")
-
+    async def test_marks_job_failed_when_task_scheduling_fails(self) -> None:
         job = await self.service.enqueue_admin_temporary_password(
             admin_id=18,
             recipient_email="recipient@example.com",
             recipient_name="홍길동",
             temporary_password="Temp1234!",
+            scheduler=FailingScheduler(),
         )
 
         await job.refresh_from_db()
         assert job.status is BackgroundJobStatus.FAILED
-        assert job.error_code == "EMAIL_QUEUE_UNAVAILABLE"
+        assert job.error_code == "EMAIL_TASK_SCHEDULING_FAILED"
         assert job.completed_at is not None
         assert "Temp1234!" not in (job.error_message or "")
+        assert job.encrypted_payload is None
 
     async def test_marks_job_failed_when_payload_encryption_fails(self) -> None:
-        service = EmailJobService(redis_pool=self.redis_pool, codec=FailingCodec())  # type: ignore[arg-type]
+        service = EmailJobService(codec=FailingCodec())  # type: ignore[arg-type]
 
         job = await service.enqueue_admin_temporary_password(
             admin_id=19,
             recipient_email="recipient@example.com",
             recipient_name="홍길동",
             temporary_password="Temp1234!",
+            scheduler=self.scheduler,
         )
 
         await job.refresh_from_db()
         assert job.status is BackgroundJobStatus.FAILED
         assert job.error_code == "EMAIL_PAYLOAD_ENCRYPTION_FAILED"
         assert "secret-value-must-not-leak" not in (job.error_message or "")
-        self.redis_pool.enqueue_job.assert_not_awaited()
+        assert self.scheduler.job_ids == []
 
     async def test_signup_verification_job_references_verification_and_encrypts_code(self) -> None:
         expires_at = datetime(2026, 9, 7, 3, 1, tzinfo=UTC)
@@ -91,14 +100,15 @@ class TestEmailJobService(TestCase):
             verification_code="012345",
             expires_in=60,
             expires_at=expires_at,
+            scheduler=self.scheduler,
         )
 
         assert job.job_type is BackgroundJobType.EMAIL
         assert job.reference_table == "email_verifications"
         assert job.reference_id == 27
         assert job.idempotency_key.startswith("email:signup-verification:27:")
-        call = self.redis_pool.enqueue_job.await_args
-        encrypted_payload = call.args[2]
+        await job.refresh_from_db()
+        encrypted_payload = job.encrypted_payload or ""
         assert "recipient@example.com" not in encrypted_payload
         assert "012345" not in encrypted_payload
         payload = self.codec.decrypt(encrypted_payload)
@@ -107,19 +117,22 @@ class TestEmailJobService(TestCase):
         assert payload.verification_code == "012345"
         assert payload.expires_in == 60
         assert payload.expires_at == expires_at
+        assert self.scheduler.job_ids == [job.id]
 
     async def test_user_password_reset_job_references_user_and_encrypts_password(self) -> None:
         job = await self.service.enqueue_user_password_reset(
             user_id=31,
             recipient_email="recipient@example.com",
             temporary_password="Temp1234!",
+            scheduler=self.scheduler,
         )
 
         assert job.job_type is BackgroundJobType.EMAIL
         assert job.reference_table == "user"
         assert job.reference_id == 31
         assert job.idempotency_key.startswith("email:user-password-reset:31:")
-        encrypted_payload = self.redis_pool.enqueue_job.await_args.args[2]
+        await job.refresh_from_db()
+        encrypted_payload = job.encrypted_payload or ""
         assert "Temp1234!" not in encrypted_payload
         payload = self.codec.decrypt(encrypted_payload)
         assert payload.template is EmailTemplate.USER_PASSWORD_RESET
@@ -140,6 +153,7 @@ class TestEmailJobService(TestCase):
             report_birth_date=date(1990, 1, 2),
             recipient_name=user.name,
             report_markdown="# 복용약 보고서\n\n아주 긴 제품명",
+            scheduler=self.scheduler,
         )
         second = await self.service.enqueue_intake_report(
             user_id=user.id,
@@ -148,6 +162,7 @@ class TestEmailJobService(TestCase):
             report_birth_date=date(1990, 1, 2),
             recipient_name=user.name,
             report_markdown="# 복용약 보고서\n\n아주 긴 제품명",
+            scheduler=self.scheduler,
         )
 
         assert first.id == second.id
@@ -155,8 +170,9 @@ class TestEmailJobService(TestCase):
         assert first.reference_id == 31
         assert first.user_id == 31
         assert first.idempotency_key == "email:intake-report:31:report-20260911-abc123"
-        assert self.redis_pool.enqueue_job.await_count == 2
-        encrypted_payload = self.redis_pool.enqueue_job.await_args.args[2]
+        await second.refresh_from_db()
+        assert self.scheduler.job_ids == [first.id, second.id]
+        encrypted_payload = second.encrypted_payload or ""
         assert "복용약 보고서" not in encrypted_payload
         payload = self.codec.decrypt(encrypted_payload)
         assert payload.template is EmailTemplate.INTAKE_REPORT

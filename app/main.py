@@ -12,6 +12,8 @@ from app.core.exception_handlers import register_exception_handlers
 from app.core.logger import configure_db_query_logging, configure_root_logging
 from app.core.ocr_upload_middleware import OcrUploadSizeLimitMiddleware
 from app.core.static_files import NoCacheStaticFiles
+from app.services.alarm_background_tasks import build_alarm_background_task_manager
+from app.services.email_background_tasks import build_email_background_task_manager
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -23,7 +25,19 @@ configure_db_query_logging(config.DB_QUERY_LOG_ENABLED)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Chat Core가 재사용한 Qdrant 연결을 프로세스 종료 시 정리한다."""
-    yield
+    email_manager = build_email_background_task_manager()
+    alarm_manager = build_alarm_background_task_manager()
+    app.state.email_background_task_manager = email_manager
+    app.state.alarm_background_task_manager = alarm_manager
+    await email_manager.recover()
+    await alarm_manager.start()
+    try:
+        yield
+    finally:
+        await alarm_manager.shutdown()
+        await email_manager.shutdown()
+        del app.state.alarm_background_task_manager
+        del app.state.email_background_task_manager
     for state_key in ("chat_qdrant_client", "intake_report_qdrant_client"):
         qdrant_client = getattr(app.state, state_key, None)
         if qdrant_client is not None:

@@ -11,6 +11,7 @@ from httpx import ASGITransport, AsyncClient
 from starlette import status
 from tortoise.contrib.test import TestCase
 
+from app.dependencies.email_background_tasks import get_email_task_scheduler
 from app.dependencies.intake_report import (
     get_intake_report_email_job_service,
     get_intake_report_email_service,
@@ -154,11 +155,13 @@ class StubEmailJobService:
 
 async def test_email_api_only_enqueues_server_snapshot_to_verified_owner() -> None:
     job_service = StubEmailJobService()
+    scheduler = SimpleNamespace(schedule=lambda _job_id: None)
     app.dependency_overrides[get_request_user] = lambda: SimpleNamespace(
         id=7, email="verified@example.com", name="테스트", birth_date=date(1990, 1, 2)
     )
     app.dependency_overrides[get_intake_report_email_service] = lambda: StubSnapshotService()
     app.dependency_overrides[get_intake_report_email_job_service] = lambda: job_service
+    app.dependency_overrides[get_email_task_scheduler] = lambda: scheduler
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post("/api/v1/intake-reports/email", json={"emailToken": "server-issued-token"})
@@ -182,6 +185,7 @@ async def test_email_api_only_enqueues_server_snapshot_to_verified_owner() -> No
                 "report_id": "report-7",
                 "recipient_name": "테스트",
                 "report_birth_date": date(1990, 1, 2),
+                "scheduler": scheduler,
             }
         ]
         * 2
@@ -196,6 +200,7 @@ async def test_email_api_rejects_extra_client_content_and_queue_failure() -> Non
     app.dependency_overrides[get_intake_report_email_job_service] = lambda: StubEmailJobService(
         job_status=BackgroundJobStatus.FAILED
     )
+    app.dependency_overrides[get_email_task_scheduler] = lambda: SimpleNamespace(schedule=lambda _job_id: None)
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             extra_response = await client.post(
@@ -220,6 +225,7 @@ async def test_email_api_rejects_missing_birthdate_before_enqueue() -> None:
     )
     app.dependency_overrides[get_intake_report_email_service] = lambda: StubSnapshotService()
     app.dependency_overrides[get_intake_report_email_job_service] = lambda: job_service
+    app.dependency_overrides[get_email_task_scheduler] = lambda: SimpleNamespace(schedule=lambda _job_id: None)
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post("/api/v1/intake-reports/email", json={"emailToken": "server-issued-token"})
