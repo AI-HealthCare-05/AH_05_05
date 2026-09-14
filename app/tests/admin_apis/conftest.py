@@ -5,6 +5,7 @@ from httpx import ASGITransport, AsyncClient, Response
 
 from app.core.jwt.tokens import AccessToken
 from app.core.utils.security import hash_password
+from app.dependencies.email_background_tasks import get_email_task_scheduler
 from app.main import app
 from app.models.admins import Admin
 from app.models.enums import AccountStatus, AdminRole
@@ -21,6 +22,11 @@ ADMIN_LOGOUT_URL = "/api/v1/admin/auth/logout"
 ADMIN_PASSWORD = "Password123!"
 
 
+class NoopEmailTaskScheduler:
+    def schedule(self, _job_id: int) -> None:
+        return None
+
+
 def auth_header(admin_id: int) -> dict[str, str]:
     return {"Authorization": f"Bearer {AccessToken.for_admin(admin_id)}"}
 
@@ -35,8 +41,15 @@ async def request(
     cookies: dict[str, str] | None = None,
     files: dict[str, tuple[str, bytes, str]] | None = None,
 ) -> Response:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url=BASE_URL, cookies=cookies) as client:
-        return await client.request(method, url, headers=headers, params=params, json=json, files=files)
+    existing_override = app.dependency_overrides.get(get_email_task_scheduler)
+    if existing_override is None:
+        app.dependency_overrides[get_email_task_scheduler] = NoopEmailTaskScheduler
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url=BASE_URL, cookies=cookies) as client:
+            return await client.request(method, url, headers=headers, params=params, json=json, files=files)
+    finally:
+        if existing_override is None:
+            app.dependency_overrides.pop(get_email_task_scheduler, None)
 
 
 async def create_admin(

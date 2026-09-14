@@ -4,11 +4,12 @@ from httpx import ASGITransport, AsyncClient
 from starlette import status
 
 from app.apis.v1.auth_routers import get_email_verification_service
+from app.dependencies.email_background_tasks import get_email_task_scheduler
 from app.main import app
 
 
 class StubEmailVerificationService:
-    async def request(self, email: str):
+    async def request(self, email: str, **_kwargs):
         assert email == "user@example.com"
         return SimpleNamespace(verification_id=41, expires_in=180, resend_available_in=60)
 
@@ -20,6 +21,7 @@ class StubEmailVerificationService:
 
 async def test_request_email_verification_returns_async_contract() -> None:
     app.dependency_overrides[get_email_verification_service] = StubEmailVerificationService
+    app.dependency_overrides[get_email_task_scheduler] = lambda: SimpleNamespace(schedule=lambda _job_id: None)
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
@@ -28,6 +30,7 @@ async def test_request_email_verification_returns_async_contract() -> None:
             )
     finally:
         app.dependency_overrides.pop(get_email_verification_service, None)
+        app.dependency_overrides.pop(get_email_task_scheduler, None)
 
     assert response.status_code == status.HTTP_202_ACCEPTED
     assert response.json() == {

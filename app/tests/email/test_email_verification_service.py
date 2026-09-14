@@ -46,13 +46,17 @@ class TestEmailVerificationService(TestCase):
             now_provider=lambda: self.now,
             secret="verification-secret",
         )
+        self.scheduler = SimpleNamespace(schedule=lambda _job_id: None)
+
+    async def request_verification(self, email: str):
+        return await self.service.request(email, scheduler=self.scheduler)
 
     async def asyncTearDown(self) -> None:
         config.EMAIL_VERIFICATION_TTL_SECONDS = self.original_verification_ttl_seconds
         await super().asyncTearDown()
 
     async def test_request_stores_digest_only_and_enqueues_plain_code_in_memory(self) -> None:
-        result = await self.service.request("User@Example.com")
+        result = await self.request_verification("User@Example.com")
 
         verification = await EmailVerification.get(id=result.verification_id)
         assert verification.email == "user@example.com"
@@ -67,28 +71,29 @@ class TestEmailVerificationService(TestCase):
                 "verification_code": "123456",
                 "expires_in": 180,
                 "expires_at": self.now + timedelta(seconds=180),
+                "scheduler": self.scheduler,
             }
         ]
 
     async def test_request_allows_immediate_resend(self) -> None:
-        first = await self.service.request("user@example.com")
+        first = await self.request_verification("user@example.com")
 
-        second = await self.service.request("user@example.com")
+        second = await self.request_verification("user@example.com")
 
         assert second.verification_id != first.verification_id
         assert len(self.jobs.calls) == 2
 
     async def test_resend_expires_previous_open_record(self) -> None:
-        first = await self.service.request("user@example.com")
+        first = await self.request_verification("user@example.com")
 
-        second = await self.service.request("user@example.com")
+        second = await self.request_verification("user@example.com")
 
         previous = await EmailVerification.get(id=first.verification_id)
         assert second.verification_id != first.verification_id
         assert previous.expires_at <= self.now
 
     async def test_verify_returns_token_and_marks_record_verified(self) -> None:
-        requested = await self.service.request("user@example.com")
+        requested = await self.request_verification("user@example.com")
 
         result = await self.service.verify(requested.verification_id, "123456")
 
@@ -98,7 +103,7 @@ class TestEmailVerificationService(TestCase):
         assert self.codec.verify(result.verification_token).verification_id == verification.id
 
     async def test_verify_wrong_code_increments_attempts_and_locks_after_five(self) -> None:
-        requested = await self.service.request("user@example.com")
+        requested = await self.request_verification("user@example.com")
 
         for expected_attempt in range(1, 5):
             with pytest.raises(InvalidEmailVerificationCodeError):
@@ -112,16 +117,16 @@ class TestEmailVerificationService(TestCase):
             await self.service.verify(requested.verification_id, "123456")
 
     async def test_verify_rejects_expired_record(self) -> None:
-        requested = await self.service.request("user@example.com")
+        requested = await self.request_verification("user@example.com")
         self.now += timedelta(seconds=180)
 
         with pytest.raises(EmailVerificationExpiredError):
             await self.service.verify(requested.verification_id, "123456")
 
     async def test_verify_rejects_superseded_record(self) -> None:
-        first = await self.service.request("user@example.com")
+        first = await self.request_verification("user@example.com")
         self.now += timedelta(seconds=180)
-        await self.service.request("user@example.com")
+        await self.request_verification("user@example.com")
 
         with pytest.raises(EmailVerificationInvalidError):
             await self.service.verify(first.verification_id, "123456")
@@ -132,10 +137,10 @@ class TestEmailVerificationService(TestCase):
         from app.core.exceptions import SignupEmailAlreadyExistsError
 
         with pytest.raises(SignupEmailAlreadyExistsError):
-            await self.service.request("user@example.com")
+            await self.request_verification("user@example.com")
 
     async def test_signup_token_rejects_tampering_and_email_mismatch(self) -> None:
-        requested = await self.service.request("user@example.com")
+        requested = await self.request_verification("user@example.com")
         verified = await self.service.verify(requested.verification_id, "123456")
 
         async with in_transaction() as connection:
@@ -154,7 +159,7 @@ class TestEmailVerificationService(TestCase):
                 )
 
     async def test_signup_token_can_only_be_consumed_once(self) -> None:
-        requested = await self.service.request("user@example.com")
+        requested = await self.request_verification("user@example.com")
         verified = await self.service.verify(requested.verification_id, "123456")
 
         async with in_transaction() as connection:
