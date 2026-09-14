@@ -399,6 +399,18 @@ class RuleBasedMedicationQuestionResolver:
                         [],
                     ).append(entry)
 
+        existing_expression_keys = set(entries_by_expression)
+        for entry in entries:
+            alias = cls._particle_stripped_product_alias(entry)
+            if alias is None:
+                continue
+            normalized_alias = cls._normalize_expression(alias)
+            if not normalized_alias or normalized_alias in existing_expression_keys:
+                continue
+            catalog[normalized_alias] = alias
+            entries_by_expression[normalized_alias] = [entry]
+            existing_expression_keys.add(normalized_alias)
+
         normalized_entries = {
             key: tuple(
                 sorted(
@@ -426,6 +438,24 @@ class RuleBasedMedicationQuestionResolver:
             candidates_by_length=candidates_by_length,
             candidates_by_bigram=candidates_by_bigram,
         )
+
+    @classmethod
+    def _particle_stripped_product_alias(
+        cls,
+        entry: MedicationCatalogEntry,
+    ) -> str | None:
+        """조사처럼 끝나는 제품명의 본문 일치를 위한 충돌 없는 보조 별칭이다."""
+
+        if entry.entity_type not in cls._PRODUCT_ENTITY_TYPES:
+            return None
+        candidate = cls._TRAILING_PRODUCT_INGREDIENT.sub("", entry.canonical_name).strip()
+        previous = ""
+        while previous != candidate:
+            previous = candidate
+            candidate = cls._TRAILING_PARTICLE.sub("", candidate)
+        if candidate == entry.canonical_name or len(candidate) < 3:
+            return None
+        return candidate
 
     @classmethod
     def _entry_selection_priority(

@@ -36,6 +36,16 @@ class FakeAnswerClient:
         return self.response
 
 
+class SequenceAnswerClient:
+    def __init__(self, responses: list[dict[str, object]]) -> None:
+        self._responses = iter(responses)
+        self.messages_history = []
+
+    async def ainvoke(self, messages):
+        self.messages_history.append(messages)
+        return next(self._responses)
+
+
 def build_request() -> MedicationChatRequest:
     return MedicationChatRequest(
         request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
@@ -87,6 +97,43 @@ async def test_generator_rewrites_draft_and_preserves_grounding_metadata() -> No
     assert client.messages is not None
 
 
+async def test_generator_retries_once_when_first_answer_copies_raw_guide_markup() -> None:
+    client = SequenceAnswerClient(
+        responses=[
+            {
+                "answer": ("✅ **효능**\n- 이약은목(인후)의염증으로인한목의통증|목의부종|목의불쾌감에사용합니다."),
+                "section_types": ["FUNCTION"],
+            },
+            {
+                "answer": "✅ **효능**\n- 목 염증으로 인한 통증과 불편감 완화에 사용함.",
+                "section_types": ["FUNCTION"],
+            },
+        ]
+    )
+    generator = OpenAIMedicationAnswerGenerator(
+        model="gpt-4o-mini",
+        client=client,
+    )
+    initial = build_result().model_copy(
+        update={
+            "evidence_coverage": MedicationEvidenceCoverage(
+                requested_section_types=[KnowledgeSectionType.FUNCTION],
+                covered_section_types=[KnowledgeSectionType.FUNCTION],
+            )
+        }
+    )
+
+    outcome = await generator.generate(
+        request=build_request(),
+        context=ActiveIntakeContext(user_id=1),
+        result=initial,
+    )
+
+    assert outcome.result.answer == "✅ **효능**\n- 목 염증으로 인한 통증과 불편감 완화에 사용함."
+    assert len(client.messages_history) == 2
+    assert "원문 기호와 장문을 의미 단위로 요약" in client.messages_history[-1][-1].content
+
+
 def test_generator_preserves_warning_and_contraindication_section_markdown() -> None:
     answer = OpenAIMedicationAnswerGenerator._to_limited_markdown(
         "⚠️ **주의사항**\n- 정기적 음주자는 복용 전 확인합니다."
@@ -103,6 +150,24 @@ def test_generator_preserves_adverse_reaction_section_markdown() -> None:
     )
 
     assert answer.startswith("🚨 **이상반응**")
+
+
+def test_generator_preserves_drug_food_section_markdown() -> None:
+    answer = OpenAIMedicationAnswerGenerator._to_limited_markdown(
+        "🍗 **함께 주의할 약·음식**\n- 음주 시 간 손상 위험이 커질 수 있습니다."
+    )
+
+    assert answer.startswith("🍗 **함께 주의할 약·음식**")
+
+
+def test_generator_does_not_replace_long_bullet_with_ellipsis() -> None:
+    answer = OpenAIMedicationAnswerGenerator._to_limited_markdown(
+        "⚠️ **주의사항**\n- 정기적인 음주와 성분 중복 복용은 간 손상 위험을 크게 높일 수 있으므로 주의하세요."
+    )
+
+    bullet_body = next(line[2:] for line in answer.splitlines() if line.startswith("- "))
+    assert bullet_body == "정기적인 음주와 성분 중복 복용은 간 손상 위험을 크게 높일 수 있으므로 주의하세요."
+    assert "…" not in bullet_body
 
 
 def test_generator_preserves_active_intake_section_markdown() -> None:
@@ -124,7 +189,8 @@ def test_generator_preserves_question_interaction_pair_and_intake_divider() -> N
     assert "---" in answer
     assert "🔁 **질문 상호작용**" in answer
     assert "**[타이레놀-마그네슘]**" in answer
-    assert "- 현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 못했습니다." in answer
+    interaction_bullet = next(line[2:] for line in answer.splitlines() if "현재 보유한 승인 규칙" in line)
+    assert interaction_bullet == "현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 못했습니다."
 
 
 async def test_generator_skips_llm_when_no_grounded_sources() -> None:

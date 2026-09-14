@@ -108,7 +108,7 @@ from ai_worker.schemas.conversation_gate import (
     ConversationIntent,
     ConversationSafetySignal,
 )
-from ai_worker.schemas.enums import SafetyStatus
+from ai_worker.schemas.enums import ChatRole, SafetyStatus
 from ai_worker.schemas.evidence_reasoning import (
     EvidenceItem,
     EvidenceReasoningInput,
@@ -217,6 +217,38 @@ class _QuestionRoutingOutcome:
 
 
 class AnswerMedicationQuestionUseCase:
+    _CLARIFICATION_CANDIDATE_PREFIX = (
+        "입력하신 이름만으로는 제품이나 성분을 정확히 확인하기 어렵습니다. "
+        "제품명 또는 복용 목적(의약품/영양제)을 알려주세요:"
+    )
+    _ADVERSE_REACTION_ONLY_CUES = ("이상반응", "부작용")
+    _NON_ADVERSE_SECTION_CUES = ("효능", "효과", "주의사항", "복용법", "용량", "상호작용", "음식")
+    _CANDIDATE_TRAILING_PARTICLES = (
+        "으로",
+        "에서",
+        "부터",
+        "까지",
+        "처럼",
+        "보다",
+        "에게",
+        "한테",
+        "하고",
+        "이며",
+        "이나",
+        "이랑",
+        "은",
+        "는",
+        "이",
+        "가",
+        "을",
+        "를",
+        "과",
+        "와",
+        "도",
+        "의",
+        "에",
+        "로",
+    )
     _MAX_PRODUCT_NAME_CANDIDATES = 12
     _ENTITY_FREE_CONVERSATION_INTENTS = frozenset(
         {
@@ -662,6 +694,8 @@ class AnswerMedicationQuestionUseCase:
                     ),
                     evidence_coverage=evidence_coverage,
                     evidence_reasoning=evidence_reasoning,
+                    adverse_reaction_only=self._is_adverse_reaction_only_question(request.question),
+                    include_drug_food_guidance=(guide_lookup.guide is not None and not interaction_question),
                 ),
                 route=route,
                 safety_status=safety_status,
@@ -730,10 +764,7 @@ class AnswerMedicationQuestionUseCase:
             )
             generated = generated.model_copy(
                 update={
-                    "answer": compact_chat_content(
-                        generated.answer,
-                        marker=ANSWER_COMPACTION_MARKER,
-                    )
+                    "answer": self._compact_final_answer(generated),
                 }
             )
             generated = self._apply_risk_policy(
@@ -923,6 +954,12 @@ class AnswerMedicationQuestionUseCase:
                 safety_outputs.update(diagnostic.trace_outputs())
             safety_span.end(safety_outputs)
         return validated
+
+    @staticmethod
+    def _compact_final_answer(result: MedicationChatResult) -> str:
+        """의료 사실을 문자 수만으로 자르지 않고 전체 답변 길이만 제한한다."""
+
+        return compact_chat_content(result.answer, marker=ANSWER_COMPACTION_MARKER)
 
     @staticmethod
     def _official_warning_texts(
@@ -1596,6 +1633,7 @@ class AnswerMedicationQuestionUseCase:
                 )
         request = await self._with_symptom_interaction_follow_up(
             request=request,
+            context=context,
             resolution=resolution,
         )
         request, resolution = await self._with_conversation_interaction_references(
@@ -1657,6 +1695,7 @@ class AnswerMedicationQuestionUseCase:
         self,
         *,
         request: MedicationChatRequest,
+        context: ActiveIntakeContext,
         resolution: MedicationQuestionResolution,
     ) -> MedicationChatRequest:
         """최근 증상 대화 뒤의 제품명만 상호작용 확인으로 제한 전환한다."""
@@ -1669,7 +1708,9 @@ class AnswerMedicationQuestionUseCase:
             or len(resolution.entities) != 1
             or self._is_explicit_entity_guide_request(
                 question=request.question,
+                context=context,
                 resolution=resolution,
+                history=request.history,
             )
         ):
             return request
@@ -1716,10 +1757,34 @@ class AnswerMedicationQuestionUseCase:
     def _is_explicit_entity_guide_request(
         *,
         question: str,
+        context: ActiveIntakeContext,
         resolution: MedicationQuestionResolution,
+        history: list[ChatHistoryMessage],
     ) -> bool:
+        if (
+            history
+            and history[-1].role is ChatRole.ASSISTANT
+            and history[-1].content.startswith(AnswerMedicationQuestionUseCase._CLARIFICATION_CANDIDATE_PREFIX)
+            and any(
+                entity.source is MedicationQueryEntitySource.SESSION_MEMORY
+                and entity.entity_type is MedicationQueryEntityType.PRODUCT_NAME
+                for entity in resolution.entities
+            )
+        ):
+            return True
         if is_interaction_question(question):
             return False
+        registered_product_names = {
+            AnswerMedicationQuestionUseCase._normalize_entity_name(medication.name)
+            for medication in context.medications
+        }
+        if any(
+            entity.kind is InteractionEntityKind.DRUG
+            and AnswerMedicationQuestionUseCase._normalize_entity_name(entity.canonical_name)
+            in registered_product_names
+            for entity in resolution.entities
+        ):
+            return True
         query_plan = MedicationKnowledgeQueryBuilder(
             catalog_entities=resolution.entities,
         ).build(question)
@@ -2324,6 +2389,7 @@ class AnswerMedicationQuestionUseCase:
                 resolution = await self._question_resolver.resolve(
                     question=request.question,
                     additional_entities=[
+                        *self._clarification_candidate_entities(request.history),
                         *(
                             MedicationCatalogEntry(
                                 canonical_name=entity.name,
@@ -2337,6 +2403,7 @@ class AnswerMedicationQuestionUseCase:
                         *(
                             MedicationCatalogEntry(
                                 canonical_name=item.name,
+                                aliases=self._candidate_lookup_aliases(item.name),
                                 entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
                                 kind=InteractionEntityKind.DRUG,
                                 source=MedicationQueryEntitySource.PATIENT_CONTEXT,
@@ -2380,6 +2447,49 @@ class AnswerMedicationQuestionUseCase:
                 outputs["candidate_names"] = resolution.candidate_names
             resolution_span.end(outputs)
             return resolution
+
+    @classmethod
+    def _clarification_candidate_entities(
+        cls,
+        history: list[ChatHistoryMessage],
+    ) -> list[MedicationCatalogEntry]:
+        """직전의 정형 확인 질문에서만 선택 후보를 제품명으로 재사용한다."""
+
+        if not history:
+            return []
+        message = history[-1]
+        if message.role is not ChatRole.ASSISTANT or not message.content.startswith(
+            cls._CLARIFICATION_CANDIDATE_PREFIX
+        ):
+            return []
+        candidate_text = message.content.removeprefix(cls._CLARIFICATION_CANDIDATE_PREFIX).strip()
+        return [
+            MedicationCatalogEntry(
+                canonical_name=name,
+                aliases=cls._candidate_lookup_aliases(name),
+                entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                kind=InteractionEntityKind.DRUG,
+                source=MedicationQueryEntitySource.SESSION_MEMORY,
+            )
+            for name in (item.strip() for item in candidate_text.split(","))
+            if name
+        ]
+
+    @classmethod
+    def _candidate_lookup_aliases(cls, name: str) -> list[str]:
+        """확인 후보 끝 글자가 조사로 오인돼도 정식 제품명으로 재진입한다."""
+
+        return [
+            name[: -len(particle)]
+            for particle in cls._CANDIDATE_TRAILING_PARTICLES
+            if len(name) > len(particle) and name.endswith(particle)
+        ]
+
+    @classmethod
+    def _is_adverse_reaction_only_question(cls, question: str) -> bool:
+        return any(cue in question for cue in cls._ADVERSE_REACTION_ONLY_CUES) and not any(
+            cue in question for cue in cls._NON_ADVERSE_SECTION_CUES
+        )
 
     @staticmethod
     def _apply_session_reference(
@@ -3297,10 +3407,7 @@ class AnswerMedicationQuestionUseCase:
                 raise
             generated = outcome.result.model_copy(
                 update={
-                    "answer": compact_chat_content(
-                        outcome.result.answer,
-                        marker=ANSWER_COMPACTION_MARKER,
-                    )
+                    "answer": self._compact_final_answer(outcome.result),
                 }
             )
             llm_span.end(

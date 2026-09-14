@@ -626,12 +626,14 @@ def build_request(
     question: str,
     *,
     care_episode_id: int | None = None,
+    history: list[ChatHistoryMessage] | None = None,
 ) -> MedicationChatRequest:
     return MedicationChatRequest(
         request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
         user_id=1,
         care_episode_id=care_episode_id,
         question=question,
+        history=history or [],
     )
 
 
@@ -2272,6 +2274,174 @@ async def test_execute_requests_clarification_before_search_for_tied_typo() -> N
 
 
 @pytest.mark.parametrize(
+    "selected_product",
+    [
+        "목앤스프레이",
+        "목액파워스프레이",
+        "목앤탁인후스프레이",
+    ],
+)
+async def test_execute_reenters_product_search_for_each_prior_clarification_candidate(
+    selected_product: str,
+) -> None:
+    guide_repository = ExactNameGuideRepository(
+        expected_name=selected_product,
+        lookup=MedicationGuideLookup(guide=build_guide()),
+    )
+    result = await build_use_case(
+        guide_repository=guide_repository,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(
+        build_request(
+            selected_product,
+            history=[
+                ChatHistoryMessage(role=ChatRole.USER, content="목앤 효능"),
+                ChatHistoryMessage(
+                    role=ChatRole.ASSISTANT,
+                    content=(
+                        "입력하신 이름만으로는 제품이나 성분을 정확히 확인하기 어렵습니다. "
+                        "제품명 또는 복용 목적(의약품/영양제)을 알려주세요: "
+                        "목앤스프레이, 목액파워스프레이, 목앤탁인후스프레이"
+                    ),
+                ),
+            ],
+        )
+    )
+
+    assert result.route is MedicationChatRoute.MEDICATION_GUIDE
+    assert "통증과 발열을 완화합니다" in result.answer
+
+
+async def test_selected_clarification_product_skips_symptom_interaction_follow_up() -> None:
+    retriever = RecordingQueryPlanRetriever()
+    gate = StaticConversationGate(
+        ConversationClassification(
+            intent="SYMPTOM_INTERACTION_FOLLOW_UP",
+            safety_signal="NONE",
+            confidence="HIGH",
+        )
+    )
+    await build_use_case(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(medication_id=1, care_episode_id=1, name="목앤스프레이"),
+                ActiveMedication(medication_id=2, care_episode_id=1, name="타이레놀"),
+            ],
+        ),
+        retriever=retriever,
+        guide_repository=ExactNameGuideRepository(
+            expected_name="목앤스프레이",
+            lookup=MedicationGuideLookup(guide=build_guide()),
+        ),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+        conversation_gate_chain=gate,
+    ).execute(
+        build_request(
+            "목앤스프레이",
+            history=[
+                ChatHistoryMessage(role=ChatRole.USER, content="목앤 효능"),
+                ChatHistoryMessage(
+                    role=ChatRole.ASSISTANT,
+                    content=(
+                        "입력하신 이름만으로는 제품이나 성분을 정확히 확인하기 어렵습니다. "
+                        "제품명 또는 복용 목적(의약품/영양제)을 알려주세요: 목앤스프레이"
+                    ),
+                ),
+            ],
+        )
+    )
+
+    assert gate.inputs == []
+    assert retriever.received_kwargs is not None
+    assert retriever.received_kwargs["execution_plan"].query_plan.interaction_pairs == []
+
+
+async def test_registered_product_name_skips_symptom_interaction_follow_up() -> None:
+    retriever = RecordingQueryPlanRetriever()
+    gate = StaticConversationGate(
+        ConversationClassification(
+            intent="SYMPTOM_INTERACTION_FOLLOW_UP",
+            safety_signal="NONE",
+            confidence="HIGH",
+        )
+    )
+    await build_use_case(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(medication_id=1, care_episode_id=1, name="목앤스프레이"),
+                ActiveMedication(medication_id=2, care_episode_id=1, name="타이레놀"),
+            ],
+        ),
+        retriever=retriever,
+        guide_repository=ExactNameGuideRepository(
+            expected_name="목앤스프레이",
+            lookup=MedicationGuideLookup(guide=build_guide()),
+        ),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticTypedExpressionCatalog(
+                [
+                    MedicationCatalogEntry(
+                        canonical_name="목앤스프레이",
+                        entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                        kind=InteractionEntityKind.DRUG,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    )
+                ]
+            )
+        ),
+        conversation_gate_chain=gate,
+    ).execute(
+        build_request("목앤스프레이").model_copy(
+            update={
+                "history": [
+                    ChatHistoryMessage(role=ChatRole.USER, content="배가 아파요"),
+                    ChatHistoryMessage(role=ChatRole.ASSISTANT, content="증상을 더 알려주세요."),
+                ]
+            }
+        )
+    )
+
+    assert gate.inputs == []
+    assert retriever.received_kwargs is not None
+    assert retriever.received_kwargs["execution_plan"].query_plan.interaction_pairs == []
+
+
+async def test_execute_does_not_reuse_clarification_candidates_after_another_user_message() -> None:
+    guide_repository = ExactNameGuideRepository(
+        expected_name="목앤스프레이",
+        lookup=MedicationGuideLookup(guide=build_guide()),
+    )
+    result = await build_use_case(
+        guide_repository=guide_repository,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(
+        build_request(
+            "목앤스프레이",
+            history=[
+                ChatHistoryMessage(
+                    role=ChatRole.ASSISTANT,
+                    content=(
+                        "입력하신 이름만으로는 제품이나 성분을 정확히 확인하기 어렵습니다. "
+                        "제품명 또는 복용 목적(의약품/영양제)을 알려주세요: 목앤스프레이"
+                    ),
+                ),
+                ChatHistoryMessage(role=ChatRole.USER, content="다른 질문이 있어요"),
+            ],
+        )
+    )
+
+    assert result.route is not MedicationChatRoute.MEDICATION_GUIDE
+
+
+@pytest.mark.parametrize(
     ("question", "expected_text"),
     [
         (
@@ -3820,6 +3990,29 @@ async def test_execute_records_fallback_reason_without_answer_content() -> None:
     assert llm_outputs["fallback_reason"] == "UNSUPPORTED_SAFETY_ASSERTION"
     assert FallbackGenerator.generated_answer not in repr(llm_outputs)
     assert result.answer not in repr(llm_outputs)
+
+
+async def test_execute_keeps_complete_bullet_when_answer_generation_falls_back_to_draft() -> None:
+    result = await build_use_case(
+        lookup=MedicationGuideLookup(
+            guide=build_guide().model_copy(
+                update={
+                    "efficacy": (
+                        "정기적인 음주와 다른 아세트아미노펜 제품의 중복 복용은 "
+                        "간 손상 위험을 크게 높일 수 있으므로 주의하세요."
+                    )
+                }
+            )
+        ),
+        answer_generator=FallbackGenerator(),
+    ).execute(build_request("타이레놀의 효능을 알려줘"))
+
+    bullet_bodies = [line[2:] for line in result.answer.splitlines() if line.startswith("- ")]
+    assert bullet_bodies
+    assert (
+        "정기적인 음주와 다른 아세트아미노펜 제품의 중복 복용은 간 손상 위험을 크게 높일 수 있으므로 주의하세요."
+    ) in bullet_bodies
+    assert all("…" not in body for body in bullet_bodies)
 
 
 async def test_execute_records_provider_failure_reason_and_reraises() -> None:

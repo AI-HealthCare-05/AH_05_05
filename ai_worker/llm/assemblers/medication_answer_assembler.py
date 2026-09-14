@@ -44,6 +44,8 @@ class MedicationAnswerAssembler:
         active_intake_interaction: bool = False,
         evidence_coverage: MedicationEvidenceCoverage | None = None,
         evidence_reasoning: EvidenceReasoningOutput | None = None,
+        adverse_reaction_only: bool = False,
+        include_drug_food_guidance: bool = False,
     ) -> str:
         intake_sections = self._patient_intake_sections(context)
         sections: list[str] = []
@@ -63,6 +65,8 @@ class MedicationAnswerAssembler:
                     guide=guide,
                     family_reference=family_reference,
                     evidence_coverage=evidence_coverage,
+                    adverse_reaction_only=adverse_reaction_only,
+                    include_drug_food_guidance=include_drug_food_guidance,
                 )
             )
         if chunks and not question_interaction_pairs:
@@ -112,6 +116,8 @@ class MedicationAnswerAssembler:
         guide: MedicationGuideFact,
         family_reference: bool,
         evidence_coverage: MedicationEvidenceCoverage | None,
+        adverse_reaction_only: bool,
+        include_drug_food_guidance: bool,
     ) -> str:
         if family_reference:
             guide_lines = [f"- 기준 제품: {guide.product_name} ({guide.manufacturer_name})"]
@@ -129,6 +135,16 @@ class MedicationAnswerAssembler:
 
         covered = self._covered_sections(evidence_coverage)
         guide_sections = [f"**{guide.product_name}**"]
+        if adverse_reaction_only:
+            self._append_allowed_guide_section(
+                guide_sections,
+                heading="🚨 **이상반응**",
+                value=guide.adverse_reactions,
+                section_type=KnowledgeSectionType.CAUTION,
+                evidence_coverage=evidence_coverage,
+                covered=covered,
+            )
+            return "\n\n".join(guide_sections)
         self._append_allowed_guide_section(
             guide_sections,
             heading="✅ **효능**",
@@ -167,14 +183,16 @@ class MedicationAnswerAssembler:
             evidence_coverage=evidence_coverage,
             covered=covered,
         )
-        self._append_allowed_guide_section(
-            guide_sections,
-            heading="🔁 **함께 주의할 약·음식**",
-            value=guide.drug_food_interactions,
-            section_type=KnowledgeSectionType.INTERACTION,
-            evidence_coverage=evidence_coverage,
-            covered=covered,
-        )
+        if self._has_guide_value(guide.drug_food_interactions) and (
+            include_drug_food_guidance
+            or self._guide_value_is_allowed(
+                guide.drug_food_interactions,
+                KnowledgeSectionType.INTERACTION,
+                coverage=evidence_coverage,
+                covered=covered,
+            )
+        ):
+            guide_sections.append("🍗 **함께 주의할 약·음식**\n" + self._guide_line("", guide.drug_food_interactions))
         return "\n\n".join(guide_sections)
 
     def _append_allowed_guide_section(

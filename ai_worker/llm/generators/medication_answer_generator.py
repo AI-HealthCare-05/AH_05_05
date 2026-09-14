@@ -57,13 +57,20 @@ class OpenAIMedicationAnswerGenerator:
         re.IGNORECASE,
     )
     _MARKDOWN_HEADING_PATTERN = re.compile(r"^\s{0,3}#{1,6}\s*")
-    _SECTION_HEADER_PATTERN = re.compile(r"^\s*(?P<icon>✅|⚠️|🚨|🚫|💊|💪🏻|🔁)\s*\*\*(?P<title>[^*\n]+)\*\*\s*:?\s*$")
+    _SECTION_HEADER_PATTERN = re.compile(
+        r"^\s*(?P<icon>✅|⚠️|🚨|🚫|💊|💪🏻|🔁|🍗)\s*\*\*(?P<title>[^*\n]+)\*\*\s*:?\s*$"
+    )
     _BOLD_MARKER_PATTERN = re.compile(r"\*\*(.+?)\*\*")
     _INTERACTION_PAIR_HEADER_PATTERN = re.compile(r"^\*\*(?P<pair>\[[^\]\n]+\])\*\*$")
     _BULLET_MARKER_PATTERN = re.compile(r"^\s*(?:[-*•])\s*")
     _SENTENCE_BOUNDARY_PATTERN = re.compile(r"(?<=[.!?。！？])\s+")
     _DISCLAIMER_PATTERN = re.compile(r"의료\s*(?:전문가|진)의\s*(?:진단|진료|처방).*대체하지\s*않습니다")
     _INTERACTION_SECTION_TITLE = "상호작용"
+    _CONCISE_REWRITE_INSTRUCTION = (
+        "원문 기호와 장문을 의미 단위로 요약하세요. "
+        "각 bullet은 10어절 이내 단문 1~2개로 다시 쓰고, "
+        "|, 괄호, 줄임표를 사용하지 마세요."
+    )
 
     def __init__(
         self,
@@ -131,26 +138,19 @@ class OpenAIMedicationAnswerGenerator:
                 reason=MedicationAnswerFallbackReason.PATIENT_CONTEXT_ONLY,
             )
         try:
-            payload = await self._chain.ainvoke(
-                MedicationAnswerChainInput(
+            payload = await self._invoke_chain(
+                request=request,
+                context=context,
+                result=result,
+            )
+            generated_answer = self._to_limited_markdown(payload.answer)
+            if self._requires_concise_rewrite(generated_answer):
+                payload = await self._invoke_chain(
                     request=request,
                     context=context,
                     result=result,
-                ),
-                config={
-                    "metadata": {
-                        "model_name": self._model_name,
-                        "prompt_version": MEDICATION_CHAT_PROMPT_VERSION,
-                        "route": result.route.value,
-                        "source_count": len(result.sources),
-                        "covered_section_count": (
-                            len(result.evidence_coverage.covered_section_types)
-                            if result.evidence_coverage is not None
-                            else 0
-                        ),
-                    }
-                },
-            )
+                    rewrite_instruction=self._CONCISE_REWRITE_INSTRUCTION,
+                )
         except Exception as error:
             raise ChatAnswerGenerationError(
                 "약·영양제 챗봇 답변 생성에 실패했습니다.",
@@ -201,6 +201,54 @@ class OpenAIMedicationAnswerGenerator:
                 generated_answer_hash=generated_hash,
             ),
         )
+
+    async def _invoke_chain(
+        self,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        result: MedicationChatResult,
+        rewrite_instruction: str | None = None,
+    ) -> MedicationAnswerPayload:
+        return await self._chain.ainvoke(
+            MedicationAnswerChainInput(
+                request=request,
+                context=context,
+                result=result,
+                rewrite_instruction=rewrite_instruction,
+            ),
+            config={
+                "metadata": {
+                    "model_name": self._model_name,
+                    "prompt_version": MEDICATION_CHAT_PROMPT_VERSION,
+                    "route": result.route.value,
+                    "source_count": len(result.sources),
+                    "covered_section_count": (
+                        len(result.evidence_coverage.covered_section_types)
+                        if result.evidence_coverage is not None
+                        else 0
+                    ),
+                    "concise_rewrite_requested": rewrite_instruction is not None,
+                }
+            },
+        )
+
+    @classmethod
+    def _requires_concise_rewrite(cls, answer: str) -> bool:
+        """원문 나열·기호가 남은 경우에만 한 번 더 짧은 편집을 요청한다."""
+
+        for line in answer.splitlines():
+            bullet_match = cls._BULLET_MARKER_PATTERN.match(line)
+            if bullet_match is None:
+                continue
+            body = line[bullet_match.end() :].strip()
+            if any(marker in body for marker in ("|", "(", ")", "…")):
+                return True
+            if len(body) > 80:
+                return True
+            if any(len(sentence.split()) > 10 for sentence in cls._SENTENCE_BOUNDARY_PATTERN.split(body) if sentence):
+                return True
+        return False
 
     @classmethod
     def _grounding_failure_reason(
