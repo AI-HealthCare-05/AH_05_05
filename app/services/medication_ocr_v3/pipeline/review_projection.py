@@ -275,8 +275,7 @@ def _grounded_confidence(field: GroundedField) -> str:
 
 
 def _confidence_tier(confidence: float) -> str:
-    if confidence >= 0.90:
+    # Review warnings include the boundary: 71% or below needs confirmation.
+    if confidence > 0.71:
         return "high"
-    if confidence >= 0.70:
-        return "medium"
     return "low"
