@@ -25,14 +25,16 @@ async function logIn(page: Page) {
   await expect(page).toHaveURL(/\/home$/);
 }
 
-async function seedSessionWithExpiry(page: Page, expiresAtSeconds: number) {
-  await page.addInitScript((expiresAt) => {
+async function seedSessionWithIdleDeadline(page: Page, remainingMs: number) {
+  await page.addInitScript((remaining) => {
     const encode = (value: object) =>
       btoa(JSON.stringify(value)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
-    const token = `${encode({ alg: 'none', typ: 'JWT' })}.${encode({ exp: expiresAt })}.signature`;
+    const token = `${encode({ alg: 'none', typ: 'JWT' })}.${encode({ exp: Math.floor(Date.now() / 1000) + 3600 })}.signature`;
     sessionStorage.setItem('poke.access-token', token);
     sessionStorage.setItem('poke.account-principal', 'expired-user@example.com');
-  }, expiresAtSeconds);
+    localStorage.setItem(`poke.session-activity:${encodeURIComponent('expired-user@example.com')}`,
+      JSON.stringify({ at: Date.now() - 30 * 60 * 1000 + remaining, ended: false }));
+  }, remainingMs);
 }
 
 test('첫 진입은 버튼 없는 스플래시를 거쳐 튜토리얼로 이동한다', async ({ page }) => {
@@ -111,10 +113,10 @@ test('보호 화면에서 로그인하면 원래 요청한 화면으로 돌아�
   await expect(page).toHaveURL(/\/supplements$/);
 });
 
-test('이미 만료된 토큰으로 보호 화면을 열면 세션을 지우고 로그인 화면으로 보낸다', async ({
+test('이미 유휴 시간이 만료된 보호 화면을 열면 세션을 지우고 로그인 화면으로 보낸다', async ({
   page,
 }) => {
-  await seedSessionWithExpiry(page, Math.floor(Date.now() / 1000) - 60);
+  await seedSessionWithIdleDeadline(page, -60_000);
 
   await page.goto('/my');
 
@@ -129,10 +131,10 @@ test('이미 만료된 토큰으로 보호 화면을 열면 세션을 지우고 
     .toEqual({ token: null, principal: null });
 });
 
-test('홈에서는 토큰이 만료되어도 로그인 화면으로 이동하지 않고 게스트 상태로 전환한다', async ({
+test('홈에서는 유휴 시간이 만료되어도 로그인 화면으로 이동하지 않고 게스트 상태로 전환한다', async ({
   page,
 }) => {
-  await seedSessionWithExpiry(page, Math.floor(Date.now() / 1000) + 3);
+  await seedSessionWithIdleDeadline(page, 3_000);
 
   await page.goto('/home');
   await expect(page).toHaveURL(/\/home$/);

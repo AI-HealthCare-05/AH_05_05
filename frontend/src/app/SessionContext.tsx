@@ -2,11 +2,15 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import {
   AUTH_SESSION_EXPIRED_EVENT,
   accessTokenExpiresAt,
+  accessTokenSessionId,
   restoreAccessToken,
   restoreAccountPrincipal,
   setAccessToken,
   setAccountPrincipal,
+  endSession,
+  refreshAccessToken,
 } from '@/shared/api/client';
+import { beginActivitySession, endActivitySession, watchSessionActivity } from '@/shared/api/sessionActivity';
 import { getPushPermission } from '@/shared/push/permission';
 import { registerPushNotifications, unregisterPushNotifications } from '@/shared/push/register';
 
@@ -35,6 +39,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const expireCurrentSession = () => {
       void unregisterPushNotifications({ deactivateServer: false });
+      const principal = restoreAccountPrincipal();
+      if (principal) endActivitySession(principal);
       setAccessToken(null);
       setAccountPrincipal(null);
       setPrincipalKey(null);
@@ -42,24 +48,25 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, expireCurrentSession);
 
-    const token = restoreAccessToken();
-    const expiresAt = token ? accessTokenExpiresAt(token) : null;
-    if (expiresAt === null) {
+    if (!authenticated || !principalKey) {
       return () => window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, expireCurrentSession);
     }
-
-    const remainingMs = expiresAt - Date.now();
-    if (remainingMs <= 0) {
-      expireCurrentSession();
-      return () => window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, expireCurrentSession);
-    }
-
-    const expirationTimer = window.setTimeout(
-      expireCurrentSession,
-      Math.min(remainingMs, 2_147_483_647),
-    );
+    const stopActivity = watchSessionActivity(principalKey, () => { void endSession(); });
+    const refreshIfNeeded = () => {
+      const token = restoreAccessToken();
+      const expiresAt = token ? accessTokenExpiresAt(token) : null;
+      if (expiresAt !== null && expiresAt <= Date.now() + 60_000) {
+        // Temporary network errors are retried later; they must not log the user out.
+        void refreshAccessToken().catch(() => undefined);
+      }
+    };
+    refreshIfNeeded();
+    const refreshTimer = window.setInterval(refreshIfNeeded, 30_000);
+    window.addEventListener('focus', refreshIfNeeded);
     return () => {
-      window.clearTimeout(expirationTimer);
+      stopActivity();
+      window.clearInterval(refreshTimer);
+      window.removeEventListener('focus', refreshIfNeeded);
       window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, expireCurrentSession);
     };
   }, [authenticated, principalKey]);
@@ -77,15 +84,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           return;
         }
         setAccountPrincipal(normalizedPrincipal);
+        beginActivitySession(normalizedPrincipal, accessTokenSessionId(restoreAccessToken()!));
         setPrincipalKey(normalizedPrincipal);
         setAuthenticated(true);
       },
       signOut: async () => {
-        await unregisterPushNotifications();
-        setAccessToken(null);
-        setAccountPrincipal(null);
-        setPrincipalKey(null);
-        setAuthenticated(false);
+        // Invalidate earlier refreshes, then preserve server Push cleanup with a bounded wait.
+        setAccessToken(restoreAccessToken());
+        let timeout: number | undefined;
+        await Promise.race([
+          unregisterPushNotifications(),
+          new Promise<void>(resolve => { timeout = window.setTimeout(resolve, 3_000); }),
+        ]);
+        window.clearTimeout(timeout);
+        await endSession();
       },
     }),
     [authenticated, principalKey],

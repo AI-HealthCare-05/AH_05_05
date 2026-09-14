@@ -1,6 +1,6 @@
-"""USER_REFRESH_ENABLED 가 꺼졌을 때(기본값)의 사용자 인증 동작.
+"""USER_REFRESH_ENABLED 가 명시적으로 꺼졌을 때의 사용자 인증 동작.
 
-자동 로그인을 쓰지 않기로 해 기본값이 False 다. 액세스 토큰이 만료되면 다시 로그인한다.
+배포 기본값과 관계없이 플래그를 False 로 고정해 비활성화 동작을 검증한다.
 켠 상태의 동작은 test_token_api.py 가 검증한다.
 
 관리자 리프레시는 이 플래그와 무관하게 항상 동작해야 하므로 여기서 함께 고정한다.
@@ -34,8 +34,9 @@ async def create_active_user(email: str = "norefresh@example.com") -> User:
     )
 
 
+@patch.object(config, "USER_REFRESH_ENABLED", False)
 class TestUserRefreshDisabled(TestCase):
-    """기본값(꺼짐)에서는 리프레시 쿠키도, 갱신 엔드포인트도 없다."""
+    """꺼짐 설정에서는 리프레시 쿠키도, 갱신 엔드포인트도 없다."""
 
     async def test_login_does_not_set_refresh_cookie(self) -> None:
         user = await create_active_user()
@@ -71,6 +72,7 @@ class TestUserRefreshDisabled(TestCase):
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
+@patch.object(config, "USER_REFRESH_ENABLED", False)
 class TestAdminRefreshUnaffected(TestCase):
     """관리자 콘솔은 30분마다 재로그인하면 운영이 불가능하다. 플래그와 무관하게 동작해야 한다."""
 
