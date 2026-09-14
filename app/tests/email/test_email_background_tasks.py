@@ -17,7 +17,7 @@ from app.models.email_verifications import EmailVerification
 from app.models.enums import AccountStatus, BackgroundJobStatus, BackgroundJobType, EmailVerificationPurpose
 from app.models.users import User
 from app.services.admin_settings import SmtpRuntimeSettings
-from app.services.email_background_tasks import EmailBackgroundTaskExecutor
+from app.services.email_background_tasks import EmailBackgroundTaskExecutor, EmailBackgroundTaskManager
 
 
 class MutableClock:
@@ -48,6 +48,55 @@ class FakeSmtpSettingsService:
             password="secret",
             from_email="from@example.com",
         )
+
+
+class BlockingExecutor:
+    def __init__(self, recoverable_ids: list[int] | None = None) -> None:
+        self.recoverable_ids = recoverable_ids or []
+        self.run_calls: list[int] = []
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+        self.cancelled = False
+
+    async def recoverable_job_ids(self, _now: datetime) -> list[int]:
+        return self.recoverable_ids
+
+    async def run(self, job_id: int) -> None:
+        self.run_calls.append(job_id)
+        self.started.set()
+        try:
+            await self.release.wait()
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+
+
+@pytest.mark.asyncio
+async def test_manager_deduplicates_same_job_inside_one_process() -> None:
+    executor = BlockingExecutor()
+    manager = EmailBackgroundTaskManager(executor)
+
+    await asyncio.gather(manager.start(17), manager.start(17))
+    await executor.started.wait()
+
+    assert executor.run_calls == [17]
+    executor.release.set()
+    await manager.wait_until_idle()
+
+
+@pytest.mark.asyncio
+async def test_manager_recovers_jobs_and_shutdown_cancels_owned_tasks() -> None:
+    executor = BlockingExecutor([2, 5, 9])
+    manager = EmailBackgroundTaskManager(executor, now_provider=lambda: datetime.now(config.TIMEZONE))
+
+    await manager.recover()
+    await executor.started.wait()
+    assert sorted(executor.run_calls) == [2, 5, 9]
+
+    await manager.shutdown()
+
+    assert executor.cancelled is True
+    assert manager.active_job_ids == set()
 
 
 class TestEmailBackgroundTaskExecutor(TestCase):

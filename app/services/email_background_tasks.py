@@ -39,6 +39,72 @@ class RuntimeSmtpSettingsProvider(Protocol):
     async def get_runtime_settings(self) -> SmtpRuntimeSettings: ...
 
 
+class EmailTaskExecutor(Protocol):
+    async def recoverable_job_ids(self, now: datetime) -> list[int]: ...
+
+    async def run(self, job_id: int) -> None: ...
+
+
+class EmailBackgroundTaskManager:
+    def __init__(
+        self,
+        executor: EmailTaskExecutor,
+        *,
+        now_provider: Callable[[], datetime] | None = None,
+    ) -> None:
+        self.executor = executor
+        self.now_provider = now_provider or (lambda: datetime.now(config.TIMEZONE))
+        self._lock = asyncio.Lock()
+        self._tasks_by_job_id: dict[int, asyncio.Task[None]] = {}
+
+    @property
+    def active_job_ids(self) -> set[int]:
+        return {job_id for job_id, task in self._tasks_by_job_id.items() if not task.done()}
+
+    async def start(self, job_id: int) -> None:
+        async with self._lock:
+            current = self._tasks_by_job_id.get(job_id)
+            if current is not None and not current.done():
+                return
+            self._tasks_by_job_id[job_id] = asyncio.create_task(self._run(job_id))
+
+    async def recover(self) -> None:
+        for job_id in await self.executor.recoverable_job_ids(self.now_provider()):
+            await self.start(job_id)
+
+    async def wait_until_idle(self) -> None:
+        while True:
+            async with self._lock:
+                tasks = [task for task in self._tasks_by_job_id.values() if not task.done()]
+            if not tasks:
+                return
+            await asyncio.gather(*tasks)
+
+    async def shutdown(self) -> None:
+        async with self._lock:
+            tasks = list(self._tasks_by_job_id.values())
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        async with self._lock:
+            self._tasks_by_job_id.clear()
+
+    async def _run(self, job_id: int) -> None:
+        current_task = asyncio.current_task()
+        try:
+            await self.executor.run(job_id)
+        finally:
+            async with self._lock:
+                if self._tasks_by_job_id.get(job_id) is current_task:
+                    self._tasks_by_job_id.pop(job_id, None)
+
+
+def build_email_background_task_manager() -> EmailBackgroundTaskManager:
+    return EmailBackgroundTaskManager(EmailBackgroundTaskExecutor())
+
+
 class EmailBackgroundTaskExecutor:
     def __init__(
         self,
