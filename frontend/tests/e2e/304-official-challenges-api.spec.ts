@@ -16,6 +16,9 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/v1/user/custom-challenge-recommendations', route => route.fulfill({
     json: { items: [], totalCount: 0 },
   }));
+  await page.route('**/api/v1/user/custom-challenges/badges', route => route.fulfill({
+    json: { items: [], totalCount: 0 },
+  }));
 });
 
 const badge = {
@@ -1524,7 +1527,7 @@ test('relative badge media paths resolve from the server root on every official 
   }
 });
 
-test('badge box unions catalog and server awards, grays out unearned badges, and has no filters', async ({ page }) => {
+test('badge box unions catalog and server awards, grays out unearned badges, and has no filters', async ({ page }, testInfo) => {
   await authenticate(page);
   const awardedBadge = {
     id: 701,
@@ -1568,7 +1571,14 @@ test('badge box unions catalog and server awards, grays out unearned badges, and
   await grid.getByRole('link', { name: `${badge.name}, 미획득` }).click();
   await expect(page.getByRole('heading', { name: '배지 상세' })).toBeVisible();
   await expect(page.getByText('아직 획득하지 않았어요.')).toBeVisible();
-  await expect(page.getByText(badge.description)).toBeVisible();
+  await expect(page.getByText(badge.description)).toHaveCount(0);
+  await expect(page.getByText('공식 챌린지 달성', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: '배지 지급 기준' })).toHaveCount(0);
+  await expect(page.getByText('내 배지로 돌아가기', { exact: true })).toHaveCount(0);
+  await page.getByRole('img', { name: badge.name, exact: true }).evaluate((image: HTMLImageElement) => image.decode());
+  await page.screenshot({ path: testInfo.outputPath('badge-detail-simplified.png'), fullPage: true, animations: 'disabled' });
+  await page.getByRole('button', { name: '뒤로 가기', exact: true }).click();
+  await expect(page).toHaveURL('/challenges/badges');
 });
 
 test('authenticated home renders a server-backed challenge summary with navigation only', async ({ page }) => {

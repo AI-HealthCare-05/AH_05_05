@@ -119,3 +119,4 @@ class CustomChallengeRewardClaimResponse(CamelModel):
 class CustomChallengeBadgeAwardListResponse(CamelModel):
     items: list[CustomChallengeBadgeAwardResponse]
     total_count: int
+    available_badges: list[CustomChallengeRewardBadge] = Field(default_factory=list)

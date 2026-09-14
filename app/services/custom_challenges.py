@@ -182,6 +182,28 @@ class CustomChallengeService:
         self._lifecycle = lifecycle or CustomChallengeLifecycleService()
         self._badge_service = badge_service or CustomChallengeBadgeService()
 
+    async def badge_catalog(self) -> builtins.list[CustomChallengeRewardBadge]:
+        badges: dict[int, CustomChallengeRewardBadge] = {}
+        registered = await Badge.filter(
+            is_active=True,
+            type__is_active=True,
+            type__detail_code="CUSTOM",
+            type__group__is_active=True,
+            type__group__category="CHL",
+            type__group__group_code="BDG_TYPE",
+        ).order_by("id")
+        for badge in registered:
+            badges[badge.id] = CustomChallengeRewardBadge(
+                id=badge.id, name=badge.name, description=badge.description, image_path=badge.image_path
+            )
+        for template in await self._active_templates():
+            if self._template_type(template) not in (CustomChallengeType.MEDICATION, CustomChallengeType.SUPPLEMENT):
+                continue
+            badge = self._reward_badge(template)
+            if badge is not None:
+                badges.setdefault(badge.id, badge)
+        return [badges[badge_id] for badge_id in sorted(badges)]
+
     async def recommendations(self, user: User) -> CustomChallengeRecommendationListResponse:
         now = await self._finalize_due_for_user(user.id)
         meal_times = await self._meal_times(user.id)
