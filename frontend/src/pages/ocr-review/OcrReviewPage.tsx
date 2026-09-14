@@ -34,7 +34,6 @@ import {
   RxVitaFeatureCarousel,
   RegistrationProgress,
   StatusBadge,
-  type StatusBadgeType,
 } from '@/shared/ui';
 import { LowConfidenceConfirmDialog } from './LowConfidenceConfirmDialog';
 import { MedicationEditDialog } from './MedicationEditDialog';
@@ -82,17 +81,9 @@ function seoulDateISO(daysAfterToday = 0): string {
   ).padStart(2, '0')}`;
 }
 
-/** 다른 화면이 매핑을 재사용할 수 있으므로 high 항목도 지우지 않습니다. */
-const CONFIDENCE_BADGE: Record<Confidence, { type: StatusBadgeType; label: string }> = {
-  high: { type: 'active', label: '확인됨' },
-  medium: { type: 'dose', label: '확인 권장' },
-  low: { type: 'review', label: '확인 필요' },
-};
-
 function ConfidenceBadge({ confidence }: { confidence?: Confidence }) {
-  if (!confidence || confidence === 'high') return null;
-  const badge = CONFIDENCE_BADGE[confidence];
-  return <StatusBadge type={badge.type}>{badge.label}</StatusBadge>;
+  if (confidence !== 'low') return null;
+  return <StatusBadge type="review">확인 필요</StatusBadge>;
 }
 
 export function OcrReviewPage() {

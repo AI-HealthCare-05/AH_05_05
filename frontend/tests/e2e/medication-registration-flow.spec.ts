@@ -2603,7 +2603,7 @@ test('RAM 전처리 이미지가 404여도 medium OCR 결과를 확인하고 저
   await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
   await expect(page.getByText('내용을 잘 읽었어요')).toBeVisible();
   await expect(page.getByText('1곳만 확인해주세요')).toHaveCount(0);
-  await expect(page.getByText('확인 권장', { exact: true })).toHaveCount(1);
+  await expect(page.getByText('확인 권장', { exact: true })).toHaveCount(0);
   await expect(page.getByText('사진 미리보기를 사용할 수 없어요')).toBeVisible();
   await expect(page.getByRole('img', { name: '등록한 약봉투 원본' })).toHaveCount(0);
 
