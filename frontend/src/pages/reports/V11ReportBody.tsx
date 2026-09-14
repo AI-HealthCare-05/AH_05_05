@@ -133,7 +133,9 @@ export function V11ReportBody({ report }: { report: IntakeReport }) {
   if (!cards) return null;
   const medications = report.currentStack.filter(item => item.itemType === 'MEDICATION');
   const supplements = report.currentStack.filter(item => item.itemType === 'SUPPLEMENT');
-  const nutrientTotals = report.nutrientTotals.filter(item => item.amount == null || item.amount.trim() === '' || Number(item.amount) !== 0);
+  const availableMedicines = cards.medications.filter(card => card.hasInformation !== false);
+  const unavailableMedicines = cards.medications.filter(card => card.hasInformation === false);
+  const nutrientTotals = report.nutrientTotals.filter(item => (nutrientNumber(item.amount) ?? 0) > 0);
   const sortedInteractions = cards.interactions.slice().sort((a, b) => Number(b.actionLevel === 'WARNING') - Number(a.actionLevel === 'WARNING'));
   const actualCounts = `등록한 복용약 ${report.dataAvailability.activeMedicationCount}종 · 영양제 ${report.dataAvailability.activeSupplementCount}종`;
 
@@ -210,7 +212,7 @@ export function V11ReportBody({ report }: { report: IntakeReport }) {
 
     {cards.medications.length > 0 ? <section id="v11-medications" className="v11-card" aria-labelledby="v11-medications-title">
       <h2 id="v11-medications-title">약 정보</h2>
-      {cards.medications.map(card => {
+      {availableMedicines.map(card => {
         return <article className="v11-medicine" key={card.itemId}>
           <details className="v11-medicine-disclosure">
             <summary className="v11-medicine-summary">
@@ -233,6 +235,13 @@ export function V11ReportBody({ report }: { report: IntakeReport }) {
           </details>
         </article>;
       })}
+      {unavailableMedicines.length > 0 ? <article className="v11-medicine">
+        <h3 id="v11-unavailable-medicines-title">확인 불가 약품</h3>
+        <p className="v11-hint">제품 안내 자료를 확인하지 못한 약입니다.</p>
+        <ul className="v11-source-list list-disc" aria-labelledby="v11-unavailable-medicines-title">
+          {unavailableMedicines.map(card => <li key={card.itemId}>{decodeEntitiesOnce(card.productName)}</li>)}
+        </ul>
+      </article> : null}
     </section> : null}
 
     {report.unverifiedItems.length > 0 ? <section className="v11-card v11-source-card"><details>

@@ -51,6 +51,7 @@ class IntakeReportAssembler:
         current_stack = self._current_stack(context)
         unverified_items = self._missing_amount_items(context)
         unverified_items.extend(self._ambiguous_guide_items(guide_lookups))
+        unverified_items.extend(self._missing_guide_items(context, guide_lookups))
         if not rag_available:
             unverified_items.append(self._rag_unavailable_item())
         interaction_cards = self._interaction_cards(approved_rules)
@@ -172,6 +173,30 @@ class IntakeReportAssembler:
             )
             for lookup in guide_lookups
             if lookup.is_ambiguous
+        ]
+
+    @staticmethod
+    def _missing_guide_items(
+        context: ActiveIntakeContext,
+        guide_lookups: list[MedicationGuideLookup],
+    ) -> list[IntakeReportUnverifiedItem]:
+        # Lookups are collected once per distinct registered name, in order.
+        names = list(dict.fromkeys(item.name.strip() for item in context.medications if item.name.strip()))
+        missing_names = [
+            name
+            for name, lookup in zip(names, guide_lookups, strict=False)
+            if lookup.guide is None and not lookup.is_ambiguous
+        ]
+        if not missing_names:
+            return []
+        return [
+            IntakeReportUnverifiedItem(
+                item_type=IntakeReportUnverifiedItemType.MISSING_EVIDENCE,
+                title=f"의약품 안내 자료 확인 필요 · {len(missing_names)}종",
+                message=f"{', '.join(missing_names)}의 제품 안내 자료를 찾지 못해 효능·주의·금기 정보를 표시하지 못했습니다.",
+                related_items=missing_names,
+                next_step="약봉투의 정확한 제품명·함량을 확인해 주세요. 제품명이 맞아도 현재 안내 DB에 자료가 없을 수 있습니다.",
+            )
         ]
 
     @staticmethod

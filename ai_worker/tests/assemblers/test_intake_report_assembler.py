@@ -43,6 +43,35 @@ def _context_with_active_intakes() -> ActiveIntakeContext:
     )
 
 
+def test_no_candidate_medications_share_one_notice_without_losing_names() -> None:
+    from ai_worker.schemas.medication_chat import MedicationGuideLookup
+
+    names = [f"등록약{index}정" for index in range(7)]
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[
+            ActiveMedication(medication_id=index + 1, care_episode_id=1, name=name) for index, name in enumerate(names)
+        ],
+    )
+    lookups = [
+        MedicationGuideLookup(is_ambiguous=True, original_name=name, candidate_names=[f"후보{index}정"])
+        for index, name in enumerate(names[:4])
+    ] + [MedicationGuideLookup() for _ in range(3)]
+    draft = IntakeReportAssembler().assemble(
+        context=context, guide_lookups=lookups, approved_rules=[], knowledge_chunks=[], rag_available=True
+    )
+
+    assert len(draft.unverified_items) == 5
+    missing = [
+        item for item in draft.unverified_items if item.item_type == IntakeReportUnverifiedItemType.MISSING_EVIDENCE
+    ]
+    assert len(missing) == 1
+    assert missing[0].related_items == names[4:]
+    assert all(name in missing[0].message for name in names[4:])
+    assert all("제품명 후보" not in item.message for item in missing)
+    assert all(name in draft.deterministic_markdown for name in names)
+
+
 def _approved_rule() -> InteractionRuleFact:
     return InteractionRuleFact(
         interaction_rule_id=1,

@@ -938,6 +938,7 @@ def test_public_schema_serializes_exact_camel_case_contract() -> None:
     assert payload["medications"][0] == {
         "itemId": 91,
         "productName": "동적 제품",
+        "hasInformation": True,
         "identityNotice": None,
         "efficacy": {"text": "효능", "sourceIds": ["guide:5"]},
         "caution": {"text": "주의", "sourceIds": ["guide:5"]},
@@ -1320,7 +1321,60 @@ def test_plan_rejects_putting_general_guidance_before_approved_warning() -> None
         validate_card_plan(IntakeReportCardsPlan.model_validate(payload), catalog)
 
 
-def test_overlap_counts_unique_known_contributors_and_does_not_treat_unknown_as_zero() -> None:
+@pytest.mark.parametrize(
+    ("nutrient_name", "subject"),
+    [
+        ("지방", "지방이"),
+        ("칼슘", "칼슘이"),
+        ("단백질", "단백질이"),
+        ("식이섬유", "식이섬유가"),
+        ("비타민 D", "비타민 D가"),
+        ("비타민 B6", "비타민 B6이"),
+        ("비타민 B12", "비타민 B12가"),
+    ],
+)
+def test_overlap_title_uses_nutrient_subject_particle(nutrient_name: str, subject: str) -> None:
+    draft = _draft(
+        nutrient_totals=[
+            IntakeReportNutrientTotal(
+                nutrient_name=nutrient_name,
+                daily_total="2 mg",
+                amount="2",
+                unit="mg",
+                calculation_status="PARTIAL_LABEL_SCHEDULE",
+                included_product_names=["제품 A", "제품 B"],
+            )
+        ]
+    )
+    catalog, plan = _valid_plan(draft)
+    cards = render_cards(plan, catalog, draft)
+    assert cards.overlaps[0].title == f"{subject} 2개 제품에 들어 있어요"
+
+
+@pytest.mark.parametrize("remaining_field", [None, "efficacy", "usage_instructions"])
+def test_missing_medication_information_is_grouped_without_hiding_partial_guides(remaining_field) -> None:
+    draft = _draft()
+    empty = {
+        field: None
+        for field in ("efficacy", "pre_use_warning", "precautions", "usage_instructions", "adverse_reactions")
+    }
+    first = draft.guide_evidence[0].model_copy(update=empty)
+    second = draft.guide_evidence[1].model_copy(
+        update={**empty, **({remaining_field: "확인된 안내입니다."} if remaining_field else {})}
+    )
+    draft = draft.model_copy(update={"guide_evidence": [first, second]})
+    catalog, plan = _valid_plan(draft)
+    cards = render_cards(plan, catalog, draft)
+    assert cards.medications[0].has_information is False
+    assert cards.medications[1].has_information is bool(remaining_field)
+    markdown = render_cards_markdown(cards, draft)
+    assert "### 확인 불가 약품" in markdown
+    assert "- 첫 약" in markdown
+    assert "### 첫 약" not in markdown.splitlines()
+    assert ("### 둘째 약" in markdown.splitlines()) is bool(remaining_field)
+
+
+def test_overlap_shows_only_known_contributors_without_unknown_product_list() -> None:
     draft = _draft(
         nutrient_totals=[
             IntakeReportNutrientTotal(
@@ -1341,7 +1395,9 @@ def test_overlap_counts_unique_known_contributors_and_does_not_treat_unknown_as_
     assert cards.overlaps[0].product_count == 3
     assert cards.overlaps[0].product_names == ["칼슘 복합제", "오메가3", "멀티비타민"]
     assert "3개 제품" in cards.overlaps[0].title
-    assert "함량 미상 제품" in cards.overlaps[0].summary
+    assert cards.overlaps[0].summary == "칼슘 복합제, 오메가3, 멀티비타민의 확인된 합계는 23 μg입니다."
+    assert "함량 미상 제품" not in cards.overlaps[0].summary
+    assert "함량을 확인할 수 없는 제품" not in cards.overlaps[0].summary
     assert "0" not in cards.overlaps[0].summary
 
 
