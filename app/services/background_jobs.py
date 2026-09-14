@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime, time, timedelta
-from typing import Any
+from typing import Any, Protocol
 from uuid import uuid4
 
-from arq.connections import ArqRedis, RedisSettings, create_pool
 from fastapi import HTTPException, status
 from tortoise.exceptions import IntegrityError
 from tortoise.functions import Count
@@ -25,14 +24,16 @@ from app.models.ocr import OcrJob
 from app.repositories.background_job_repository import BackgroundJobRepository
 
 
+class AlarmTaskScheduler(Protocol):
+    async def start_job(self, job_id: int) -> None: ...
+
+
 class BackgroundJobService:
     def __init__(
         self,
         repository: BackgroundJobRepository | None = None,
-        redis_pool: ArqRedis | None = None,
     ):
         self.repository = repository or BackgroundJobRepository()
-        self.redis_pool = redis_pool
 
     async def get(self, job_id: int) -> BackgroundJob:
         job = await self.repository.get(job_id)
@@ -230,37 +231,6 @@ class BackgroundJobService:
             return existing, False
         return job, True
 
-    async def enqueue(
-        self,
-        job: BackgroundJob,
-        *,
-        alarm_id: int,
-        subscription_id: int,
-        trigger_at: datetime,
-        defer_seconds: int = 0,
-    ) -> None:
-        pool = self.redis_pool
-        owns_pool = pool is None
-        if pool is None:
-            pool = await create_pool(
-                RedisSettings(host=config.REDIS_HOST, port=config.REDIS_PORT, database=config.REDIS_DB)
-            )
-        enqueue_options: dict[str, object] = {"_job_id": job.idempotency_key}
-        if defer_seconds > 0:
-            enqueue_options["_defer_by"] = timedelta(seconds=defer_seconds)
-        try:
-            await pool.enqueue_job(
-                "send_alarm_push",
-                job.id,
-                alarm_id,
-                subscription_id,
-                trigger_at.isoformat(),
-                **enqueue_options,
-            )
-        finally:
-            if owns_pool:
-                await pool.aclose()
-
     async def cancel(self, job_id: int) -> BackgroundJob:
         job = await self.get(job_id)
         if job.status == BackgroundJobStatus.CANCELLED:
@@ -274,7 +244,7 @@ class BackgroundJobService:
         await job.save(update_fields=["status", "completed_at", "updated_at"])
         return job
 
-    async def retry_failed(self, job_id: int) -> BackgroundJob:
+    async def retry_failed(self, job_id: int, *, scheduler: AlarmTaskScheduler) -> BackgroundJob:
         original = await self.get(job_id)
         if original.status != BackgroundJobStatus.FAILED:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only failed jobs can be retried.")
@@ -304,10 +274,5 @@ class BackgroundJobService:
                 "parent_job_id": original.id,
             }
         )
-        await self.enqueue(
-            retried,
-            alarm_id=alarm.id,
-            subscription_id=subscription.id,
-            trigger_at=event.event_at,
-        )
+        await scheduler.start_job(retried.id)
         return retried
