@@ -188,6 +188,8 @@ async def _run_chain(start_version: int) -> None:
                 ADD COLUMN precautions VARCHAR(500) NULL,
                 ADD COLUMN note VARCHAR(500) NULL;
         """)
+        # The replay starts before migration 46 added this field.
+        await db.execute_script("ALTER TABLE chat_messages DROP COLUMN session_reference;")
         # Migration 17 was already applied before this test's replay window.
         # The current runtime schema no longer has this column after migration 48,
         # but reference-seed migration 43 still reads it during the historical replay.
