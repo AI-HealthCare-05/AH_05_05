@@ -22,6 +22,49 @@ from ai_worker.schemas.medication_search import (
 )
 
 
+def test_overview_groups_drugs_and_supplements_without_contradictory_missing_notice() -> None:
+    rules = [
+        InteractionRuleFact(
+            interaction_rule_id=1,
+            pair_key="a" * 64,
+            pair_type="DRUG_DRUG",
+            left_name="이그라티모드",
+            right_name="와파린",
+            risk_level="CAUTION",
+            effect_texts=["항응고 작용이 증가할 수 있습니다."],
+        ),
+        InteractionRuleFact(
+            interaction_rule_id=2,
+            pair_key="b" * 64,
+            pair_type="DRUG_SUPPLEMENT",
+            left_name="와파린",
+            right_name="비타민 K",
+            risk_level="HIGH_CAUTION",
+            effect_texts=["항응고 효과가 감소할 수 있습니다."],
+        ),
+    ]
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=rules,
+        chunks=[],
+        interaction_question=True,
+        interaction_overview_subject="와파린",
+        evidence_coverage=MedicationEvidenceCoverage(
+            requested_section_types=[KnowledgeSectionType.INTERACTION],
+            missing_section_types=[KnowledgeSectionType.INTERACTION],
+        ),
+    )
+    assert "🔁 **약물 상호작용**" in answer
+    assert "🔁 **영양제 상호작용**" in answer
+    assert answer.count("**주의가 필요한 조합**") == 2
+    assert "이그라티모드" in answer.split("🔁 **영양제 상호작용**")[0]
+    assert "비타민 K" in answer.split("🔁 **영양제 상호작용**")[1]
+    assert "도움이 확인된" not in answer
+    assert "근거를 확인하지 못한 항목" not in answer
+    assert "확인하지 못한 조합" not in answer
+
+
 def build_guide(**updates: str) -> MedicationGuideFact:
     values = {
         "medication_guide_id": 12,

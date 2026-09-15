@@ -44,6 +44,7 @@ class MedicationAnswerAssembler:
         rules: list[InteractionRuleFact],
         chunks: list[RetrievedKnowledgeChunk],
         interaction_question: bool,
+        interaction_overview_subject: str | None = None,
         referenced_product_heading: str | None = None,
         family_reference: bool = False,
         ingredient_family_reference: bool = False,
@@ -65,6 +66,7 @@ class MedicationAnswerAssembler:
             interaction_question=interaction_question,
             question_interaction_pairs=question_interaction_pairs or [],
             active_intake_interaction=active_intake_interaction,
+            interaction_overview_subject=interaction_overview_subject,
             evidence_coverage=evidence_coverage,
         )
         sections.extend(interaction_sections)
@@ -105,12 +107,17 @@ class MedicationAnswerAssembler:
         unsupported_section = self._unsupported_pairs_section(
             unsupported_pairs or [],
         )
-        if unsupported_section and not has_unverified_interaction_notice and not active_intake_interaction:
+        if (
+            unsupported_section
+            and not has_unverified_interaction_notice
+            and not active_intake_interaction
+            and not interaction_overview_subject
+        ):
             sections.append(unsupported_section)
             has_unverified_interaction_notice = True
         missing_section = self._missing_evidence_section(
             evidence_coverage,
-            exclude_interaction=has_unverified_interaction_notice,
+            exclude_interaction=has_unverified_interaction_notice or bool(interaction_overview_subject),
         )
         sections.extend([missing_section] if missing_section else [])
         if not sections:
@@ -420,9 +427,17 @@ class MedicationAnswerAssembler:
         interaction_question: bool,
         question_interaction_pairs: list[MedicationInteractionQueryPair],
         active_intake_interaction: bool,
+        interaction_overview_subject: str | None = None,
         evidence_coverage: MedicationEvidenceCoverage | None,
     ) -> tuple[list[str], bool]:
         sections: list[str] = []
+        if interaction_overview_subject:
+            if rules:
+                return cls._overview_rule_sections(interaction_overview_subject, rules), False
+            if not chunks:
+                return [
+                    f"**{interaction_overview_subject}**\n\n✉️ **안내사항**\n- 현재 근거에서 주의할 약·음식·영양제 목록을 확인하지 못했습니다."
+                ], True
         question_pair_keys = {pair.pair_key for pair in question_interaction_pairs}
         question_rules = [rule for rule in rules if rule.pair_key in question_pair_keys]
         active_intake_rules = [rule for rule in rules if rule.pair_key not in question_pair_keys]
@@ -453,6 +468,29 @@ class MedicationAnswerAssembler:
             sections.append(cls._unverified_interaction_section())
             return sections, True
         return sections, False
+
+    @classmethod
+    def _overview_rule_sections(cls, subject: str, rules: list[InteractionRuleFact]) -> list[str]:
+        sections = [f"**{subject}**"]
+        categories = {
+            "DRUG_DRUG": "약물 상호작용",
+            "DRUG_SUPPLEMENT": "영양제 상호작용",
+            "DRUG_FOOD": "음식 상호작용",
+        }
+        grouped: dict[str, list[InteractionRuleFact]] = {}
+        for rule in rules:
+            grouped.setdefault(categories.get(rule.pair_type, "기타 상호작용"), []).append(rule)
+        for title, items in grouped.items():
+            caution = [
+                rule for rule in items if rule.risk_level in {"CONTRAINDICATED", "HIGH_CAUTION", "CAUTION", "HIGH"}
+            ]
+            informational = [rule for rule in items if rule not in caution]
+            parts = [f"🔁 **{title}**"]
+            for label, values in [("주의가 필요한 조합", caution), ("참고할 상호작용", informational)]:
+                if values:
+                    parts.append(f"**{label}**\n" + "\n".join(cls._rule_lines(values)))
+            sections.append("\n\n".join(parts))
+        return sections
 
     @staticmethod
     def _rule_lines(rules: list[InteractionRuleFact]) -> list[str]:

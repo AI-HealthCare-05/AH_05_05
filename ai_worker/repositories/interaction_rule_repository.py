@@ -1,3 +1,5 @@
+from tortoise.expressions import Q
+
 from ai_worker.schemas.interaction import normalize_interaction_name
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
@@ -22,19 +24,24 @@ class DbInteractionRuleRepository:
         *,
         context: ActiveIntakeContext,
         query_entity_names: list[str] | None = None,
+        single_entity_overview: bool = False,
     ) -> list[InteractionRuleFact]:
-        entity_ids = await self._resolve_active_entity_ids(context)
-        entity_ids.update(
-            await self._resolve_query_entity_ids(query_entity_names or []),
-        )
-        if len(entity_ids) < 2:
-            return []
+        query_ids = await self._resolve_query_entity_ids(query_entity_names or [])
+        if single_entity_overview:
+            if len(query_ids) != 1:
+                return []
+            pair_filter = Q(left_entity_id__in=query_ids) | Q(right_entity_id__in=query_ids)
+        else:
+            entity_ids = await self._resolve_active_entity_ids(context)
+            entity_ids.update(query_ids)
+            if len(entity_ids) < 2:
+                return []
+            pair_filter = Q(left_entity_id__in=entity_ids, right_entity_id__in=entity_ids)
 
         rules = await InteractionRule.filter(
+            pair_filter,
             review_status=InteractionReviewStatus.APPROVED,
             rule_dataset_version=self._active_dataset_version,
-            left_entity_id__in=entity_ids,
-            right_entity_id__in=entity_ids,
         ).prefetch_related(
             "left_entity",
             "right_entity",

@@ -193,8 +193,13 @@ async def test_interaction_repository_returns_only_approved_rules(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "names,overview", [(["케토롤락", "아스피린"], False), (["케토롤락"], True), (["아스피린"], True)]
+)
 async def test_interaction_repository_resolves_general_question_entities(
     initialized_db: None,
+    names: list[str],
+    overview: bool,
 ) -> None:
     ketorolac = await InteractionEntity.create(
         entity_kind=InteractionEntityKind.DRUG,
@@ -231,7 +236,8 @@ async def test_interaction_repository_resolves_general_question_entities(
 
     rules = await repository.find_approved_rules(
         context=context,
-        query_entity_names=["케토롤락", "아스피린"],
+        query_entity_names=names,
+        single_entity_overview=overview,
     )
 
     assert [rule.interaction_rule_id for rule in rules] == [approved.id]

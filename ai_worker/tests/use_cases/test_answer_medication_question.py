@@ -274,6 +274,61 @@ class StaticSupplementIngredientCatalog:
         return self.names
 
 
+@pytest.mark.parametrize("has_rule", [False, True])
+async def test_single_drug_interaction_overview_keeps_question_target(has_rule: bool) -> None:
+    class Resolver:
+        async def resolve(self, *, question, additional_entities=None):
+            return MedicationQuestionResolution(
+                original_question=question,
+                resolved_question=question,
+                scope="IN_SCOPE",
+                status="UNCHANGED",
+                entity_resolution_available=True,
+                entities=[
+                    MedicationQueryEntity(
+                        surface="와파린",
+                        canonical_name="와파린",
+                        entity_type="INGREDIENT_NAME",
+                        kind="DRUG",
+                        source="CATALOG",
+                    )
+                ],
+            )
+
+    retriever = RecordingQueryPlanRetriever()
+    rules = (
+        [
+            InteractionRuleFact(
+                interaction_rule_id=1,
+                pair_key="a" * 64,
+                pair_type="DRUG_SUPPLEMENT",
+                left_name="와파린",
+                right_name="비타민 K",
+                risk_level="HIGH",
+                effect_texts=["항응고 효과에 영향을 줄 수 있습니다."],
+            )
+        ]
+        if has_rule
+        else []
+    )
+    result = await build_use_case(
+        context=ActiveIntakeContext(
+            user_id=1, medications=[ActiveMedication(medication_id=1, care_episode_id=1, name="파모티딘정")]
+        ),
+        question_resolver=Resolver(),
+        retriever=retriever,
+        rules=rules,
+    ).execute(build_request("와파린이랑 같이 먹으면 안되는것"))
+    assert retriever.received_kwargs["execution_plan"].medication_names == ["와파린"]
+    assert "확인하지 못한 조합" not in result.answer
+    assert "복약정보와 상호작용" not in result.answer
+    if has_rule:
+        assert "비타민 K" in result.answer
+        assert "영양제 상호작용" in result.answer
+    else:
+        assert "와파린" in result.answer
+
+
 class FakeRuleRepository:
     def __init__(self, rules: list[InteractionRuleFact]) -> None:
         self.rules = rules
@@ -283,6 +338,7 @@ class FakeRuleRepository:
         *,
         context: ActiveIntakeContext,
         query_entity_names: list[str] | None = None,
+        single_entity_overview: bool = False,
     ) -> list[InteractionRuleFact]:
         return self.rules
 
@@ -293,6 +349,7 @@ class FailingRuleRepository:
         *,
         context: ActiveIntakeContext,
         query_entity_names: list[str] | None = None,
+        single_entity_overview: bool = False,
     ) -> list[InteractionRuleFact]:
         raise RuntimeError("interaction rule DB unavailable")
 
@@ -973,13 +1030,77 @@ async def test_symptom_medicine_question_searches_function_evidence_with_recent_
         ),
     ).execute(request)
 
-    assert retriever.received_kwargs is not None
-    query_plan = retriever.received_kwargs["execution_plan"].query_plan
-    assert "머리가 아파" in query_plan.expanded_query
-    assert query_plan.section_types == [KnowledgeSectionType.FUNCTION]
-    assert KnowledgeDocumentType.DRUG_ENCYCLOPEDIA in query_plan.document_types
-    assert result.route is MedicationChatRoute.MEDICATION_GUIDE
-    assert result.answer_context_history == [ChatHistoryMessage(role=ChatRole.USER, content="머리가 아파")]
+    assert retriever.received_kwargs is None
+    assert result.route is MedicationChatRoute.CLARIFICATION
+    assert "궁금하신 제품명이나 성분명을 알려주세요." in result.answer
+
+
+@pytest.mark.parametrize("question", ["배가 아파요", "머리가 아파요", "팔이 저려요", "속이 쓰려요"])
+async def test_current_symptom_requests_product_without_search(question: str) -> None:
+    retriever = RecordingQueryPlanRetriever()
+    response_generator = StaticConversationResponseGenerator("범위 밖 질문입니다.")
+    gate = StaticConversationGate(
+        ConversationClassification(intent="SPECIFIC_SYMPTOM", safety_signal="NONE", confidence="HIGH")
+    )
+    result = await build_use_case(
+        retriever=retriever,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog(["속이쿨", "속이쿨정"]),
+        ),
+        conversation_gate_chain=gate,
+        conversation_response_generator=response_generator,
+    ).execute(build_request(question))
+
+    assert gate.inputs
+    assert result.answer == (
+        "✉️ **증상 안내**\n\n"
+        "- 증상만으로는 복약을 안내하기 어렵습니다.\n"
+        "- 궁금하신 제품명이나 성분명을 알려주세요.\n"
+        "- 의사 또는 약사에게 상담해 주세요."
+    )
+    assert retriever.received_kwargs is None
+    assert response_generator.inputs == []
+    assert result.route is not MedicationChatRoute.OUT_OF_SCOPE
+
+
+@pytest.mark.parametrize("status,source", [("AUTO_CORRECTED", "REGEX"), ("UNCHANGED", "QDRANT")])
+async def test_symptom_classification_discards_fuzzy_product_resolution(status: str, source: str) -> None:
+    class FuzzyResolver:
+        async def resolve(self, *, question, additional_entities=None):
+            return MedicationQuestionResolution(
+                original_question=question,
+                resolved_question="속이쿨정",
+                scope="IN_SCOPE",
+                status=status,
+                entity_resolution_available=True,
+                entities=[
+                    MedicationQueryEntity(
+                        surface="속이",
+                        canonical_name="속이쿨정",
+                        entity_type="PRODUCT_NAME",
+                        kind="DRUG",
+                        source=source,
+                    )
+                ],
+            )
+
+    retriever = RecordingQueryPlanRetriever()
+    result = await build_use_case(
+        retriever=retriever,
+        question_resolver=FuzzyResolver(),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="SYMPTOM_MEDICATION_GUIDANCE",
+                safety_signal="NONE",
+                confidence="HIGH",
+                symptom_context="속이 쓰려요",
+            )
+        ),
+    ).execute(build_request("속이 쓰려요"))
+
+    assert retriever.received_kwargs is None
+    assert "의사 또는 약사에게 상담해 주세요." in result.answer
+    assert "속이쿨" not in result.answer
 
 
 async def test_unresolved_medicine_question_never_uses_conversation_gate_answer() -> None:
@@ -1226,11 +1347,11 @@ async def test_symptom_request_wins_over_ambiguous_product_prefix() -> None:
     ).execute(build_request("머리가 아파"))
 
     assert result.route is MedicationChatRoute.CLARIFICATION
-    assert result.answer == "어디가 언제부터 아픈지 알려주세요."
+    assert "의사 또는 약사에게 상담해 주세요." in result.answer
     assert retriever.received_kwargs is None
 
 
-async def test_specific_symptom_requests_candidate_medicine_without_exposing_active_medications() -> None:
+async def test_specific_symptom_without_evidence_consults_without_exposing_active_medications() -> None:
     response_generator = StaticConversationResponseGenerator(
         "🩺 **상호작용 확인을 위해 필요한 정보**\n- 추가로 복용하려는 약의 제품명 또는 성분명을 알려주세요."
     )
@@ -1260,8 +1381,9 @@ async def test_specific_symptom_requests_candidate_medicine_without_exposing_act
     ).execute(build_request("배가 아프고 속이 쓰려"))
 
     assert result.route is MedicationChatRoute.CLARIFICATION
-    assert "제품명 또는 성분명" in result.answer
-    assert "active_medication_names" not in response_generator.inputs[0].model_dump()
+    assert "의사 또는 약사에게 상담해 주세요." in result.answer
+    assert "리바록사반" not in result.answer
+    assert response_generator.inputs == []
 
 
 async def test_specific_symptom_does_not_infer_interaction_from_active_medications() -> None:
@@ -2317,7 +2439,7 @@ async def test_conversation_trace_records_decision_without_sensitive_content() -
     ).execute(build_request("배가 아프고 속이 쓰려"))
 
     classify_outputs = next(span.outputs for span in tracer.spans if span.name == "conversation.classify")
-    respond_outputs = next(span.outputs for span in tracer.spans if span.name == "conversation.respond")
+    assert not any(span.name == "conversation.respond" for span in tracer.spans)
     assert classify_outputs["intent"] == "SPECIFIC_SYMPTOM"
     assert classify_outputs["safety_signal"] == "NONE"
     assert classify_outputs["history_count"] == 0
@@ -2325,11 +2447,6 @@ async def test_conversation_trace_records_decision_without_sensitive_content() -
     assert classify_outputs["duration_ms"] >= 0
     assert "question" not in classify_outputs
     assert "active_medication_names" not in classify_outputs
-    assert respond_outputs["intent"] == "SPECIFIC_SYMPTOM"
-    assert respond_outputs["disposition"] == "ALLOW"
-    assert respond_outputs["fallback_used"] is False
-    assert respond_outputs["status"] == "COMPLETED"
-    assert respond_outputs["duration_ms"] >= 0
 
 
 async def test_medication_question_bypasses_conversation_gate() -> None:

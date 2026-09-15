@@ -445,6 +445,7 @@ class AnswerMedicationQuestionUseCase:
                 rules = await self._interaction_rule_repository.find_approved_rules(
                     context=context,
                     query_entity_names=query_plan.entity_names,
+                    single_entity_overview=self._is_single_entity_interaction_overview(query_plan),
                 )
             except Exception:
                 rules = []
@@ -632,6 +633,21 @@ class AnswerMedicationQuestionUseCase:
             answer_chunks=answer_chunks,
             evidence_reasoning=evidence_reasoning,
         )
+        if prepared_question.symptom_context is not None and not any(
+            chunk.metadata.section_type is KnowledgeSectionType.FUNCTION for chunk in answer_chunks
+        ):
+            return self._conversation_result(
+                request=request,
+                context=context,
+                answer=(
+                    "✉️ **증상 안내**\n\n"
+                    "- 많이 불편하시겠어요. 확인된 자료만으로 도움이 될 성분을 안내하기 어렵습니다.\n"
+                    "- 의사 또는 약사에게 상담하세요."
+                ),
+                route=MedicationChatRoute.CLARIFICATION,
+                safety_status=SafetyStatus.RESTRICTED,
+                reason_code=MedicationChatReasonCode.SYMPTOM_FOLLOW_UP_REQUIRED,
+            )
         if terminal_result := await self._evidence_gap_terminal_result(
             request=request,
             context=context,
@@ -697,6 +713,9 @@ class AnswerMedicationQuestionUseCase:
                     chunks=answer_chunks,
                     interaction_question=interaction_question,
                     referenced_product_heading=referenced_product_heading,
+                    interaction_overview_subject=(
+                        query_plan.entity_names[0] if self._is_single_entity_interaction_overview(query_plan) else None
+                    ),
                     family_reference=family_reference,
                     ingredient_family_reference=(ingredient_family_reference),
                     ingredient_family=query_plan.ingredient_family,
@@ -1751,7 +1770,7 @@ class AnswerMedicationQuestionUseCase:
                 "section_types": section_types,
                 "alternate_queries": [
                     f"{symptom_context} 증상 완화 의약품 효능",
-                    f"{symptom_context} 통증에 사용하는 약 효과",
+                    f"{symptom_context} 증상에 사용하는 약 효과",
                 ],
             }
         )
@@ -1990,14 +2009,32 @@ class AnswerMedicationQuestionUseCase:
         context: ActiveIntakeContext,
         resolution: MedicationQuestionResolution,
     ) -> PreparedMedicationQuestion | None:
-        if not self._is_entity_free_conversation_candidate(resolution) or self._is_supplement_function_goal_question(
-            request.question
-        ):
+        requires_intent_check = (
+            not resolution.entities
+            or resolution.status is MedicationExpressionResolutionStatus.AUTO_CORRECTED
+            or resolution.status is MedicationExpressionResolutionStatus.CLARIFICATION_REQUIRED
+            or any(
+                entity.source is MedicationQueryEntitySource.QDRANT and entity.kind is InteractionEntityKind.DRUG
+                for entity in resolution.entities
+            )
+        )
+        if not requires_intent_check or self._is_supplement_function_goal_question(request.question):
             return None
 
         classification = await self._classify_conversation(request=request)
         if classification is None or not self._is_allowed_entity_free_classification(classification):
             return None
+
+        if (
+            classification.intent is ConversationIntent.SPECIFIC_SYMPTOM
+            and classification.safety_signal is ConversationSafetySignal.NONE
+        ):
+            classification = classification.model_copy(
+                update={
+                    "intent": ConversationIntent.SYMPTOM_MEDICATION_GUIDANCE,
+                    "symptom_context": request.question,
+                }
+            )
 
         conversation_result = await self._conversation_classification_result(
             request=request,
@@ -2064,29 +2101,29 @@ class AnswerMedicationQuestionUseCase:
         resolution: MedicationQuestionResolution,
         classification: ConversationClassification,
     ) -> PreparedMedicationQuestion:
-        symptom_context, answer_context_history = self._validated_symptom_context(
-            request=request,
-            symptom_context=classification.symptom_context,
-        )
-        if symptom_context is None:
-            return PreparedMedicationQuestion(
-                request=request,
-                resolution=resolution,
-                early_result=self._conversation_result(
-                    request=request,
-                    context=context,
-                    answer="어떤 증상에 도움이 되는 약을 찾으시나요? 현재 불편한 증상을 알려주세요.",
-                    route=MedicationChatRoute.CLARIFICATION,
-                    safety_status=SafetyStatus.SAFE,
-                    reason_code=MedicationChatReasonCode.SYMPTOM_FOLLOW_UP_REQUIRED,
-                ),
-            )
         return PreparedMedicationQuestion(
             request=request,
-            resolution=self._allow_unresolved_guide_search(resolution),
-            early_result=None,
-            symptom_context=symptom_context,
-            answer_context_history=answer_context_history,
+            resolution=self._allow_unresolved_guide_search(resolution).model_copy(
+                update={
+                    "resolved_question": request.question,
+                    "entities": [],
+                    "candidate_names": [],
+                    "corrections": [],
+                }
+            ),
+            early_result=self._conversation_result(
+                request=request,
+                context=context,
+                answer=(
+                    "✉️ **증상 안내**\n\n"
+                    "- 증상만으로는 복약을 안내하기 어렵습니다.\n"
+                    "- 궁금하신 제품명이나 성분명을 알려주세요.\n"
+                    "- 의사 또는 약사에게 상담해 주세요."
+                ),
+                route=MedicationChatRoute.CLARIFICATION,
+                safety_status=SafetyStatus.SAFE,
+                reason_code=MedicationChatReasonCode.SYMPTOM_FOLLOW_UP_REQUIRED,
+            ),
         )
 
     async def _resolve_medication_guide_follow_up(
@@ -4253,13 +4290,30 @@ class AnswerMedicationQuestionUseCase:
             limit=limit,
         )
 
-    @staticmethod
+    @classmethod
+    def _is_single_entity_interaction_overview(cls, query_plan: MedicationKnowledgeQueryPlan) -> bool:
+        return (
+            len(query_plan.entity_names) == 1
+            and KnowledgeSectionType.INTERACTION in query_plan.section_types
+            and not query_plan.interaction_pairs
+            and not cls._PATIENT_CONTEXT_CUE_PATTERN.search(query_plan.original_query)
+        )
+
+    @classmethod
     def _rules_for_query_plan(
+        cls,
         *,
         rules: list[InteractionRuleFact],
         query_plan: MedicationKnowledgeQueryPlan,
     ) -> list[InteractionRuleFact]:
         requested_pair_keys = set(query_plan.interaction_pair_keys)
+        if cls._is_single_entity_interaction_overview(query_plan):
+            name = cls._normalize_entity_name(query_plan.entity_names[0])
+            return [
+                rule
+                for rule in rules
+                if name in {cls._normalize_entity_name(rule.left_name), cls._normalize_entity_name(rule.right_name)}
+            ]
         if not requested_pair_keys:
             return rules
         return [rule for rule in rules if rule.pair_key in requested_pair_keys]
