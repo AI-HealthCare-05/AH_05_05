@@ -18,8 +18,7 @@ export function DocumentUploadPage() {
   const closeCamera = useCallback(() => setCameraOpen(false), []);
 
   function openCamera() {
-    const mobileCamera = navigator.maxTouchPoints > 0 && window.matchMedia('(pointer: coarse)').matches;
-    if (!mobileCamera && window.isSecureContext && typeof navigator.mediaDevices?.getUserMedia === 'function') {
+    if (window.isSecureContext && typeof navigator.mediaDevices?.getUserMedia === 'function') {
       setCameraOpen(true);
     } else {
       cameraInputRef.current?.click();
@@ -77,6 +76,9 @@ export function DocumentUploadPage() {
 
       <main className="rx-reading-content flex flex-1 flex-col gap-5 px-page-x py-5">
         <RegistrationProgress step={1} />
+        <p className="rounded-xl bg-muted-bg px-4 py-3 text-sm leading-relaxed text-muted-foreground">
+          촬영한 사진은 확인과 문자 인식을 위해 임시로 사용돼요. 서버에 영구 보관하지 않으며, 서버의 임시 데이터는 보관 시간이 지나면 자동 삭제돼요.
+        </p>
         {file && previewUrl ? (
           <>
             <div>
@@ -129,7 +131,7 @@ export function DocumentUploadPage() {
             <div>
               <h1 className="text-2xl font-bold text-foreground">복약안내문을 한 장 담아주세요</h1>
               <p className="mt-1 text-base text-muted-foreground">
-                테두리 네 면이 모두 보이도록, 종이를 평평하게 펴고 바로 위에서 기울임 없이 촬영해주세요.
+                문서의 네 모서리가 잘리지 않고 모두 보이도록, 종이를 평평하게 펴고 바로 위에서 촬영해주세요.
               </p>
             </div>
 
@@ -142,6 +144,7 @@ export function DocumentUploadPage() {
                 className="aspect-square w-full object-contain"
               />
               <figcaption className="px-4 pb-4 text-sm text-muted-foreground">
+                <span className="mb-1 block font-bold text-foreground">네 모서리 바깥에 여백을 조금 남겨 문서 전체를 담아주세요.</span>
                 밝은 곳에서 빛 반사와 그림자를 피하고, 글자에 초점을 맞춰 선명하게 담아주세요.
               </figcaption>
             </figure>
@@ -162,9 +165,6 @@ export function DocumentUploadPage() {
                 <Camera aria-hidden className="mr-2 size-5" />
                 촬영하기
               </Button>
-              {window.isSecureContext && typeof navigator.mediaDevices?.getUserMedia === 'function' && (
-                <Button variant="secondary" onClick={() => setCameraOpen(true)}>가이드 보며 촬영</Button>
-              )}
               <Button variant="secondary" onClick={() => galleryInputRef.current?.click()}>
                 <ImageIcon aria-hidden className="mr-2 size-5" />
                 갤러리에서 선택

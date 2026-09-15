@@ -122,6 +122,55 @@ def _labeled_guidance(slope=0.28, *, mixed=True, wrong_days=False, competing=Fal
     )
 
 
+def _single_explicit_labeled_guidance(*, missing_label: str | None = None, competing_times=False) -> OcrResult:
+    entries = [
+        ("약품명", 61, 526, 153, 61),
+        ("(임부금기)에이서캡슐(", 56, 589, 527, 63),
+        ("1회투약량1", 766, 591, 224, 48),
+        ("1일투여횟수", 1120, 592, 237, 54),
+        ("2", 1367, 596, 17, 52),
+        ("총투약일수5", 1450, 599, 237, 50),
+    ]
+    if missing_label is not None:
+        entries = [entry for entry in entries if entry[0] != missing_label]
+    if competing_times:
+        entries.append(("3", 1390, 596, 17, 52))
+    return OcrResult(
+        tuple(
+            OcrBlock(
+                block_id=f"single-block-{index:04d}",
+                text=text,
+                confidence=0.99,
+                bbox=(Point(x, y), Point(x + width, y), Point(x + width, y + height), Point(x, y + height)),
+                line_break=False,
+                issues=(),
+            )
+            for index, (text, x, y, width, height) in enumerate(entries, start=1)
+        )
+    )
+
+
+def test_explicit_labeled_guidance_recovers_a_single_annotated_row() -> None:
+    from app.services.medication_ocr_v3.pipeline.medication_rows import materialize_medication_rows
+
+    rows = materialize_medication_rows(layout.build_ocr_layout(_single_explicit_labeled_guidance())).medications
+
+    assert [(row.name, row.dose_quantity, row.times_per_day, row.days) for row in rows] == [
+        ("에이서캡슐", "1", 2, 5),
+    ]
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"missing_label": "1일투여횟수"},
+        {"competing_times": True},
+    ],
+)
+def test_single_explicit_labeled_guidance_rejects_missing_or_competing_numeric_evidence(kwargs) -> None:
+    assert layout.build_ocr_layout(_single_explicit_labeled_guidance(**kwargs)).table_candidates == ()
+
+
 @pytest.mark.parametrize("slope, mixed", [(0.28, True), (-0.23, False), (0.0, True)])
 async def test_explicit_labeled_guidance_recovers_rows_without_changing_evidence_coordinates(slope, mixed) -> None:
     ocr = _labeled_guidance(slope, mixed=mixed)

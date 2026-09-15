@@ -16,6 +16,7 @@ from app.services.medication_ocr_v3.pipeline.medication_rows import (
     MedicationRowsResult,
     dose_quantity_value_and_unit,
 )
+from app.services.medication_ocr_v3.pipeline.ocr_normalization import normalize_dose_unit_ocr
 
 _FIELD_VALIDATION_ISSUES = frozenset(
     {
@@ -28,6 +29,7 @@ _FIELD_VALIDATION_ISSUES = frozenset(
 _EACH_SIDE_SPRAY_QUANTITY_PATTERN = re.compile(
     r"^각(?:비공)?(?P<value>(?:[1-9][0-9]*(?:\.[0-9]+)?|0\.[0-9]*[1-9][0-9]*|[1-9][0-9]*/[1-9][0-9]*))분무$"
 )
+_EXPLICIT_LABELED_DOSE_PATTERN = re.compile(r"^1회투약량(?P<dose>.+)$")
 
 
 def build_project_review(
@@ -162,11 +164,25 @@ def _displayable_name(row: MedicationRow) -> bool:
 def _public_dose_quantity(field: MedicationField) -> str | None:
     if field.value in (None, "") or _has_validation_issue(field):
         return None
+    labeled_match = _EXPLICIT_LABELED_DOSE_PATTERN.fullmatch(normalize_dose_unit_ocr(field.source_text))
+    if labeled_match is not None:
+        return _public_explicit_labeled_dose(field, labeled_match.group("dose"))
     printed_value, unit = dose_quantity_value_and_unit(field.source_text)
     if _is_grounded_each_side_spray_quantity(field, printed_value):
         return printed_value
     numeric_value = _positive_number(printed_value)
     if numeric_value is None:
+        return None
+    return f"{printed_value}{_canonical_unit(unit)}" if unit else printed_value
+
+
+def _public_explicit_labeled_dose(field: MedicationField, dose_text: str) -> str | None:
+    """Project a validated explicit-label suffix without replacing raw OCR evidence."""
+    printed_value, unit = dose_quantity_value_and_unit(dose_text)
+    if _positive_number(printed_value) is None:
+        return None
+    parsed_value = f"{printed_value}{unit}" if unit in {"포", "mL", "mℓ"} else printed_value
+    if field.value != parsed_value:
         return None
     return f"{printed_value}{_canonical_unit(unit)}" if unit else printed_value
 

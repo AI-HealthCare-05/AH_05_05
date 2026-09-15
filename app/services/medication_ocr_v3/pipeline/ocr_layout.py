@@ -562,6 +562,8 @@ def build_ocr_layout(result: OcrResult) -> OcrLayoutResult:
     if not candidates:
         candidates = _labeled_guidance_candidates(geometry_blocks)
     if not candidates:
+        candidates = _corroborated_card_name_candidates(geometry_blocks)
+    if not candidates:
         candidates = _local_stacked_receipt_candidates(geometry_blocks)
     issues = _deduplicate_issues((*source_issues, *candidate_issues))
     return OcrLayoutResult(
@@ -570,6 +572,127 @@ def build_ocr_layout(result: OcrResult) -> OcrLayoutResult:
         issues=issues,
         guidance_rows=_guidance_layout_rows(line_groups),
         summary_rows=_three_column_summary_rows(line_groups),
+    )
+
+
+def _single_hangul_vowel_variant(first: str, second: str) -> bool:
+    if len(first) != len(second):
+        return False
+    differences = [(a, b) for a, b in zip(first, second, strict=True) if a != b]
+    if len(differences) != 1:
+        return False
+    a, b = (ord(character) - 0xAC00 for character in differences[0])
+    return 0 <= a < 11172 and 0 <= b < 11172 and a // 588 == b // 588 and a % 28 == b % 28
+
+
+def _corroborated_card_name_candidates(blocks: tuple[_GeometryBlock, ...]) -> tuple[TableCandidate, ...]:
+    """Recover repeated names only; unreadable receipt digits never become a regimen."""
+    guides = tuple(block for block in blocks if "복약안내" in _compact_text(block.source.text))
+    if len(guides) != 1:
+        return ()
+
+    def product(text: str) -> str:
+        return strip_leading_name_symbols(_compact_text(text)).split("(", 1)[0]
+
+    def plausible(name: str) -> bool:
+        return (
+            len(name) >= 4
+            and bool(_MEDICATION_NAME_FORM_PATTERN.search(name) or name.endswith("점"))
+            and not _HEADERLESS_NON_MEDICATION_VOCABULARY_PATTERN.search(name)
+        )
+
+    cards = tuple(
+        block
+        for block in blocks
+        if "(" in block.source.text
+        and re.match(r"[가-힣]{2,}", block.source.text.split("(", 1)[1])
+        and plausible(product(block.source.text))
+        and block.bbox.y_min > guides[0].bbox.y_min
+    )
+    if not 3 <= len(cards) <= 12:
+        return ()
+    receipts = tuple(
+        block for block in blocks if "(" not in block.source.text and plausible(product(block.source.text))
+    )
+    pairs: list[tuple[_GeometryBlock, _GeometryBlock]] = []
+    uncertain_cards: set[str] = set()
+    exact = 0
+    for card in cards:
+        name = product(card.source.text)
+        peers = tuple(
+            block
+            for block in receipts
+            if abs(block.bbox.center_x - card.bbox.center_x) > 3 * max(block.bbox.height, card.bbox.height)
+            and (
+                product(block.source.text) == name
+                or (
+                    product(block.source.text)[:-1] == name[:-1]
+                    and {product(block.source.text)[-1], name[-1]} == {"정", "점"}
+                )
+            )
+        )
+        if not peers and _MEDICATION_NAME_FORM_PATTERN.search(name):
+            peers = tuple(
+                block
+                for block in receipts
+                if _MEDICATION_NAME_FORM_PATTERN.search(product(block.source.text))
+                and abs(block.bbox.center_x - card.bbox.center_x) > 3 * max(block.bbox.height, card.bbox.height)
+                and _single_hangul_vowel_variant(product(block.source.text), name)
+            )
+            uncertain_cards.add(card.source.block_id)
+        if len(peers) != 1:
+            return ()
+        # A trailing 점 is only an OCR alternative to a corroborated dosage form,
+        # not independent evidence that a place/branch name is a medication.
+        if not (
+            _MEDICATION_NAME_FORM_PATTERN.search(name)
+            or _MEDICATION_NAME_FORM_PATTERN.search(product(peers[0].source.text))
+        ):
+            return ()
+        pairs.append((peers[0], card))
+        exact += product(peers[0].source.text) == name
+    if exact < 2 or len({receipt.source.block_id for receipt, _ in pairs}) != len(pairs):
+        return ()
+    if uncertain_cards and (len(uncertain_cards) > 1 or exact < 3):
+        return ()
+    pairs.sort(key=lambda pair: pair[0].bbox.center_y)
+    height = median(receipt.bbox.height for receipt, _ in pairs)
+    if max(r.bbox.x_min for r, _ in pairs) - min(r.bbox.x_min for r, _ in pairs) > 2 * height:
+        return ()
+    if not (
+        max(r.bbox.x_max for r, _ in pairs) < min(c.bbox.x_min for _, c in pairs)
+        or min(r.bbox.x_min for r, _ in pairs) > max(c.bbox.x_max for _, c in pairs)
+    ):
+        return ()
+    gaps = [b[0].bbox.center_y - a[0].bbox.center_y for a, b in zip(pairs, pairs[1:], strict=False)]
+    if min(gaps) < height * 0.5 or max(gaps) > height * 3:
+        return ()
+    rows = []
+    for index, (receipt, card) in enumerate(pairs, 1):
+        # Prefer the printed valid dosage form, never invent a corrected drug name.
+        uncertain = card.source.block_id in uncertain_cards
+        selected = card if uncertain or product(receipt.source.text).endswith("점") else receipt
+        cell = _layout_cell([selected])
+        if uncertain:
+            # Keep the printed card text but require review for source disagreement.
+            cell = replace(cell, confidence=min(cell.confidence, 0.69) if cell.confidence is not None else 0.0)
+        rows.append(LayoutRow(f"corroborated-name-{index}", (cell, None, None, None), cell.bbox))
+    box = _union(row.bbox for row in rows)
+    columns = tuple(HeaderColumn(key, "", (), box, box.x_min, box.x_max) for key in _HEADER_ORDER)
+    return (
+        TableCandidate(
+            candidate_id="table-corroborated-names-only",
+            bbox=box,
+            header_columns=(columns[0], columns[1], columns[2], columns[3]),
+            rows=tuple(rows),
+            ambiguous_column_evidence=(),
+            column_consistency=0.0,
+            confidence_coverage=0.0,
+            mean_confidence=None,
+            approval_block_ids=tuple(block.source.block_id for pair in pairs for block in pair),
+            observed_header_coverage=0,
+            header_inferred=True,
+        ),
     )
 
 
@@ -610,6 +733,18 @@ def _labeled_value_cell(
     return (replace(cell, parsed_text=_compact_text(nearby[0].source.text)) if cell else None), False
 
 
+def _labeled_medication_name(text: str) -> str:
+    """Discard leading bracketed annotations while retaining the grounded label text."""
+    normalized = _compact_text(text)
+    while normalized.startswith(("(", "[")):
+        closing = ")" if normalized[0] == "(" else "]"
+        end = normalized.find(closing, 1)
+        if end < 0:
+            break
+        normalized = normalized[end + 1 :]
+    return normalized.split("(", 1)[0]
+
+
 def _labeled_guidance_candidates(blocks: tuple[_GeometryBlock, ...]) -> tuple[TableCandidate, ...]:
     """Last-resort exact labeled regimens, including diagonally photographed rows."""
     headers = tuple(block for block in blocks if _normalized_header_text(block.source.text) == "약품명")
@@ -617,7 +752,7 @@ def _labeled_guidance_candidates(blocks: tuple[_GeometryBlock, ...]) -> tuple[Ta
     labels = tuple(
         tuple(block for block in blocks if _compact_text(block.source.text).startswith(prefix)) for prefix in prefixes
     )
-    if len(headers) != 1 or any(len(group) < 2 for group in labels):
+    if len(headers) != 1 or any(not group for group in labels):
         return ()
     slopes = []
     for label in labels[0]:
@@ -643,7 +778,7 @@ def _labeled_guidance_candidates(blocks: tuple[_GeometryBlock, ...]) -> tuple[Ta
     ):
         return ()
     rows = _labeled_guidance_rows(blocks, headers[0], labels, prefixes, slope)
-    if len(rows) < 2:
+    if not rows:
         return ()
     return (_labeled_guidance_table(headers[0], rows),)
 
@@ -679,16 +814,16 @@ def _labeled_guidance_rows(
         if not row_labels[0].bbox.center_x < row_labels[1].bbox.center_x < row_labels[2].bbox.center_x:
             return ()
         names = tuple(
-            block
+            (block, _labeled_medication_name(block.source.text))
             for block in blocks
             if block.bbox.x_max < dose_label.bbox.center_x
             and abs(_labeled_row_position(block, slope)[0] - row_y) <= height
-            and _MEDICATION_NAME_FORM_PATTERN.search(_compact_text(block.source.text).split("(", 1)[0])
+            and _MEDICATION_NAME_FORM_PATTERN.search(_labeled_medication_name(block.source.text))
             and not _HEADERLESS_NON_MEDICATION_VOCABULARY_PATTERN.search(block.source.text)
         )
         if len(names) != 1:
             return ()
-        name = _compact_text(names[0].source.text).split("(", 1)[0]
+        name_block, name = names[0]
         if name in used_names:
             return ()
         numeric = tuple(
@@ -699,7 +834,10 @@ def _labeled_guidance_rows(
             return ()
         if any(cell is None for cell, _ in numeric):
             continue
-        cells: LayoutCells = (_layout_cell([names[0]]), numeric[0][0], numeric[1][0], numeric[2][0])
+        name_cell = _layout_cell([name_block])
+        if name_cell is None:
+            return ()
+        cells: LayoutCells = (replace(name_cell, text=name), numeric[0][0], numeric[1][0], numeric[2][0])
         ids = [block_id for cell in cells if cell is not None for block_id in cell.block_ids]
         if len(ids) != len(set(ids)) or used_ids.intersection(ids):
             return ()
@@ -1306,6 +1444,7 @@ def _combined_guidance_candidates(
         )
     if len(rows) < 2 or fuzzy_schedule_count > strict_schedule_count:
         return ()
+    rows.extend(_damaged_combined_guidance_name_rows(line_groups, header, tuple(rows)))
     rows.sort(key=lambda row: (row.bbox.center_y, row.bbox.x_min))
     rows = [replace(row, row_id=f"row-{index:04d}") for index, row in enumerate(rows, start=1)]
 
@@ -1344,6 +1483,59 @@ def _combined_guidance_candidates(
             mean_confidence=(confidence_sum / confidence_count if confidence_count else None),
         ),
     )
+
+
+def _damaged_combined_guidance_name_rows(
+    line_groups: tuple[_LineGroup, ...],
+    header: _GuidanceHeader,
+    established: tuple[LayoutRow, ...],
+) -> tuple[LayoutRow, ...]:
+    """Keep grounded drug titles even when a joined regimen cannot be parsed.
+
+    Three existing rows establish the lanes. Damaged schedule text is only a
+    spatial anchor here; none of its numbers are interpreted or repaired.
+    """
+    if len(established) < 3:
+        return ()
+    blocks = tuple(block for line in line_groups for block in line.blocks)
+    schedule_cells = tuple(cell for row in established for cell in row.cells[1:] if cell is not None)
+    schedule_x = median(cell.bbox.center_x for cell in schedule_cells)
+    typical_height = median(cell.bbox.height for cell in schedule_cells)
+    centers = sorted(row.bbox.center_y for row in established)
+    bottom = centers[-1] + median(right - left for left, right in zip(centers[:-1], centers[1:], strict=True))
+    observed_names = {_compact_text(row.cells[0].text) for row in established if row.cells[0] is not None}
+    recovered: list[LayoutRow] = []
+    for block in blocks:
+        text = _compact_text(block.source.text)
+        if not (
+            header.bbox.center_y < block.bbox.center_y <= bottom
+            and abs(block.bbox.center_x - schedule_x) <= typical_height * 2
+            and _combined_guidance_schedule_match(text) is None
+            and re.fullmatch(r".{1,12}씩[1-9][0-9]*회[1-9][0-9]*[가-힣]{1,2}분", text)
+        ):
+            continue
+        names = tuple(
+            name
+            for name in blocks
+            if header.name_band[0] <= name.bbox.center_x <= header.name_band[1]
+            and name.bbox.x_max < block.bbox.x_min
+            and abs(name.bbox.center_y - block.bbox.center_y) <= max(name.bbox.height, block.bbox.height) * 0.9
+            and _looks_like_medication_name_blocks((name,))
+        )
+        if len(names) != 1 or _compact_text(names[0].source.text) in observed_names:
+            continue
+        name_cell = _layout_cell(list(names))
+        if name_cell is None:
+            continue
+        observed_names.add(_compact_text(name_cell.text))
+        recovered.append(
+            LayoutRow(
+                row_id=f"damaged-guidance-row-{len(recovered) + 1:04d}",
+                cells=(name_cell, None, None, None),
+                bbox=_union((name_cell.bbox, block.bbox)),
+            )
+        )
+    return tuple(recovered)
 
 
 def _repeated_bracket_label_lane_left(
@@ -4000,6 +4192,7 @@ def _anchored_layout_rows(
     tracks = _numeric_tracks(seed, full_seeds)
     mapped_numeric = tuple(_map_numeric_seed(row_seed, tracks) for row_seed in numeric_seeds)
     name_groups = _name_line_groups(seed, body_blocks)
+    strong_name_groups = tuple(group for group in name_groups if _looks_like_medication_name_blocks(group))
     row_centers = tuple(row_seed.center_y for row_seed in numeric_seeds)
     typical_gap = median(
         tuple(row_centers[index + 1] - row_centers[index] for index in range(len(row_centers) - 1))
@@ -4047,8 +4240,18 @@ def _anchored_layout_rows(
                 typical_height,
             )
         )
-        if len(row_seed.blocks) == 1 and (name_cell is None or numeric_cells[0] is not None or not dose_blocks):
-            continue
+        if len(row_seed.blocks) == 1:
+            explicit_partial_dose = name_cell is not None and numeric_cells[0] is None and bool(dose_blocks)
+            # Preserve observed fields when names and numeric rows pair one-to-one in an established grid.
+            # Do not turn unrelated singleton numbers into rows or infer the missing regimen.
+            grounded_partial_row = (
+                len(full_seeds) >= 2
+                and all(cells is not None for cells in mapped_numeric)
+                and len(strong_name_groups) == len(numeric_seeds)
+                and name_blocks == strong_name_groups[index - 1]
+            )
+            if not explicit_partial_dose and not grounded_partial_row:
+                continue
         cells: LayoutCells = (
             name_cell,
             _layout_cell(list(dose_blocks)),

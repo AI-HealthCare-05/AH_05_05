@@ -119,6 +119,30 @@ def test_standard_tablet_quantity_remains_projected() -> None:
 
 
 @pytest.mark.parametrize(
+    ("source_text", "field_value", "expected_quantity"),
+    [
+        ("1회투약량1", "1", "1"),
+        ("1회투약량1정", "1", "1정"),
+        ("1회투약량0.5mL", "0.5mL", "0.5mL"),
+    ],
+)
+def test_explicit_labeled_dose_projects_the_grounded_suffix_without_rewriting_source_evidence(
+    source_text: str,
+    field_value: str,
+    expected_quantity: str,
+) -> None:
+    medication = _project_dose_quantity(source_text, field_value)
+
+    assert medication["doseQuantity"] == expected_quantity
+
+
+def test_explicit_labeled_dose_rejects_a_value_that_does_not_match_its_grounded_suffix() -> None:
+    medication = _project_dose_quantity("1회투약량1정", "2")
+
+    assert "doseQuantity" not in medication
+
+
+@pytest.mark.parametrize(
     "missing",
     [
         ("dose_quantity",),

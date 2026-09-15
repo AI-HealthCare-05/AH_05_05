@@ -881,9 +881,14 @@ def _date_candidate_ids(
         or _DATE_LABEL_AND_VALUE_PATTERN.fullmatch(_strip_date_label_markers(source.text))
     }
     for label_bbox in anchors:
-        for block_id, bbox in date_values:
-            if _is_local_date_value(label_bbox, bbox):
-                candidate_ids.add(block_id)
+        # A following completion/next-visit date must not compete with the
+        # explicitly aligned value. Below-label layout is a fallback only.
+        aligned = {
+            block_id for block_id, bbox in date_values if _is_local_date_value(label_bbox, bbox, allow_below=False)
+        }
+        candidate_ids.update(
+            aligned or {block_id for block_id, bbox in date_values if _is_local_date_value(label_bbox, bbox)}
+        )
     return tuple(sorted(candidate_ids, key=lambda block_id: _block_key(source_by_id[block_id])))
 
 
@@ -897,7 +902,7 @@ def _strip_date_label_markers(text: str) -> str:
     return _DATE_LEADING_MARKERS_PATTERN.sub("", _normalized(text))
 
 
-def _is_local_date_value(label: AxisAlignedBBox, value: AxisAlignedBBox) -> bool:
+def _is_local_date_value(label: AxisAlignedBBox, value: AxisAlignedBBox, *, allow_below: bool = True) -> bool:
     # A tall next-visit heading can share the global line with the label. Bind
     # to the label's own box, never to that line's union box or an above row.
     height = min(label.height, value.height)
@@ -918,7 +923,7 @@ def _is_local_date_value(label: AxisAlignedBBox, value: AxisAlignedBBox) -> bool
         and value.y_min - label.y_max <= height * 2.0
         and (overlap >= min(label.width, value.width) * 0.25 or 0 <= value.x_min - label.x_max <= height * 2.0)
     )
-    return same_row or below_label
+    return same_row or (allow_below and below_label)
 
 
 def _evidence_blocks(

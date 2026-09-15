@@ -261,7 +261,26 @@ def test_issuing_hospital_joins_split_name_without_doctor_evidence() -> None:
     assert extracted.confidence == 0.99
 
 
-@pytest.mark.parametrize("value", ["홍길동", "80401114", "한도가까운약국", "한도가까운약국 서울병원"])
+@pytest.mark.parametrize("name", ["제물포정형외과", "새봄내과", "푸른이비인후과"])
+@pytest.mark.parametrize("combined", [False, True])
+def test_prescription_issuer_accepts_department_ending_hospital(name, combined):
+    blocks = (
+        [_block("value", f"처방전발행기관: {name}", 10, 10, 240)]
+        if combined
+        else [
+            _block("label", "처방전발행기관:", 10, 10, 100),
+            _block("value", name, 120, 10, 100),
+        ]
+    )
+    extracted = _extract(*blocks, _block("header", "약품명", 10, 80, 45))
+    assert extracted.value == name
+    assert extracted.block_ids == ("value",)
+    assert extracted.issues == ()
+
+
+@pytest.mark.parametrize(
+    "value", ["홍길동", "80401114", "한도가까운약국", "한도가까운약국 서울병원", "서울내과약국", "서울내과접수"]
+)
 def test_issuer_is_not_automatically_a_hospital(value: str) -> None:
     assert (
         _extract(
