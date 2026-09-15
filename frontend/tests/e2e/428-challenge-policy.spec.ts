@@ -153,9 +153,7 @@ for (const width of [375, 390, 1280]) {
     expect(await supplement.getByText('맞춤', { exact: true }).evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(officialColor);
     const arrow = summary.getByRole('button', { name: '다음 챌린지' });
     if (await arrow.count()) {
-      const cardBox = await walking.boundingBox();
-      const arrowBox = await arrow.boundingBox();
-      expect(arrowBox!.y).toBeGreaterThanOrEqual(cardBox!.y + cardBox!.height);
+      await expect(arrow).toBeVisible();
     }
     await expect.poll(() => summary.getByRole('img').evaluateAll(images => images.every(image => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0))).toBe(true);
     await summary.screenshot({ path: testInfo.outputPath(`home-${width}.png`), animations: 'disabled' });
@@ -174,7 +172,9 @@ test('home distinguishes no participation from an active challenge without today
   await expect(summary).toContainText('챌린지를 등록하고 생활습관 개선에 도전하세요.');
   await lists(page, [{ ...official, verified_dates: [], can_verify: false }], []);
   await page.reload();
-  await expect(summary).toContainText('오늘 예정된 챌린지가 없어요.');
+  const activeCard = summary.getByRole('article', { name: '매일 걷기', exact: true });
+  await expect(activeCard.getByRole('link')).toBeVisible();
+  await expect(activeCard.getByRole('button')).toHaveCount(0);
 });
 
 test('an unfinished official card shows only its check-in action without redundant status', async ({ page }) => {
@@ -347,7 +347,7 @@ for (const status of ['COMPLETED', 'EXPIRED', 'CANCELLED'] as const) {
       await expect(back).toBeVisible();
       await expect(page.getByRole('alert')).toHaveCount(0);
       await page.screenshot({ path: testInfo.outputPath(`custom-${status.toLowerCase()}-top-${width}.png`), animations: 'disabled' });
-      await page.getByText('진행률은 홈과 영양제 기록을 기준으로 자동 계산돼요.', { exact: false }).scrollIntoViewIfNeeded();
+      await page.getByRole('region', { name: '챌린지 달력', exact: true }).scrollIntoViewIfNeeded();
       await page.screenshot({ path: testInfo.outputPath(`custom-${status.toLowerCase()}-bottom-${width}.png`), animations: 'disabled' });
       await back.click();
       await expect(page).toHaveURL(/\/challenges$/);

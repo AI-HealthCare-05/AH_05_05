@@ -239,7 +239,7 @@ async function stubHome(page: Page, options: HomeStubOptions = {}) {
   return counts;
 }
 
-test('홈은 오늘 남은 맞춤 목표만 표시하고 긴 이름과 서버 진행률을 보존한다', async ({
+test('홈은 목표가 없는 활성 참여도 표시하고 긴 이름과 서버 진행률을 보존한다', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 320, height: 900 });
@@ -269,7 +269,7 @@ test('홈은 오늘 남은 맞춤 목표만 표시하고 긴 이름과 서버 �
   const summary = page.getByRole('region', { name: '챌린지' });
   const customSection = summary;
   await expect(customSection.getByRole('heading', { name: /맞춤 챌린지 · 진행 중/ })).toHaveCount(0);
-  await expect(customSection.locator('a[href*="custom-participations"]')).toHaveCount(2);
+  await expect(customSection.locator('a[href*="custom-participations"]')).toHaveCount(3);
   for (const [name, participationId] of [
     [longName, 701],
     ['세 번째 맞춤 챌린지', 703],
@@ -287,8 +287,9 @@ test('홈은 오늘 남은 맞춤 목표만 표시하고 긴 이름과 서버 �
     .toBe(true);
 
   const zeroTarget = customSection.getByRole('link', { name: /아직 예정이 없는 챌린지/ });
-  await expect(zeroTarget).toHaveCount(0);
-  await expect(customSection.getByText('미달성', { exact: true })).toHaveCount(2);
+  await expect(zeroTarget).toHaveCount(1);
+  await expect(customSection.getByText('오늘 예정 없음', { exact: true })).toHaveCount(1);
+  await expect(customSection.getByText('미완료', { exact: true })).toHaveCount(2);
   expect(counts.customMutations).toBe(0);
 });
 
@@ -382,7 +383,7 @@ test('복약 저장 성공과 되돌리기는 맞춤 진행률을 각각 한 번
 
   await page.getByRole('button', { name: '먹었어요', exact: true }).click();
   await expect(customSection.getByText('3 / 7일')).toBeVisible();
-  await expect(customSection.getByText('달성', { exact: true })).toBeVisible();
+  await expect(customSection.getByText('완료', { exact: true })).toBeVisible();
   expect(counts.customReads).toBe(initialCustomReads + 1);
 
   await page.getByRole('button', { name: '되돌리기', exact: true }).click();
@@ -480,7 +481,7 @@ test('영양제 저장 실패는 재조회하지 않고 재시도 성공과 되�
 
   await supplementGroup.getByRole('button', { name: '다시 시도' }).click();
   await expect(customSection.getByText('3 / 7일')).toBeVisible();
-  await expect(customSection.getByText('달성', { exact: true })).toBeVisible();
+  await expect(customSection.getByText('완료', { exact: true })).toBeVisible();
   expect(counts.customReads).toBe(initialCustomReads + 1);
 
   await supplementGroup.getByRole('button', { name: '오메가3 복용 완료' }).click();
