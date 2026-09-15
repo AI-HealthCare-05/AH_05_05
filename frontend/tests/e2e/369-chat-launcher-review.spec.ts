@@ -27,21 +27,18 @@ for (const width of [320, 390, 1488]) {
       const body = getComputedStyle(element);
       const tail = getComputedStyle(element, '::after');
       return { background: body.backgroundColor, shadow: body.boxShadow,
-        tailContent: tail.content, tailShape: tail.clipPath,
+        radius: body.borderRadius, tailContent: tail.content, tailShape: tail.clipPath,
         tailWidth: parseFloat(tail.width), tailBottom: parseFloat(tail.bottom),
         tailBackground: tail.backgroundColor };
     });
-    expect(bubble.tailContent).toBe('""');
-    expect(bubble.tailShape).toContain('polygon');
-    expect(bubble.tailWidth).toBeGreaterThanOrEqual(14);
-    expect(bubble.tailBottom).toBeLessThan(0);
-    expect(bubble.tailBackground).toBe(bubble.background);
+    expect(bubble.tailContent).toBe('none');
+    expect(bubble.radius).toBe('50%');
     expect(bubble.shadow).not.toBe('none');
     const box = (await launcher.boundingBox())!;
     expect(box.width).toBeGreaterThanOrEqual(56);
     expect(box.width).toBeLessThanOrEqual(60);
     const navBox = (await page.getByRole('navigation', { name: '주요 화면' }).boundingBox())!;
-    expect(box.y + box.height - bubble.tailBottom).toBeLessThanOrEqual(navBox.y - 8);
+    expect(box.y + box.height).toBeLessThanOrEqual(navBox.y - 8);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await expect(launcher).toHaveCSS('animation-name', 'none');
     await launcher.focus();
@@ -69,6 +66,25 @@ test('guest keyboard activation opens login prompt and hides the launcher until 
   await dialog.getByRole('button', { name: '다음에 할게요' }).click();
   await expect(launcher).toBeVisible();
   await expect(page).toHaveURL(/\/home$/);
+});
+
+test('OCR registration hides the launcher on every step and restores it on exit', async ({ page }) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem('poke.access-token', 'launcher-ocr-fixture');
+    sessionStorage.setItem('poke.account-principal', 'launcher-ocr-user');
+  });
+  const launcher = page.getByRole('button', { name: '챗봇', exact: true });
+  await page.goto('/home');
+  await expect(launcher).toBeVisible();
+  for (const path of ['/document-upload', '/ocr-review', '/medication-schedule', '/dev/document-upload', '/dev/ocr-review', '/dev/medication-schedule']) {
+    await page.goto(`${path}?launcher-test=1`);
+    await expect(page).toHaveURL(new RegExp(`${path}\\?`));
+    await expect(page.locator('main')).toBeVisible();
+    await expect(launcher).toHaveCount(0);
+    await expect(page.locator('.chat-launcher-layout')).toHaveCount(0);
+  }
+  await page.goto('/home');
+  await expect(launcher).toBeVisible();
 });
 
 test('authenticated launcher opens chat and is absent within chat', async ({ page }) => {
