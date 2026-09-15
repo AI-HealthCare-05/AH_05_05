@@ -2754,14 +2754,17 @@ async def test_rule_neighbor_lookup_is_scoped_to_single_drug_overview(question: 
 
 
 @pytest.mark.parametrize("question", ["내가 먹는 약과 같이 먹으면 안 되는 것 알려줘", "같이 먹으면 안되는거 알려줘"])
-async def test_active_medication_avoidance_searches_neighbors_instead_of_only_registered_pairs(question: str) -> None:
+@pytest.mark.parametrize("display_name", ["와파린", "와파린 5mg"])
+async def test_active_medication_avoidance_searches_neighbors_instead_of_only_registered_pairs(
+    question: str, display_name: str
+) -> None:
     retriever = SequencedKnowledgeRetriever([[], []])
     repository = FakeRuleRepository([])
     await build_use_case(
         context=ActiveIntakeContext(
             user_id=1,
             medications=[
-                ActiveMedication(medication_id=1, care_episode_id=1, name="와파린"),
+                ActiveMedication(medication_id=1, care_episode_id=1, name=display_name, interaction_names=["와파린"]),
                 ActiveMedication(medication_id=2, care_episode_id=1, name="타이레놀"),
             ],
         ),
@@ -2771,8 +2774,64 @@ async def test_active_medication_avoidance_searches_neighbors_instead_of_only_re
     plan = retriever.execution_plans[0].query_plan
     assert plan.interaction_overview is True
     assert plan.interaction_pairs == []
+    assert "와파린" in retriever.execution_plans[0].medication_names
+    assert "와파린 5mg" not in retriever.execution_plans[0].medication_names
     assert repository.include_query_neighbors is True
     assert any("음식" in query and "영양제" in query for query in plan.alternate_queries)
+
+
+async def test_registered_strength_name_overview_keeps_drug_and_food_evidence() -> None:
+    rules = [
+        InteractionRuleFact(
+            interaction_rule_id=index,
+            pair_key=str(index) * 64,
+            pair_type="DRUG_DRUG",
+            left_name=name,
+            right_name="와파린",
+            risk_level="CAUTION",
+            effect_texts=[effect],
+        )
+        for index, (name, effect) in enumerate(
+            [
+                ("메나테트레논", "와파린의 항응고 효과가 감소할 수 있습니다."),
+                ("이그라티모드", "와파린의 작용이 증대될 수 있습니다."),
+            ],
+            start=1,
+        )
+    ]
+    food = build_chunk()
+    food = food.model_copy(
+        update={
+            "content": "녹차·홍차·우롱차의 비타민 K는 와파린의 항응고 효과를 감소시킬 수 있습니다.",
+            "metadata": food.metadata.model_copy(
+                update={
+                    "drug_names": ["와파린"],
+                    "food_names": ["녹차", "홍차", "우롱차"],
+                    "section_type": KnowledgeSectionType.INTERACTION,
+                    "interaction_type": "DRUG_FOOD",
+                }
+            ),
+        }
+    )
+    result = await build_use_case(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(medication_id=1, care_episode_id=1, name="와파린 5mg", interaction_names=["와파린"])
+            ],
+        ),
+        rules=rules,
+        retriever=FakeKnowledgeRetriever(chunks=[food]),
+    ).execute(build_request("내가 먹는 약과 같이 먹으면 안 되는 것 알려줘"))
+
+    assert "와파린 5mg" in result.answer.split("---")[0]
+    drugs, others = result.answer.split("🍗 **그 외 상호작용**")
+    assert "🧬 **약과 상호작용**" in drugs
+    assert "메나테트레논" in drugs and "이그라티모드" in drugs
+    assert "녹차·홍차·우롱차" in others
+    assert "확인하지 못했습니다" not in result.answer
+    assert any(source.kind is MedicationChatSourceKind.INTERACTION_RULE for source in result.sources)
+    assert any(source.kind is MedicationChatSourceKind.PUBLIC_KNOWLEDGE for source in result.sources)
 
 
 async def test_active_intake_summary_executes_without_explicit_entity_in_question() -> None:

@@ -3407,7 +3407,11 @@ class AnswerMedicationQuestionUseCase:
         plan = planning.query_plan
         if KnowledgeSectionType.INTERACTION not in plan.section_types or not plan.entities:
             return planning
-        active_names = {cls._normalize_entity_name(item.name) for item in [*context.medications, *context.supplements]}
+        active_names = {
+            cls._normalize_entity_name(name)
+            for entity in cls._active_intake_query_entities(context)
+            for name in (entity.surface, entity.canonical_name)
+        }
         asks_for_neighbors = bool(cls._INTERACTION_OVERVIEW_PATTERN.search(request.question))
         active_overview = (
             asks_for_neighbors
@@ -3504,7 +3508,9 @@ class AnswerMedicationQuestionUseCase:
             return planning
 
         active_entity_keys = {
-            (entity.kind, cls._normalize_entity_name(entity.canonical_name)) for entity in active_entities
+            (entity.kind, cls._normalize_entity_name(name))
+            for entity in active_entities
+            for name in (entity.surface, entity.canonical_name)
         }
         explicit_entities = [
             entity
@@ -3691,22 +3697,27 @@ class AnswerMedicationQuestionUseCase:
                 for supplement in context.supplements
             ),
         ]:
-            canonical_name = item.name.strip()
-            normalized_name = "".join(canonical_name.casefold().split())
-            key = (kind, normalized_name)
-            if not canonical_name or key in seen:
-                continue
-            seen.add(key)
-            entities.append(
-                MedicationQueryEntity(
-                    surface=canonical_name,
-                    canonical_name=canonical_name,
-                    entity_type=entity_type,
-                    candidate_types=[entity_type],
-                    kind=kind,
-                    source=MedicationQueryEntitySource.PATIENT_CONTEXT,
-                )
+            names = (
+                item.interaction_names if isinstance(item, ActiveMedication) and item.interaction_names else [item.name]
             )
+            for name in names:
+                canonical_name = name.strip()
+                normalized_name = "".join(canonical_name.casefold().split())
+                key = (kind, normalized_name)
+                if not canonical_name or key in seen:
+                    continue
+                seen.add(key)
+                entities.append(
+                    MedicationQueryEntity(
+                        surface=item.name,
+                        canonical_name=canonical_name,
+                        product_lookup_name=item.name if kind is InteractionEntityKind.DRUG else None,
+                        entity_type=entity_type,
+                        candidate_types=[entity_type],
+                        kind=kind,
+                        source=MedicationQueryEntitySource.PATIENT_CONTEXT,
+                    )
+                )
         return entities
 
     @classmethod

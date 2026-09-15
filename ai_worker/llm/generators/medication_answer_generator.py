@@ -70,6 +70,8 @@ class OpenAIMedicationAnswerGenerator:
     _DISCLAIMER_PATTERN = re.compile(r"의료\s*(?:전문가|진)의\s*(?:진단|진료|처방).*대체하지\s*않습니다")
     _INTERACTION_SECTION_TITLE = "상호작용"
     _QUESTION_INTERACTION_HEADER = "🔁 **질문 상호작용**"
+    _INTERACTION_OVERVIEW_HEADERS = ("🧬 **약과 상호작용**", "🍗 **그 외 상호작용**")
+    _MISSING_EVIDENCE_LINE_PATTERN = re.compile(r"확인하지\s*못|(?:근거|자료|정보)[^.!?\n]{0,30}없")
     _CAUTION_SECTION_HEADER = "⚠️ **주의사항**"
     _MAX_BULLET_EOJEOLS = 10
     _MAX_BULLET_CHARACTERS = 100
@@ -224,10 +226,10 @@ class OpenAIMedicationAnswerGenerator:
             )
             # 짧은 요약이어도 섹션 선언이 틀리면 한 번 보정한다.
             # 최종 근거 검증은 그대로 유지하며, 형식 보정과 호출 예산을 공유한다.
-            if (
-                self._requires_format_repair(generated_answer)
-                or grounding_failure == MedicationAnswerFallbackReason.UNSUPPORTED_EVIDENCE_SECTION
-            ):
+            if self._requires_format_repair(generated_answer) or grounding_failure in {
+                MedicationAnswerFallbackReason.UNSUPPORTED_EVIDENCE_SECTION,
+                MedicationAnswerFallbackReason.OMITTED_EVIDENCE_SECTION,
+            }:
                 payload = await self._invoke_chain(
                     chain=chain,
                     request=request,
@@ -544,6 +546,8 @@ class OpenAIMedicationAnswerGenerator:
             and not set(declared_section_types or []).issubset(covered_section_types)
         ):
             return MedicationAnswerFallbackReason.UNSUPPORTED_EVIDENCE_SECTION
+        if cls._omits_interaction_overview(draft_answer=draft_answer, generated_answer=generated_answer):
+            return MedicationAnswerFallbackReason.OMITTED_EVIDENCE_SECTION
         if cls._SAFETY_ASSERTION_PATTERN.search(generated_answer) and not cls._SAFETY_ASSERTION_PATTERN.search(
             draft_answer
         ):
@@ -555,6 +559,27 @@ class OpenAIMedicationAnswerGenerator:
         if not generated_dosages.issubset(draft_dosages):
             return MedicationAnswerFallbackReason.GENERATED_DOSAGE_NOT_IN_DRAFT
         return None
+
+    @classmethod
+    def _omits_interaction_overview(cls, *, draft_answer: str, generated_answer: str) -> bool:
+        """근거가 있는 탐색 섹션을 빈 제목·근거 없음 안내로 대체했는지 확인한다."""
+        for header in cls._INTERACTION_OVERVIEW_HEADERS:
+            draft_section = cls._section_block(answer=draft_answer, header=header)
+            if not cls._has_overview_fact_bullet(draft_section):
+                continue
+            generated_section = cls._section_block(answer=generated_answer, header=header)
+            if not cls._has_overview_fact_bullet(generated_section):
+                return True
+        return False
+
+    @classmethod
+    def _has_overview_fact_bullet(cls, section: str | None) -> bool:
+        return any(
+            line.strip().startswith("- ")
+            and line.strip()[2:].strip()
+            and not cls._MISSING_EVIDENCE_LINE_PATTERN.search(line)
+            for line in (section or "").splitlines()
+        )
 
     @staticmethod
     def _answer_hash(answer: str) -> str:

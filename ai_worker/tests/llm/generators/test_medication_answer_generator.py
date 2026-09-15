@@ -130,6 +130,87 @@ async def test_generator_repairs_an_overlong_bullet_once() -> None:
     assert "공식 복용 중단·상담 지시는 초안 표현을 그대로 보존" in str(client.all_messages[-1])
 
 
+@pytest.mark.parametrize("repair_succeeds", [True, False])
+@pytest.mark.parametrize("keeps_empty_headers", [True, False])
+async def test_generator_preserves_evidenced_overview_when_model_returns_no_evidence(
+    repair_succeeds: bool, keeps_empty_headers: bool
+) -> None:
+    draft = (
+        "💊 **복약정보**\n\n- 와파린\n\n💪🏻 **영양제 정보**\n\n- 비타민 D\n\n---\n\n"
+        "🧬 **약과 상호작용**\n\n"
+        "- 메나테트레논은 와파린의 항응고 효과를 감소시킬 수 있습니다.\n"
+        "- 이그라티모드는 와파린의 작용을 증대시킬 수 있습니다.\n\n"
+        "🍗 **그 외 상호작용**\n\n"
+        "- 녹차·홍차·우롱차의 비타민 K는 와파린의 항응고 효과를 감소시킬 수 있습니다."
+    )
+    missing = (
+        "💊 **복약정보**\n\n- 와파린\n\n💪🏻 **영양제 정보**\n\n- 비타민 D\n\n---\n\n"
+        "🔁 **복약정보와 상호작용**\n\n"
+        "- 현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 못했습니다.\n"
+        "- 확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다."
+    )
+    if keeps_empty_headers:
+        missing = (
+            "🧬 **약과 상호작용**\n\n- 현재 근거에서는 해당 조합을 확인하지 못했습니다.\n\n🍗 **그 외 상호작용**\n"
+        )
+    client = FakeAnswerClient(
+        responses=[
+            {"answer": missing, "section_types": ["INTERACTION"]},
+            {"answer": draft if repair_succeeds else missing, "section_types": ["INTERACTION"]},
+        ]
+    )
+    result = build_result().model_copy(
+        update={
+            "answer": draft,
+            "route": MedicationChatRoute.ACTIVE_INTAKE,
+            "sources": [
+                MedicationChatSource(
+                    kind=MedicationChatSourceKind.INTERACTION_RULE,
+                    title="승인된 상호작용 규칙",
+                    interaction_rule_id=1,
+                )
+            ],
+            "evidence_coverage": MedicationEvidenceCoverage(
+                requested_section_types=[KnowledgeSectionType.INTERACTION],
+                covered_section_types=[KnowledgeSectionType.INTERACTION],
+            ),
+        }
+    )
+    outcome = await OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client).generate(
+        request=build_request().model_copy(update={"question": "내가 먹는 약과 같이 먹으면 안 되는 것 알려줘"}),
+        context=ActiveIntakeContext(user_id=1),
+        result=result,
+    )
+
+    assert len(client.all_messages) == 2
+    assert "🧬 **약과 상호작용**" in outcome.result.answer
+    assert "🍗 **그 외 상호작용**" in outcome.result.answer
+    assert "메나테트레논" in outcome.result.answer
+    assert "녹차·홍차·우롱차" in outcome.result.answer
+    assert "확인하지 못했습니다" not in outcome.result.answer
+    assert outcome.result.sources == result.sources
+    assert outcome.observation.fallback_used is not repair_succeeds
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "🧬 **약과 상호작용**\n\n- 메나테트레논은 와파린의 항응고 효과를 감소시킬 수 있습니다.",
+        "🍗 **그 외 상호작용**\n\n- 현재 근거에서는 해당 조합을 확인하지 못했습니다.",
+        "🔁 **질문 상호작용**\n\n**[마그네슘-아연]**\n\n- 해당 조합의 직접 근거를 확인하지 못했습니다.",
+    ],
+)
+async def test_generator_does_not_require_absent_overview_categories(answer: str) -> None:
+    client = FakeAnswerClient(response={"answer": answer, "section_types": ["INTERACTION"]})
+    result = build_result().model_copy(update={"answer": answer, "route": MedicationChatRoute.INTERACTION})
+    outcome = await OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client).generate(
+        request=build_request(), context=ActiveIntakeContext(user_id=1), result=result
+    )
+    assert len(client.all_messages) == 1
+    assert outcome.observation.fallback_used is False
+    assert outcome.result.answer.split() == answer.split()
+
+
 async def test_generator_compacts_adverse_effect_list_and_keeps_official_stop_instruction() -> None:
     warning = "이 약 복용 후 발진이 나타나면 즉시 복용을 중단하십시오."
     long_answer = (
