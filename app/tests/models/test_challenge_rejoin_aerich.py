@@ -191,10 +191,10 @@ async def _run_chain(start_version: int) -> None:
         # The replay starts before migration 46 added this field.
         await db.execute_script("ALTER TABLE chat_messages DROP COLUMN session_reference;")
         # Migration 48 removes these legacy columns. Recreate the pre-48 schema
-        # in this disposable database so the real migration can exercise its drops.
+        # in this disposable database, except verification_status, which may
+        # already be absent after a partially applied deployment migration.
         await db.execute_script("""
             ALTER TABLE chat_messages
-                ADD COLUMN verification_status VARCHAR(12) NOT NULL DEFAULT 'NOT_REQUIRED',
                 ADD COLUMN conflict_status VARCHAR(22) NOT NULL DEFAULT 'NOT_APPLICABLE';
             ALTER TABLE interaction_entity_aliases
                 ADD COLUMN is_preferred BOOL NOT NULL DEFAULT 0;

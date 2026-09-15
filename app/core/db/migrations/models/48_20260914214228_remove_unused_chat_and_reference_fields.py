@@ -2,13 +2,25 @@ from tortoise import BaseDBAsyncClient
 
 RUN_IN_TRANSACTION = True
 
+_COLUMNS_TO_REMOVE = {
+    "chat_messages": ("verification_status", "conflict_status"),
+    "interaction_entity_aliases": ("is_preferred",),
+    "medication_product_guides": ("item_image_url",),
+}
+
 
 async def upgrade(db: BaseDBAsyncClient) -> str:
-    return """
-        ALTER TABLE `chat_messages` DROP COLUMN `verification_status`;
-        ALTER TABLE `chat_messages` DROP COLUMN `conflict_status`;
-        ALTER TABLE `interaction_entity_aliases` DROP COLUMN `is_preferred`;
-        ALTER TABLE `medication_product_guides` DROP COLUMN `item_image_url`;"""
+    statements = []
+    for table, columns in _COLUMNS_TO_REMOVE.items():
+        existing_rows = await db.execute_query_dict(
+            "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s",
+            [table],
+        )
+        existing_columns = {row["COLUMN_NAME"] for row in existing_rows}
+        statements.extend(
+            f"ALTER TABLE `{table}` DROP COLUMN `{column}`;" for column in columns if column in existing_columns
+        )
+    return "\n".join(statements) if statements else "SELECT 1;"
 
 
 async def downgrade(db: BaseDBAsyncClient) -> str:
