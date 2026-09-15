@@ -9,10 +9,87 @@ import pytest
 from PIL import Image
 
 from app.services.medication_ocr_v3.domain.image import ImageErrorCode, ImageValidationError, Point, QualityState
+from app.services.medication_ocr_v3.pipeline import preprocess as subject
 from app.services.medication_ocr_v3.pipeline.preprocess import apply_matrix, preprocess_image
 from app.services.medication_ocr_v3.pipeline.privacy_artifact import build_privacy_safe_provider_image
 
 VERSIONS = ("v3.4.1", "v3.4.2", "v3.4.3")
+
+
+@pytest.mark.parametrize("version", VERSIONS)
+@pytest.mark.parametrize("mask_value", [0, 255])
+def test_small_redaction_contours_do_not_suppress_enclosing_document_search(version, mask_value, monkeypatch):
+    # Sharp redaction edges can be more confident than the faint paper edge.
+    rgb = np.full((600, 900, 3), 150, dtype=np.uint8)
+    cv2.rectangle(rgb, (260, 160), (350, 190), (mask_value,) * 3, -1)
+    outer = subject._QuadCandidate(
+        quad=(Point(100, 80), Point(800, 100), Point(780, 520), Point(80, 500)),
+        confidence=0.90,
+        coverage=0.545,
+        crop_suspicion=False,
+        boundary_confidence=0.80,
+        provenance="grabcut",
+    )
+    calls = []
+
+    def enclosing_document(working, profile, colors):
+        calls.append(working.shape)
+        return [outer]
+
+    monkeypatch.setattr(subject, "_grabcut_document_candidates", enclosing_document)
+    document = subject._detect_document(rgb, subject._preprocess_profile(version))
+
+    assert len(calls) == 1
+    assert document.polygon is not None
+    assert abs(subject._signed_area(document.polygon)) / (600 * 900) > 0.50
+    assert document.likely_document_count == 1
+
+
+def test_confident_full_document_still_skips_grabcut(monkeypatch):
+    rgb = np.full((600, 900, 3), 100, dtype=np.uint8)
+    cv2.fillConvexPoly(rgb, np.array([[130, 80], [800, 150], [750, 530], [80, 450]]), (240, 240, 240))
+
+    def unexpected_grabcut(*args):
+        pytest.fail("A confident full document should not need the fallback search")
+
+    monkeypatch.setattr(subject, "_grabcut_document_candidates", unexpected_grabcut)
+    document = subject._detect_document(rgb, subject._preprocess_profile("v3.4.1"))
+    assert document.polygon is not None
+    assert abs(subject._signed_area(document.polygon)) / (600 * 900) > 0.40
+
+
+def _bottom_tail_fixture(text_y: int | None = None) -> tuple[np.ndarray, tuple[Point, ...]]:
+    gray = np.full((500, 800), 242, dtype=np.uint8)
+    cv2.rectangle(gray, (80, 40), (720, 499), 230, -1)
+    for y in range(120, 330, 35):
+        cv2.putText(gray, "MEDICINE 10 mg", (120, y), cv2.FONT_HERSHEY_SIMPLEX, 0.65, 40, 2, cv2.LINE_AA)
+    if text_y is not None:
+        cv2.putText(gray, "BOTTOM TEXT", (120, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, 40, 1, cv2.LINE_AA)
+    return gray, (Point(80, 40), Point(720, 40), Point(720, 499), Point(80, 499))
+
+
+@pytest.mark.parametrize(("text_y", "expected_blank"), [(None, True), (450, False), (505, False)])
+def test_bottom_only_crop_blank_tail_gate_rejects_missing_text(text_y, expected_blank, monkeypatch):
+    gray, quad = _bottom_tail_fixture(text_y)
+    assert subject._bottom_crop_has_blank_tail(gray, quad) is expected_blank
+    rgb = np.repeat(gray[..., None], 3, axis=2)
+    candidate = subject._QuadCandidate(
+        quad=quad,
+        confidence=0.70,
+        coverage=abs(subject._signed_area(quad)) / float(rgb.shape[0] * rgb.shape[1]),
+        crop_suspicion=True,
+        boundary_confidence=0.80,
+    )
+    monkeypatch.setattr(subject, "_candidate_from_contour", lambda *args, **kwargs: [candidate])
+    monkeypatch.setattr(subject, "_hough_candidate", lambda *args, **kwargs: None)
+    monkeypatch.setattr(subject, "_grabcut_document_candidates", lambda *args, **kwargs: [])
+    document = subject._detect_document(rgb, subject._preprocess_profile("v3.4.1"))
+    if expected_blank:
+        assert document.polygon is None
+        assert not document.crop_suspicion
+    else:
+        assert document.polygon is not None
+        assert document.crop_suspicion
 
 
 def _png(rgb):
