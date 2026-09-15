@@ -1,6 +1,6 @@
 import sqlite3
 from collections.abc import Collection
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, tzinfo
 from decimal import Decimal
 
 import pytest
@@ -52,6 +52,18 @@ from app.services.user_supplement_nutrients import UserSupplementNutrientService
 
 JOINED_AT = datetime(2026, 9, 9, 7, 30, tzinfo=config.TIMEZONE)
 CHANGED_AT = datetime(2026, 9, 10, 12, 0, tzinfo=config.TIMEZONE)
+
+
+@pytest.fixture(autouse=True)
+def fixed_schedule_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The scenarios use fixed September prescriptions. Keep the wall clock
+    # inside that period so expiry checks do not depend on the CI run date.
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz: tzinfo | None = None) -> datetime:
+            return JOINED_AT.astimezone(tz) if tz is not None else JOINED_AT.replace(tzinfo=None)
+
+    monkeypatch.setattr("app.services.medication_schedule.datetime", FixedDateTime)
 
 
 @pytest_asyncio.fixture(autouse=True)
