@@ -16,6 +16,38 @@ from app.services.medication_ocr_v3.pipeline.privacy_artifact import build_priva
 VERSIONS = ("v3.4.1", "v3.4.2", "v3.4.3")
 
 
+@pytest.mark.parametrize(
+    ("outer_confidence", "outer_boundary", "inner_coverage", "inner_confidence", "inner_boundary", "expect_inner"),
+    [
+        (0.52, 0.18, 0.38, 0.83, 0.34, True),
+        (0.80, 0.18, 0.38, 0.83, 0.34, False),
+        (0.52, 0.40, 0.38, 0.83, 0.34, False),
+        (0.52, 0.18, 0.10, 0.83, 0.34, False),
+        (0.52, 0.18, 0.38, 0.65, 0.34, False),
+        (0.52, 0.18, 0.38, 0.83, 0.24, False),
+    ],
+)
+def test_weak_cropped_background_does_not_displace_confident_full_sheet(
+    outer_confidence, outer_boundary, inner_coverage, inner_confidence, inner_boundary, expect_inner
+):
+    outer = subject._QuadCandidate(
+        quad=(Point(180, 390), Point(1049, 390), Point(1049, 1399), Point(40, 1260)),
+        confidence=outer_confidence,
+        coverage=0.60,
+        crop_suspicion=True,
+        boundary_confidence=outer_boundary,
+    )
+    inner = subject._QuadCandidate(
+        quad=(Point(135, 277), Point(998, 543), Point(844, 1160), Point(37, 933)),
+        confidence=inner_confidence,
+        coverage=inner_coverage,
+        crop_suspicion=False,
+        boundary_confidence=inner_boundary,
+        provenance="grabcut",
+    )
+    assert subject._document_authority([outer, inner]) is (inner if expect_inner else outer)
+
+
 @pytest.mark.parametrize("version", VERSIONS)
 @pytest.mark.parametrize("mask_value", [0, 255])
 def test_small_redaction_contours_do_not_suppress_enclosing_document_search(version, mask_value, monkeypatch):

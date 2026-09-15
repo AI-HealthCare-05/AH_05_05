@@ -24,6 +24,178 @@ def _block(block_id: str, text: str, x: float, y: float, width: float, height: f
     )
 
 
+def _cards_with_unreadable_receipt_schedule() -> OcrResult:
+    # Independent printed copies establish identity; merged digits are NOT doses.
+    blocks = [_block("guide", "조제약&복약안내", 700, 50, 400, 40)]
+    for i, (receipt, card) in enumerate(
+        (
+            ("가나다정", "가나다정(가상성분)"),
+            ("라마바점", "라마바정(다른성분)"),
+            ("사아자정", "사아자점(복합성분)"),
+            ("차카타캡슐", "차카타캡슐(시험성분)"),
+            ("파하나정", "파하나점(추가성분)"),
+        )
+    ):
+        blocks.extend(
+            (
+                _block(f"receipt-{i}", receipt, 100 - i * 10, 950 + i * 50, 210, 40),
+                _block(f"merged-{i}", "135", 510, 970 + i * 50, 140, 35),
+                _block(f"card-{i}", card, 760 + (i % 2) * 900, 300 + (i // 2) * 380, 540, 45),
+            )
+        )
+    return OcrResult(tuple(blocks))
+
+
+def _table_with_partial_first_schedule(column=2, *, context=True, first_name="비)가나다정", competing=False):
+    # A slanted header and the first name are close; only one first-row digit survives OCR.
+    blocks = [
+        _block("name-header", "약품명", 88, 248, 76, 32),
+        _block("dose-header", "투약량", 1053, 305, 51, 21),
+        _block("times-header", "횟수", 1112, 305, 34, 19),
+        _block("days-header", "일수", 1155, 305, 36, 19),
+        _block("first-name", first_name, 83, 271, 214, 36),
+        _block("first-number", ("1", "3", "3")[column], (1060, 1145, 1195)[column], 332, 13, 13),
+    ]
+    if context:
+        for index, (name, name_y, number_y) in enumerate((("라마바정5mg", 364, 426), ("사아자정", 479, 527))):
+            blocks.append(_block(f"name-{index}", name, 64, name_y, 318, 40))
+            for numeric_column, (value, x) in enumerate(zip(("1", "3", "3"), (1070, 1159, 1208), strict=True)):
+                blocks.append(_block(f"number-{index}-{numeric_column}", value, x + index * 12, number_y, 16, 20))
+    if competing:
+        blocks.append(_block("competing-name", "다른약정", 90, 318, 180, 20))
+    return OcrResult(tuple(blocks))
+
+
+@pytest.mark.parametrize("column", [0, 1, 2])
+def test_partial_first_row_keeps_grounded_name_and_only_observed_schedule(column):
+    rows = materialize_medication_rows(build_ocr_layout(_table_with_partial_first_schedule(column)))
+    assert [row.name for row in rows.medications] == ["가나다정", "라마바정5mg", "사아자정"]
+    first = rows.medications[0]
+    assert (first.dose_quantity, first.times_per_day, first.days) == (
+        "1" if column == 0 else "",
+        3 if column == 1 else None,
+        3 if column == 2 else None,
+    )
+    assert first.issues
+    assert first.fields.name.block_ids == ("first-name",)
+    assert all((row.dose_quantity, row.times_per_day, row.days) == ("1", 3, 3) for row in rows.medications[1:])
+
+
+@pytest.mark.parametrize("options", [{"context": False}, {"first_name": "합계"}, {"competing": True}])
+def test_single_number_does_not_create_a_drug_without_unambiguous_table_context(options):
+    rows = materialize_medication_rows(build_ocr_layout(_table_with_partial_first_schedule(**options)))
+    assert all(row.fields.name.block_ids != ("first-name",) for row in rows.medications)
+
+
+@pytest.mark.asyncio
+async def test_partial_first_row_reaches_review_without_copying_neighbor_regimen():
+    from app.services.medication_ocr_v3.pipeline.analyze import analyze_processed_image
+
+    class Provider:
+        async def recognize(self, image):
+            return _table_with_partial_first_schedule()
+
+    result = await analyze_processed_image(Provider(), b"test-image")
+    medications = result.project_review["medications"]
+    assert len(medications) == 3
+    assert medications[0]["name"] == "가나다정"
+    assert medications[0]["days"] == 3
+    assert "doseQuantity" not in medications[0] and "timesPerDay" not in medications[0]
+    assert result.analysis_state == "COMPLETED_WITH_ISSUES"
+
+
+def test_corroborated_card_and_receipt_names_survive_unreadable_numeric_columns():
+    rows = materialize_medication_rows(build_ocr_layout(_cards_with_unreadable_receipt_schedule()))
+    assert [row.name for row in rows.medications] == ["가나다정", "라마바정", "사아자정", "차카타캡슐", "파하나정"]
+    assert all(row.dose_quantity == "" and row.times_per_day is None and row.days is None for row in rows.medications)
+    assert all(row.issues for row in rows.medications)
+
+
+def _receipt_vowel_variant(case="unique"):
+    from dataclasses import replace
+
+    blocks = list(_cards_with_unreadable_receipt_schedule().blocks)
+    replacements = {"receipt-1": "라마비정", "card-2": "사아자정(복합성분)"}
+    if case == "consonant":
+        replacements["receipt-1"] = "라마사정"
+    elif case == "few-anchors":
+        replacements.pop("card-2")
+    elif case == "two-variants":
+        replacements["receipt-0"] = "가나디정"
+    blocks = [replace(b, text=replacements.get(b.block_id, b.text)) for b in blocks]
+    if case == "ambiguous":
+        blocks.append(_block("competitor", "라마버정", 85, 1000, 210, 40))
+    return OcrResult(tuple(blocks))
+
+
+@pytest.mark.asyncio
+async def test_single_vowel_disagreement_recovers_printed_card_name_with_required_review():
+    from app.services.medication_ocr_v3.pipeline.analyze import analyze_processed_image
+
+    class Provider:
+        async def recognize(self, image):
+            return _receipt_vowel_variant()
+
+    result = await analyze_processed_image(Provider(), b"test-image")
+    medications = result.project_review["medications"]
+    assert [row["name"] for row in medications] == ["가나다정", "라마바정", "사아자정", "차카타캡슐", "파하나정"]
+    assert medications[1]["confidence"] == "low"
+    assert all(not {"doseQuantity", "timesPerDay", "days"}.intersection(row) for row in medications)
+
+
+@pytest.mark.parametrize("case", ["consonant", "few-anchors", "two-variants", "ambiguous"])
+def test_vowel_disagreement_does_not_relax_ambiguous_or_uncorroborated_names(case):
+    assert not materialize_medication_rows(build_ocr_layout(_receipt_vowel_variant(case))).medications
+
+
+@pytest.mark.asyncio
+async def test_corroborated_names_reach_review_without_guessing_merged_digits():
+    from app.services.medication_ocr_v3.pipeline.analyze import analyze_processed_image
+
+    class Provider:
+        async def recognize(self, image):
+            return _cards_with_unreadable_receipt_schedule()
+
+    result = await analyze_processed_image(Provider(), b"test-image")
+    assert result.analysis_state == "COMPLETED_WITH_ISSUES"
+    medications = result.project_review["medications"]
+    assert [row["name"] for row in medications] == ["가나다정", "라마바정", "사아자정", "차카타캡슐", "파하나정"]
+    assert all(not {"doseQuantity", "timesPerDay", "days"}.intersection(row) for row in medications)
+
+
+@pytest.mark.parametrize(
+    "case", ["no-guide", "no-cards", "duplicate-card", "different-drug", "no-receipt-lane", "branch-names"]
+)
+def test_name_recovery_does_not_accept_uncorroborated_or_conflicting_text(case):
+    from dataclasses import replace
+
+    original = _cards_with_unreadable_receipt_schedule()
+    blocks = list(original.blocks)
+    if case == "no-guide":
+        blocks = [b for b in blocks if b.block_id != "guide"]
+    elif case == "no-cards":
+        blocks = [b for b in blocks if not b.block_id.startswith("card-")]
+    elif case == "duplicate-card":
+        card = next(b for b in blocks if b.block_id == "card-0")
+        blocks.append(replace(card, block_id="duplicate"))
+    elif case == "different-drug":
+        blocks = [replace(b, text="다른약정(다른성분)") if b.block_id.startswith("card-") else b for b in blocks]
+    elif case == "branch-names":
+        branches = ["서울지점", "부산지점", "대구지점", "인천지점", "대전지점"]
+        blocks = [
+            replace(b, text=branches[int(b.block_id[-1])] + ("(성분)" if b.block_id.startswith("card-") else ""))
+            if b.block_id.startswith(("receipt-", "card-"))
+            else b
+            for b in blocks
+        ]
+    else:
+        blocks = [
+            replace(b, bbox=tuple(Point(p.x + 2000, p.y) for p in b.bbox)) if b.block_id == "receipt-2" else b
+            for b in blocks
+        ]
+    assert not materialize_medication_rows(build_ocr_layout(OcrResult(tuple(blocks)))).medications
+
+
 def _single_receipt_with_local_numeric_headers() -> OcrResult:
     entries = (
         ("main-name-header", "약품명", 141, 159, 57, 20),
@@ -131,3 +303,76 @@ def test_guidance_repeated_page_title_does_not_block_three_rows() -> None:
         ("1", 2, 3),
         ("1", 2, 3),
     ]
+
+
+@pytest.mark.parametrize("schedule", ["0.5정씩2회30밀분", "}정씩1회30일분"])
+def test_inferred_guidance_keeps_name_when_schedule_is_corrupted(schedule: str) -> None:
+    source = _guidance_with_repeated_page_title()
+    source = OcrResult(
+        (
+            *source.blocks,
+            _block("partial-name", "추가약정25mg", 183, 225, 90, 12),
+            _block("partial-schedule", schedule, 464, 225, 74, 12),
+        )
+    )
+    rows = materialize_medication_rows(build_ocr_layout(source))
+    assert len(rows.medications) == 4
+    partial = next(row for row in rows.medications if row.name == "추가약정25mg")
+    assert (partial.dose_quantity, partial.times_per_day, partial.days) == ("", None, None)
+    assert partial.fields.name.block_ids == ("partial-name",)
+    assert partial.issues
+
+
+@pytest.mark.parametrize("case", ["few-anchors", "competing-name", "outside-table"])
+def test_damaged_guidance_requires_established_unambiguous_lanes(case: str) -> None:
+    source = _guidance_with_repeated_page_title()
+    blocks = list(source.blocks)
+    if case == "few-anchors":
+        blocks = [block for block in blocks if block.block_id not in {"name-3", "schedule-3"}]
+    y = 600 if case == "outside-table" else 225
+    blocks.extend(
+        (
+            _block("partial-name", "추가약정25mg", 183, y, 90, 12),
+            _block("partial-schedule", "}정씩1회30일분", 464, y, 74, 12),
+        )
+    )
+    if case == "competing-name":
+        blocks.append(_block("competitor", "다른약정", 184, y, 80, 12))
+    rows = materialize_medication_rows(build_ocr_layout(OcrResult(tuple(blocks))))
+    assert all(row.name != "추가약정25mg" for row in rows.medications)
+
+
+@pytest.mark.asyncio
+async def test_damaged_combined_schedule_reaches_review_without_invented_numbers():
+    from app.services.medication_ocr_v3.pipeline.analyze import analyze_processed_image
+
+    class Provider:
+        async def recognize(self, image):
+            source = _guidance_with_repeated_page_title()
+            return OcrResult(
+                (
+                    *source.blocks,
+                    _block("partial-name", "추가약정25mg", 183, 225, 90, 12),
+                    _block("partial-schedule", "0.5정씩2회30밀분", 464, 225, 74, 12),
+                )
+            )
+
+    result = await analyze_processed_image(Provider(), b"test-image")
+    assert len(result.project_review["medications"]) == 4
+    partial = next(row for row in result.project_review["medications"] if row["name"] == "추가약정25mg")
+    assert not {"doseQuantity", "timesPerDay", "days"}.intersection(partial)
+    assert result.analysis_state == "COMPLETED_WITH_ISSUES"
+
+
+@pytest.mark.parametrize("schedule", ["충분한 물과 함께 복용", "30일 후 재진", "1정씩 복용하세요"])
+def test_inferred_guidance_does_not_turn_instructions_into_partial_rows(schedule: str) -> None:
+    source = _guidance_with_repeated_page_title()
+    source = OcrResult(
+        (
+            *source.blocks,
+            _block("partial-name", "백색정", 183, 225, 90, 12),
+            _block("partial-schedule", schedule, 464, 225, 74, 12),
+        )
+    )
+    rows = materialize_medication_rows(build_ocr_layout(source))
+    assert len(rows.medications) == 3

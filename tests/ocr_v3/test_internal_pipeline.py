@@ -129,6 +129,24 @@ def test_dispensed_date_keeps_right_or_below_value_with_other_panel_date(x: int,
     assert [block.block_id for block in catalog.date_candidates] == ["dispensed"]
 
 
+@pytest.mark.parametrize("scale", [1, 3])
+def test_dispensed_date_prefers_same_row_over_following_completion_date(scale):
+    source = OcrResult(
+        (
+            _block("label", "조제일자", 214 * scale, 33 * scale, 21 * scale, 6 * scale),
+            _block("dispensed", "2026-09-15", 239 * scale, 33 * scale, 28 * scale, 6 * scale),
+            _block("completion-label", "복용완료일", 214 * scale, 40 * scale, 21 * scale, 6 * scale),
+            _block("completion", "2026-09-20", 239 * scale, 40 * scale, 28 * scale, 6 * scale),
+        )
+    )
+    layout = build_ocr_layout(source)
+    rows = materialize_medication_rows(layout)
+    catalog = build_evidence_catalog(source, layout, rows)
+    plan = plan_deterministic_grounding(catalog, rows, today=date(2026, 9, 15))
+    assert [block.block_id for block in catalog.date_candidates] == ["dispensed"]
+    assert plan.selection.dispensed_date_block_ids == ["dispensed"]
+
+
 def test_dispensed_date_accepts_bullet_prefixed_split_label_from_medguide_021() -> None:
     source = OcrResult(
         (
