@@ -26,7 +26,7 @@ export function CustomChallengeProgressCard({ participation: item }: { participa
         {item.status !== 'ACTIVE' && <span className="shrink-0 rounded-pill bg-muted-bg px-2 py-1 text-micro font-bold text-muted-foreground">{statusLabel(item.status)}</span>}
       </div>
       <p className="break-words text-caption text-muted-foreground [overflow-wrap:anywhere]">{displayedTargets.map(target => target.name).join(' · ')}</p>
-      <div className="flex items-center justify-between gap-2 text-caption text-muted-foreground"><span>{days.completed} / {days.target}일</span><span className="font-bold text-primary">{rate}% 달성</span></div>
+      <p className="text-caption text-muted-foreground">{days.completed} / {days.target}일</p>
       <div role="progressbar" aria-label={`${item.challengeName} 진행률`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={rate} className="h-2 overflow-hidden rounded-pill bg-border"><div className="h-full rounded-pill bg-primary" style={{ width: `${rate}%` }} /></div>
     </article>
   );
