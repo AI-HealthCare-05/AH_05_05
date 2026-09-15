@@ -78,6 +78,7 @@ class KnowledgeCandidateRejectionReason(StrEnum):
     BELOW_SCORE = "BELOW_SCORE"
     ENTITY_MISMATCH = "ENTITY_MISMATCH"
     PAIR_MISMATCH = "PAIR_MISMATCH"
+    REFERENCE_MATERIAL = "REFERENCE_MATERIAL"
 
 
 class KnowledgeEvidenceLevel(StrEnum):
@@ -311,6 +312,16 @@ class KnowledgeChunkMetadata(KnowledgeMetadata):
     chunk_index: int = Field(ge=0)
     content_hash: str = Field(min_length=64, max_length=64)
 
+    @property
+    def is_adverse_assessment_reference(self) -> bool:
+        """사례의 평가 결과와 별첨 인과성 평가 기준표를 구분한다."""
+        title = "".join((self.section_title or "").split()).casefold()
+        return (
+            self.document_type is KnowledgeDocumentType.ADVERSE_CASE_REPORT
+            and self.section_type is KnowledgeSectionType.ASSESSMENT
+            and title.endswith(("평가기준", "assessmentcriteria"))
+        )
+
 
 class KnowledgeChunk(BaseModel):
     chunk_id: str = Field(min_length=64, max_length=64)
@@ -413,6 +424,7 @@ class KnowledgeRetrievalDiagnostics(BaseModel):
     rejected_below_score_count: int = Field(ge=0)
     rejected_entity_mismatch_count: int = Field(ge=0)
     rejected_pair_mismatch_count: int = Field(ge=0)
+    rejected_reference_material_count: int = Field(default=0, ge=0)
     accepted_count: int = Field(ge=0)
     parent_context_child_count: int = Field(default=0, ge=0)
     parent_context_attached_count: int = Field(default=0, ge=0)

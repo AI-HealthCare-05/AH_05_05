@@ -336,7 +336,7 @@ async def test_single_drug_interaction_overview_keeps_question_target(has_rule: 
     assert "복약정보와 상호작용" not in result.answer
     if has_rule:
         assert "비타민 K" in result.answer
-        assert "영양제 상호작용" in result.answer
+        assert "🍗 **그 외 상호작용**" in result.answer
     else:
         assert "와파린" in result.answer
 
@@ -383,8 +383,11 @@ class FakeRuleRepository:
         *,
         context: ActiveIntakeContext,
         query_entity_names: list[str] | None = None,
+        include_query_neighbors: bool = False,
         single_entity_overview: bool = False,
     ) -> list[InteractionRuleFact]:
+        self.include_query_neighbors = include_query_neighbors
+        self.single_entity_overview = single_entity_overview
         return self.rules
 
 
@@ -394,6 +397,7 @@ class FailingRuleRepository:
         *,
         context: ActiveIntakeContext,
         query_entity_names: list[str] | None = None,
+        include_query_neighbors: bool = False,
         single_entity_overview: bool = False,
     ) -> list[InteractionRuleFact]:
         raise RuntimeError("interaction rule DB unavailable")
@@ -1288,6 +1292,67 @@ async def test_follow_up_schedule_question_explains_when_no_upcoming_visit_exist
     assert result.answer == "등록된 예정 진료일정이 없습니다."
 
 
+async def test_registered_interaction_request_reaches_search_despite_gate_note_misclassification() -> None:
+    retriever = SequencedKnowledgeRetriever([[], []])
+    summary = StaticMedicationNoteSummaryUseCase()
+    result = await build_use_case(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(medication_id=1, care_episode_id=1, name="와파린"),
+            ],
+        ),
+        retriever=retriever,
+        question_resolver=RuleBasedMedicationQuestionResolver(catalog=StaticExpressionCatalog([])),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="MEDICATION_NOTE_SUMMARY",
+                safety_signal="NONE",
+                confidence="HIGH",
+                note_summary_scope=MedicationNoteSummaryScope.RECENT_SIX_MONTHS,
+            )
+        ),
+        medication_note_summary_use_case=summary,
+    ).execute(build_request("내가 먹는 약과 같이 먹으면 안되는 것 알려줘"))
+    assert result.route is not MedicationChatRoute.MEDICATION_NOTE_SUMMARY
+    assert summary.received_scope is None
+    assert retriever.execution_plans[0].query_plan.interaction_overview is True
+
+
+@pytest.mark.parametrize("particle", ["과", "이랑"])
+async def test_named_avoidance_question_does_not_become_symptom_follow_up_from_history(particle: str) -> None:
+    retriever = SequencedKnowledgeRetriever([[], []])
+    repository = FakeRuleRepository([])
+    await build_use_case(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(medication_id=1, care_episode_id=1, name="타이레놀"),
+            ],
+        ),
+        retriever=retriever,
+        rule_repository=repository,
+        question_resolver=RuleBasedMedicationQuestionResolver(catalog=StaticExpressionCatalog(["와파린"])),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="SYMPTOM_INTERACTION_FOLLOW_UP",
+                safety_signal="NONE",
+                confidence="HIGH",
+            )
+        ),
+    ).execute(
+        build_request(f"와파린{particle} 같이 먹으면 안되는 것 알려줘").model_copy(
+            update={
+                "history": [ChatHistoryMessage(role=ChatRole.USER, content="머리가 아파")],
+            }
+        )
+    )
+    plan = retriever.execution_plans[0].query_plan
+    assert plan.entity_names == ["와파린"]
+    assert plan.interaction_overview is True
+    assert repository.include_query_neighbors is True
+
+
 async def test_note_summary_request_bypasses_rag_retrieval() -> None:
     retriever = RecordingQueryPlanRetriever()
     summary_use_case = StaticMedicationNoteSummaryUseCase()
@@ -2062,7 +2127,8 @@ async def test_natural_wellness_goal_uses_the_same_source_backed_supplement_rout
     assert gate.inputs == []
 
 
-async def test_medication_symptom_question_uses_adverse_case_report_format() -> None:
+@pytest.mark.parametrize("question", ["독사조신 먹고 어지러울 수 있어?", "독사조신 어지러움"])
+async def test_medication_symptom_question_uses_adverse_case_report_format(question: str) -> None:
     event_chunk = build_chunk().model_copy(
         update={
             "content": "독사조신 복용 뒤 현기증이 보고됐습니다.",
@@ -2102,9 +2168,9 @@ async def test_medication_symptom_question_uses_adverse_case_report_format() -> 
                 ]
             )
         ),
-    ).execute(build_request("독사조신 먹고 어지러울 수 있어?"))
+    ).execute(build_request(question))
 
-    assert result.answer.startswith("🩻 **부작용 리포트**")
+    assert result.answer.startswith("🩻 **부작용 보고서**")
     assert "**추가설명**" in result.answer
     assert "**이상사례**" in result.answer
     assert "WHO-UMC 평가" in result.answer
@@ -2668,6 +2734,106 @@ async def test_execute_escalates_possible_overdose_without_product_guide() -> No
     assert result.sources == []
 
 
+@pytest.mark.parametrize(
+    ("question", "expand"),
+    [
+        ("와파린이랑 같이 먹으면 안되는거 알려줘", True),
+        ("와파린", True),
+        ("와파린 효능 알려줘", False),
+        ("와파린과 비타민 K 같이 먹어도 돼?", False),
+        ("내가 먹는 약과 와파린 같이 먹어도 돼?", False),
+    ],
+)
+async def test_rule_neighbor_lookup_is_scoped_to_single_drug_overview(question: str, expand: bool) -> None:
+    repository = FakeRuleRepository([])
+    await build_use_case(
+        rule_repository=repository,
+        question_resolver=RuleBasedMedicationQuestionResolver(catalog=StaticExpressionCatalog(["와파린", "비타민 K"])),
+    ).execute(build_request(question))
+    assert repository.include_query_neighbors is expand
+
+
+@pytest.mark.parametrize("question", ["내가 먹는 약과 같이 먹으면 안 되는 것 알려줘", "같이 먹으면 안되는거 알려줘"])
+@pytest.mark.parametrize("display_name", ["와파린", "와파린 5mg"])
+async def test_active_medication_avoidance_searches_neighbors_instead_of_only_registered_pairs(
+    question: str, display_name: str
+) -> None:
+    retriever = SequencedKnowledgeRetriever([[], []])
+    repository = FakeRuleRepository([])
+    await build_use_case(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(medication_id=1, care_episode_id=1, name=display_name, interaction_names=["와파린"]),
+                ActiveMedication(medication_id=2, care_episode_id=1, name="타이레놀"),
+            ],
+        ),
+        retriever=retriever,
+        rule_repository=repository,
+    ).execute(build_request(question))
+    plan = retriever.execution_plans[0].query_plan
+    assert plan.interaction_overview is True
+    assert plan.interaction_pairs == []
+    assert "와파린" in retriever.execution_plans[0].medication_names
+    assert "와파린 5mg" not in retriever.execution_plans[0].medication_names
+    assert repository.include_query_neighbors is True
+    assert any("음식" in query and "영양제" in query for query in plan.alternate_queries)
+
+
+async def test_registered_strength_name_overview_keeps_drug_and_food_evidence() -> None:
+    rules = [
+        InteractionRuleFact(
+            interaction_rule_id=index,
+            pair_key=str(index) * 64,
+            pair_type="DRUG_DRUG",
+            left_name=name,
+            right_name="와파린",
+            risk_level="CAUTION",
+            effect_texts=[effect],
+        )
+        for index, (name, effect) in enumerate(
+            [
+                ("메나테트레논", "와파린의 항응고 효과가 감소할 수 있습니다."),
+                ("이그라티모드", "와파린의 작용이 증대될 수 있습니다."),
+            ],
+            start=1,
+        )
+    ]
+    food = build_chunk()
+    food = food.model_copy(
+        update={
+            "content": "녹차·홍차·우롱차의 비타민 K는 와파린의 항응고 효과를 감소시킬 수 있습니다.",
+            "metadata": food.metadata.model_copy(
+                update={
+                    "drug_names": ["와파린"],
+                    "food_names": ["녹차", "홍차", "우롱차"],
+                    "section_type": KnowledgeSectionType.INTERACTION,
+                    "interaction_type": "DRUG_FOOD",
+                }
+            ),
+        }
+    )
+    result = await build_use_case(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(medication_id=1, care_episode_id=1, name="와파린 5mg", interaction_names=["와파린"])
+            ],
+        ),
+        rules=rules,
+        retriever=FakeKnowledgeRetriever(chunks=[food]),
+    ).execute(build_request("내가 먹는 약과 같이 먹으면 안 되는 것 알려줘"))
+
+    assert "와파린 5mg" in result.answer.split("---")[0]
+    drugs, others = result.answer.split("🍗 **그 외 상호작용**")
+    assert "🧬 **약과 상호작용**" in drugs
+    assert "메나테트레논" in drugs and "이그라티모드" in drugs
+    assert "녹차·홍차·우롱차" in others
+    assert "확인하지 못했습니다" not in result.answer
+    assert any(source.kind is MedicationChatSourceKind.INTERACTION_RULE for source in result.sources)
+    assert any(source.kind is MedicationChatSourceKind.PUBLIC_KNOWLEDGE for source in result.sources)
+
+
 async def test_active_intake_summary_executes_without_explicit_entity_in_question() -> None:
     context = ActiveIntakeContext(
         user_id=1,
@@ -2725,6 +2891,110 @@ async def test_active_intake_summary_executes_without_explicit_entity_in_questio
     assert "와파린" in result.answer
     assert "비타민 K" in result.answer
     assert "복약정보와 상호작용" in result.answer
+
+
+@pytest.mark.parametrize(
+    ("question", "expected_header", "expected_name", "excluded_header", "excluded_name"),
+    [
+        (
+            "내가 먹는 약",
+            "💊 **복약정보**",
+            "세레콕시브캡슐200mg",
+            "💪🏻 **영양제 정보**",
+            "비타민 D",
+        ),
+        (
+            "지금 내가 먹는 영양제 알려줘",
+            "💪🏻 **영양제 정보**",
+            "비타민 D",
+            "💊 **복약정보**",
+            "세레콕시브캡슐200mg",
+        ),
+    ],
+)
+async def test_current_intake_list_questions_return_only_requested_names_without_retrieval(
+    question: str,
+    expected_header: str,
+    expected_name: str,
+    excluded_header: str,
+    excluded_name: str,
+) -> None:
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[
+            ActiveMedication(
+                medication_id=1,
+                care_episode_id=10,
+                name="세레콕시브캡슐200mg",
+                dose="200mg",
+                days=7,
+            )
+        ],
+        supplements=[
+            ActiveSupplement(
+                registration_id=1,
+                supplement_nutrient_id=1,
+                name="비타민 D",
+                dose_amount="1",
+                dose_unit="정",
+                start_date=date(2026, 9, 1),
+            )
+        ],
+    )
+    retriever = RecordingQueryPlanRetriever()
+    tracer = RecordingChatTracer()
+
+    result = await build_use_case(
+        context=context,
+        retriever=retriever,
+        tracer=tracer,
+    ).execute(build_request(question))
+
+    assert result.route is MedicationChatRoute.ACTIVE_INTAKE
+    assert result.answer.startswith(expected_header)
+    assert expected_name in result.answer
+    assert excluded_header not in result.answer
+    assert excluded_name not in result.answer
+    assert " · " not in result.answer
+    assert "7일" not in result.answer
+    assert retriever.received_kwargs is None
+    assert tracer.names == ["patient_context.load", "active_intake.list_response"]
+
+
+async def test_current_medication_list_without_records_reports_empty_state_without_search() -> None:
+    retriever = RecordingQueryPlanRetriever()
+
+    result = await build_use_case(retriever=retriever).execute(build_request("지금 먹는 약"))
+
+    assert result.answer == "현재 등록된 복약정보가 없습니다."
+    assert result.route is MedicationChatRoute.ACTIVE_INTAKE
+    assert result.sources == []
+    assert retriever.received_kwargs is None
+
+
+async def test_current_medication_and_supplement_list_request_returns_both_names_only() -> None:
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[ActiveMedication(medication_id=1, care_episode_id=10, name="타이레놀정")],
+        supplements=[
+            ActiveSupplement(
+                registration_id=1,
+                supplement_nutrient_id=1,
+                name="비타민 D",
+                dose_amount="1",
+                dose_unit="정",
+                start_date=date(2026, 9, 1),
+            )
+        ],
+    )
+    retriever = RecordingQueryPlanRetriever()
+
+    result = await build_use_case(context=context, retriever=retriever).execute(
+        build_request("내가 먹는 약과 영양제 알려줘"),
+    )
+
+    assert result.answer == ("💊 **복약정보**\n- 타이레놀정\n\n---\n\n💪🏻 **영양제 정보**\n- 비타민 D")
+    assert retriever.received_kwargs is None
 
 
 async def test_active_intake_question_without_external_evidence_uses_registered_targets_and_guidance() -> None:
@@ -3261,6 +3531,34 @@ async def test_session_referenced_product_interaction_displays_question_pair() -
     ] == [("타이레놀정500밀리그람", "비타민 D")]
 
 
+async def test_session_referenced_ingredient_caution_resolves_single_prior_product() -> None:
+    product_name = "타이레놀정500밀리그람"
+    request = build_request("그 성분의 주의사항도 알려줘.").model_copy(
+        update={
+            "session_reference": MedicationChatSessionReference(
+                entities=[
+                    MedicationChatSessionReferenceEntity(
+                        name=product_name,
+                        entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                        kind=InteractionEntityKind.DRUG,
+                    )
+                ]
+            )
+        }
+    )
+
+    result = await build_use_case(
+        guide_repository=ExactNameGuideRepository(
+            expected_name=product_name,
+            lookup=MedicationGuideLookup(guide=build_guide()),
+        ),
+    ).execute(request)
+
+    assert result.route is MedicationChatRoute.MEDICATION_GUIDE
+    assert "주의사항" in result.answer
+    assert product_name in result.answer
+
+
 async def test_session_referenced_product_interaction_keeps_question_pair_with_evidence() -> None:
     pair_key = build_interaction_pair_key(
         InteractionEntity(
@@ -3583,7 +3881,10 @@ async def test_execute_routes_general_ingredient_to_supplement_guide_when_drug_m
     assert result.question_interpretation.normalized_entity_names == ["오메가3"]
 
 
-async def test_execute_uses_magnesium_form_cautions_for_general_magnesium_caution_question() -> None:
+@pytest.mark.parametrize("has_rag_evidence", [True, False])
+async def test_execute_uses_magnesium_form_cautions_for_general_magnesium_caution_question(
+    has_rag_evidence: bool,
+) -> None:
     supplement_chunk = build_chunk().model_copy(
         update={
             "content": "마그네슘은 에너지 이용과 신경 및 근육 기능 유지에 필요합니다.",
@@ -3598,8 +3899,10 @@ async def test_execute_uses_magnesium_form_cautions_for_general_magnesium_cautio
     )
 
     result = await build_use_case(
-        retriever=FakeKnowledgeRetriever(chunks=[supplement_chunk]),
-        guide_repository=MagnesiumCautionGuideRepository(MedicationGuideLookup()),
+        retriever=FakeKnowledgeRetriever(chunks=[supplement_chunk] if has_rag_evidence else []),
+        guide_repository=MagnesiumCautionGuideRepository(
+            MedicationGuideLookup(is_ambiguous=True, candidate_names=["마그밀정", "마그오캡슐"])
+        ),
         question_resolver=RuleBasedMedicationQuestionResolver(
             catalog=StaticTypedExpressionCatalog(
                 [
@@ -3868,6 +4171,7 @@ async def test_execute_records_safe_stage_summaries_without_raw_content() -> Non
         "rejected_below_score_count": 0,
         "rejected_entity_mismatch_count": 0,
         "rejected_pair_mismatch_count": 0,
+        "rejected_reference_material_count": 0,
         "accepted_count": 1,
         "parent_context_child_count": 0,
         "parent_context_attached_count": 0,

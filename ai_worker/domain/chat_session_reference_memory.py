@@ -71,6 +71,15 @@ class ChatSessionReferenceMemory:
                     count=1,
                 )
             )
+        if product_name and self._SINGLE_INGREDIENT_REFERENCE_PATTERN.search(question):
+            return ChatSessionReferenceResolution(
+                question=self._SINGLE_INGREDIENT_REFERENCE_PATTERN.sub(
+                    product_name,
+                    question,
+                    count=1,
+                ),
+                referenced_product_name=product_name,
+            )
 
         names = list(dict.fromkeys(entity.name for entity in reference.entities))
         if names and self._GROUP_REFERENCE_PATTERN.search(question):

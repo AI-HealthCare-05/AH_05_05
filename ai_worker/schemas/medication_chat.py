@@ -128,6 +128,7 @@ class MedicationAnswerFallbackReason(StrEnum):
     GENERATED_DOSAGE_NOT_IN_DRAFT = "GENERATED_DOSAGE_NOT_IN_DRAFT"
     UNSUPPORTED_SAFETY_ASSERTION = "UNSUPPORTED_SAFETY_ASSERTION"
     UNSUPPORTED_EVIDENCE_SECTION = "UNSUPPORTED_EVIDENCE_SECTION"
+    OMITTED_EVIDENCE_SECTION = "OMITTED_EVIDENCE_SECTION"
     NO_GROUNDED_SOURCES = "NO_GROUNDED_SOURCES"
     PATIENT_CONTEXT_ONLY = "PATIENT_CONTEXT_ONLY"
     CLARIFICATION_REQUIRED = "CLARIFICATION_REQUIRED"
@@ -250,6 +251,8 @@ class ActiveMedication(BaseModel):
     medication_id: int = Field(ge=1)
     care_episode_id: int = Field(ge=1)
     name: str = Field(min_length=1)
+    # 표시명과 별개로 DB의 연결 또는 정확한 이름 일치로 확인된 상호작용 검색 대상.
+    interaction_names: list[str] = Field(default_factory=list)
     dose: str | None = None
     efficacy: str | None = None
     administration: str | None = None

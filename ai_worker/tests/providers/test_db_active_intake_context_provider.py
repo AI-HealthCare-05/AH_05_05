@@ -14,6 +14,7 @@ from ai_worker.providers.db_active_intake_context_provider import (
 from app.core.db.databases import TORTOISE_APP_MODELS
 from app.models.care import CareEpisode
 from app.models.enums import CareEpisodeStatus, MealSlot, SupplementStatus
+from app.models.interactions import InteractionEntity, MedicationInteractionEntity
 from app.models.medications import Medication, MedicationSlot
 from app.models.supplement_nutrients import (
     SupplementNutrient,
@@ -63,6 +64,62 @@ async def _create_confirmed_episode(
         medication_start_date=medication_start_date,
         medication_days=medication_days,
     )
+
+
+@pytest.mark.parametrize(
+    ("display_name", "expected_names"),
+    [
+        ("와파린 5mg", ["와파린"]),
+        ("와파린5mg", ["와파린"]),
+        ("와파린 5밀리그램", ["와파린"]),
+        ("와파린복합제 5mg", []),
+        ("미확인약 5mg", []),
+    ],
+)
+async def test_provider_resolves_strength_suffix_only_to_exact_catalog_name(
+    initialized_db: None, display_name: str, expected_names: list[str]
+) -> None:
+    user = await _create_user(1, "patient@example.com")
+    episode = await _create_confirmed_episode(episode_id=100, user=user)
+    await Medication.create(care_episode=episode, name=display_name)
+    await InteractionEntity.create(entity_kind="DRUG", canonical_name="와파린", normalized_name="와파린")
+
+    context = await DbActiveIntakeContextProvider().get_active_context(user_id=user.id, care_episode_id=None)
+
+    assert context.medications[0].name == display_name
+    assert getattr(context.medications[0], "interaction_names", []) == expected_names
+
+
+async def test_provider_prefers_explicit_medication_links_over_strength_name_fallback(initialized_db: None) -> None:
+    user = await _create_user(1, "patient@example.com")
+    episode = await _create_confirmed_episode(episode_id=100, user=user)
+    medication = await Medication.create(care_episode=episode, name="복합약 5mg")
+    await InteractionEntity.create(entity_kind="DRUG", canonical_name="복합약", normalized_name="복합약")
+    for name in ["성분 A", "성분 B"]:
+        entity = await InteractionEntity.create(entity_kind="DRUG", canonical_name=name, normalized_name=name.lower())
+        await MedicationInteractionEntity.create(
+            medication=medication,
+            interaction_entity=entity,
+            match_method="EXACT_NAME",
+            matched_source_text=name,
+        )
+
+    context = await DbActiveIntakeContextProvider().get_active_context(user_id=user.id, care_episode_id=None)
+
+    assert context.medications[0].interaction_names == ["성분 A", "성분 B"]
+    assert context.medications[0].name == "복합약 5mg"
+
+
+async def test_provider_prefers_exact_full_catalog_name_to_strength_free_name(initialized_db: None) -> None:
+    user = await _create_user(1, "patient@example.com")
+    episode = await _create_confirmed_episode(episode_id=100, user=user)
+    await Medication.create(care_episode=episode, name="등록약 5mg")
+    for name in ["등록약", "등록약 5mg"]:
+        await InteractionEntity.create(entity_kind="DRUG", canonical_name=name, normalized_name=name)
+
+    context = await DbActiveIntakeContextProvider().get_active_context(user_id=user.id, care_episode_id=None)
+
+    assert context.medications[0].interaction_names == ["등록약 5mg"]
 
 
 @pytest.mark.asyncio

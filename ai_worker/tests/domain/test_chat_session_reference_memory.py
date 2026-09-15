@@ -34,6 +34,26 @@ def test_resolves_single_drug_reference_from_structured_session_entity() -> None
     )
 
 
+def test_resolves_ingredient_reference_to_the_only_product_in_session() -> None:
+    reference = MedicationChatSessionReference(
+        entities=[
+            MedicationChatSessionReferenceEntity(
+                name="타이레놀정500밀리그람",
+                entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                kind=InteractionEntityKind.DRUG,
+            )
+        ],
+    )
+
+    resolution = ChatSessionReferenceMemory().resolve(
+        question="그 성분의 주의사항도 알려줘.",
+        reference=reference,
+    )
+
+    assert resolution.question == "타이레놀정500밀리그람의 주의사항도 알려줘."
+    assert resolution.referenced_product_name == "타이레놀정500밀리그람"
+
+
 def test_expands_group_reference_but_keeps_untyped_interaction_names_for_catalog_revalidation() -> None:
     reference = MedicationChatSessionReference(
         entities=[

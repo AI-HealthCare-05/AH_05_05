@@ -58,6 +58,7 @@ class MedicationAnswerAssembler:
         adverse_reaction_question: bool = False,
         functional_goal_title: str | None = None,
         form_caution_guides: dict[str, list[MedicationGuideFact]] | None = None,
+        interaction_overview: bool = False,
     ) -> str:
         intake_sections = self._patient_intake_sections(context)
         sections: list[str] = []
@@ -70,6 +71,9 @@ class MedicationAnswerAssembler:
             interaction_overview_subject=interaction_overview_subject,
             evidence_coverage=evidence_coverage,
         )
+        if interaction_overview:
+            interaction_sections = self._interaction_overview_sections(rules=rules, chunks=chunks)
+            has_unverified_interaction_notice = True
         sections.extend(interaction_sections)
         if guide is not None:
             sections.append(
@@ -86,7 +90,7 @@ class MedicationAnswerAssembler:
         )
         if form_caution_section:
             sections.append(form_caution_section)
-        if chunks and not question_interaction_pairs and not form_caution_section:
+        if chunks and not question_interaction_pairs and not form_caution_section and not interaction_overview:
             public_section = self._functional_goal_section(
                 chunks=chunks,
                 functional_goal_title=functional_goal_title,
@@ -323,7 +327,8 @@ class MedicationAnswerAssembler:
     ) -> str:
         """이상사례 문서를 질문용 짧은 보고서 구조로 재배열한다."""
 
-        sections = ["🩻 **부작용 리포트**"]
+        chunks = [chunk for chunk in chunks if not chunk.metadata.is_adverse_assessment_reference]
+        sections = ["🩻 **부작용 보고서**"]
         section_definitions = (
             (
                 "**이상사례**",
@@ -501,6 +506,29 @@ class MedicationAnswerAssembler:
             sections.append(cls._unverified_interaction_section())
             return sections, True
         return sections, False
+
+    @classmethod
+    def _interaction_overview_sections(
+        cls,
+        *,
+        rules: list[InteractionRuleFact],
+        chunks: list[RetrievedKnowledgeChunk],
+    ) -> list[str]:
+        groups: dict[str, list[str]] = {"🧬 **약과 상호작용**": [], "🍗 **그 외 상호작용**": []}
+        for rule in rules:
+            heading = "🧬 **약과 상호작용**" if rule.pair_type == "DRUG_DRUG" else "🍗 **그 외 상호작용**"
+            groups[heading].extend(cls._rule_lines([rule]))
+        for chunk in chunks:
+            kind = chunk.metadata.interaction_type
+            if kind == "DRUG_DRUG":
+                heading = "🧬 **약과 상호작용**"
+            elif kind in {"DRUG_SUPPLEMENT", "DRUG_FOOD", "SUPPLEMENT_SUPPLEMENT"} or chunk.metadata.food_names:
+                heading = "🍗 **그 외 상호작용**"
+            else:
+                continue
+            # 이름만으로 상호작용을 만들지 않고 해당 청크의 근거 문장을 요약 입력으로 보존한다.
+            groups[heading].append("- " + re.sub(r"\s+", " ", chunk.content).strip())
+        return [heading + "\n\n" + "\n".join(dict.fromkeys(lines)) for heading, lines in groups.items() if lines]
 
     @classmethod
     def _overview_rule_sections(cls, subject: str, rules: list[InteractionRuleFact]) -> list[str]:
@@ -695,7 +723,10 @@ class MedicationAnswerAssembler:
 
     @staticmethod
     def _patient_intake_sections(context: ActiveIntakeContext) -> list[str]:
-        medication_lines = [f"- {medication.name}" for medication in context.medications]
+        medication_lines = [
+            f"- {MedicationAnswerAssembler._GUIDE_PARENTHETICAL_GLOSS.sub('', medication.name).strip()}"
+            for medication in context.medications
+        ]
 
         sections = []
         if medication_lines:

@@ -14,6 +14,7 @@ class MedicationKnowledgeEligibilityReason(StrEnum):
     BELOW_SCORE = "BELOW_SCORE"
     ENTITY_MISMATCH = "ENTITY_MISMATCH"
     PAIR_MISMATCH = "PAIR_MISMATCH"
+    REFERENCE_MATERIAL = "REFERENCE_MATERIAL"
 
 
 PairTextMatcher = Callable[[MedicationKnowledgeQueryPlan, RetrievedKnowledgeChunk], bool]
@@ -70,6 +71,8 @@ class MedicationKnowledgeEligibilityPolicy:
         plan: MedicationKnowledgeQueryPlan,
         approved_class_names: list[str] | None = None,
     ) -> MedicationKnowledgeEligibilityReason:
+        if result.metadata.is_adverse_assessment_reference:
+            return MedicationKnowledgeEligibilityReason.REFERENCE_MATERIAL
         if (
             plan.interaction_pair is not None
             and not self._has_declared_pair_key_match(result, plan)

@@ -1,3 +1,4 @@
+import re
 from collections.abc import Callable
 from datetime import date, timedelta
 
@@ -7,6 +8,7 @@ from ai_worker.domain.errors import (
     PatientContextNotFoundError,
     UnconfirmedPatientContextError,
 )
+from ai_worker.schemas.interaction import normalize_interaction_name
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     ActiveMedication,
@@ -14,6 +16,7 @@ from ai_worker.schemas.medication_chat import (
 )
 from app.models.care import CareEpisode
 from app.models.enums import CareEpisodeStatus, SupplementStatus
+from app.models.interactions import InteractionEntity, MedicationInteractionEntity
 from app.models.medications import Medication
 from app.models.supplement_nutrients import UserSupplementNutrient
 
@@ -23,6 +26,12 @@ def _service_today() -> date:
 
 
 class DbActiveIntakeContextProvider:
+    _TRAILING_STRENGTH = re.compile(
+        r"(?:(?<=\S)\s+|(?<=[가-힣]))\d+(?:\.\d+)?\s*"
+        r"(?:mg|mcg|μg|㎍|g|밀리그램|마이크로그램|그램)\s*$",
+        re.IGNORECASE,
+    )
+
     def __init__(
         self,
         *,
@@ -71,6 +80,7 @@ class DbActiveIntakeContextProvider:
                 today=today,
             )
         ]
+        medications = await self._with_interaction_names(medications)
         supplements = [
             self._to_active_supplement(row)
             for row in supplement_rows
@@ -83,6 +93,44 @@ class DbActiveIntakeContextProvider:
             medications=medications,
             supplements=supplements,
         )
+
+    @classmethod
+    async def _with_interaction_names(cls, medications: list[ActiveMedication]) -> list[ActiveMedication]:
+        if not medications:
+            return medications
+        linked_names: dict[int, list[str]] = {}
+        links = await MedicationInteractionEntity.filter(
+            medication_id__in=[item.medication_id for item in medications],
+            interaction_entity__entity_kind="DRUG",
+        ).prefetch_related("interaction_entity")
+        for link in links:
+            linked_names.setdefault(link.medication_id, []).append(link.interaction_entity.canonical_name)
+
+        candidates_by_id = {}
+        for item in medications:
+            if item.medication_id in linked_names:
+                continue
+            full_name = normalize_interaction_name(item.name).casefold()
+            strength_free_name = cls._TRAILING_STRENGTH.sub("", full_name).strip()
+            candidates_by_id[item.medication_id] = list(dict.fromkeys([full_name, strength_free_name]))
+        candidate_names = {name for names in candidates_by_id.values() for name in names if name}
+        catalog_names = (
+            {
+                entity.normalized_name: entity.canonical_name
+                for entity in await InteractionEntity.filter(entity_kind="DRUG", normalized_name__in=candidate_names)
+            }
+            if candidate_names
+            else {}
+        )
+        for medication_id, candidates in candidates_by_id.items():
+            for candidate in candidates:
+                if canonical_name := catalog_names.get(candidate):
+                    linked_names[medication_id] = [canonical_name]
+                    break
+        return [
+            item.model_copy(update={"interaction_names": sorted(set(linked_names.get(item.medication_id, [])))})
+            for item in medications
+        ]
 
     @staticmethod
     async def _validate_preferred_episode(

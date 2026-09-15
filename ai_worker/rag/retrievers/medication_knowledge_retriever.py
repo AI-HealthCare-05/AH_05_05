@@ -540,7 +540,8 @@ class MedicationKnowledgeRetriever:
         plan: MedicationKnowledgeQueryPlan,
     ) -> bool:
         return (
-            len(MedicationKnowledgeRetriever._normalized_query_entities(plan)) >= 2
+            not plan.interaction_overview
+            and len(MedicationKnowledgeRetriever._normalized_query_entities(plan)) >= 2
             and KnowledgeSectionType.INTERACTION in plan.section_types
         )
 
