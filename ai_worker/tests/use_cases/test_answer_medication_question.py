@@ -275,7 +275,8 @@ class StaticSupplementIngredientCatalog:
 
 
 @pytest.mark.parametrize("has_rule", [False, True])
-async def test_single_drug_interaction_overview_keeps_question_target(has_rule: bool) -> None:
+@pytest.mark.parametrize("with_history", [False, True])
+async def test_single_drug_interaction_overview_keeps_question_target(has_rule: bool, with_history: bool) -> None:
     class Resolver:
         async def resolve(self, *, question, additional_entities=None):
             return MedicationQuestionResolution(
@@ -318,7 +319,18 @@ async def test_single_drug_interaction_overview_keeps_question_target(has_rule: 
         question_resolver=Resolver(),
         retriever=retriever,
         rules=rules,
-    ).execute(build_request("와파린이랑 같이 먹으면 안되는것"))
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(intent="SYMPTOM_INTERACTION_FOLLOW_UP", safety_signal="NONE", confidence="HIGH")
+        )
+        if with_history
+        else None,
+    ).execute(
+        build_request("와파린이랑 같이 먹으면 안되는거 알려줘").model_copy(
+            update={
+                "history": [ChatHistoryMessage(role=ChatRole.USER, content="머리가 아파요")] if with_history else []
+            }
+        )
+    )
     assert retriever.received_kwargs["execution_plan"].medication_names == ["와파린"]
     assert "확인하지 못한 조합" not in result.answer
     assert "복약정보와 상호작용" not in result.answer
@@ -327,6 +339,39 @@ async def test_single_drug_interaction_overview_keeps_question_target(has_rule: 
         assert "영양제 상호작용" in result.answer
     else:
         assert "와파린" in result.answer
+
+
+async def test_single_drug_overview_adds_approved_class_names_to_search_plan() -> None:
+    class Resolver:
+        async def resolve(self, *, question, additional_entities=None):
+            return MedicationQuestionResolution(
+                original_question=question,
+                resolved_question=question,
+                scope="IN_SCOPE",
+                status="UNCHANGED",
+                entity_resolution_available=True,
+                entities=[
+                    MedicationQueryEntity(
+                        surface="와파린",
+                        canonical_name="와파린",
+                        entity_type="INGREDIENT_NAME",
+                        kind="DRUG",
+                        source="CATALOG",
+                    )
+                ],
+            )
+
+    retriever = RecordingQueryPlanRetriever()
+    await build_use_case(
+        retriever=retriever,
+        question_resolver=Resolver(),
+        therapeutic_class_repository=StaticTherapeuticClassRepository(
+            TherapeuticClassSelection(status="NOT_REQUESTED"),
+            class_names=["항응고제"],
+        ),
+    ).execute(build_request("와파린이랑 같이 먹으면 안되는거 알려줘"))
+
+    assert retriever.received_kwargs["execution_plan"].approved_therapeutic_class_names == ["항응고제"]
 
 
 class FakeRuleRepository:
@@ -355,9 +400,10 @@ class FailingRuleRepository:
 
 
 class StaticTherapeuticClassRepository:
-    def __init__(self, selection: TherapeuticClassSelection) -> None:
+    def __init__(self, selection: TherapeuticClassSelection, class_names: list[str] | None = None) -> None:
         self.selection = selection
         self.questions: list[str] = []
+        self.class_names = class_names or []
 
     async def select_active_medications(
         self,
@@ -368,6 +414,10 @@ class StaticTherapeuticClassRepository:
         del context
         self.questions.append(question)
         return self.selection
+
+    async def find_approved_class_names(self, *, entity_names: list[str]) -> list[str]:
+        del entity_names
+        return self.class_names
 
 
 class FakeKnowledgeRetriever:
@@ -755,6 +805,33 @@ def build_guide() -> MedicationGuideFact:
         adverse_reactions="이상반응이 있으면 전문가와 상담합니다.",
         storage_instructions="실온에 보관합니다.",
     )
+
+
+def test_sources_deduplicate_document_chunks_but_keep_distinct_documents() -> None:
+    first = build_chunk()
+    second = first.model_copy(
+        update={
+            "point_id": "point-2",
+            "chunk_id": "c" * 64,
+            "metadata": first.metadata.model_copy(update={"page_start": 2, "page_end": 2}),
+        }
+    )
+    other_document = first.model_copy(
+        update={
+            "point_id": "point-3",
+            "chunk_id": "d" * 64,
+            "metadata": first.metadata.model_copy(update={"document_id": "different-document"}),
+        }
+    )
+    sources = AnswerMedicationQuestionUseCase._build_sources(
+        context=ActiveIntakeContext(user_id=1),
+        guide_lookup=MedicationGuideLookup(),
+        rules=[],
+        chunks=[first, second, other_document],
+    )
+    assert [source.vector_chunk_id for source in sources] == ["point-1", "point-3"]
+    assert sources[0].source_page_number == 1
+    assert sources[0].organization == first.metadata.provider
 
 
 def build_chunk() -> RetrievedKnowledgeChunk:
@@ -2027,7 +2104,8 @@ async def test_medication_symptom_question_uses_adverse_case_report_format() -> 
         ),
     ).execute(build_request("독사조신 먹고 어지러울 수 있어?"))
 
-    assert result.answer.startswith("🩻 **부작용 보고서**")
+    assert result.answer.startswith("🩻 **부작용 리포트**")
+    assert "**추가설명**" in result.answer
     assert "**이상사례**" in result.answer
     assert "WHO-UMC 평가" in result.answer
     assert "✉️ **안내사항**" not in result.answer

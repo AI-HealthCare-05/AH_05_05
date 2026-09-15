@@ -197,3 +197,47 @@ async def test_therapeutic_class_repository_rejects_pending_classification(
     assert selection.status == TherapeuticClassSelectionStatus.NO_APPROVED_ACTIVE_MEDICATION
     assert selection.class_codes == ["ANTICOAGULANT"]
     assert selection.medication_ids == []
+
+
+@pytest.mark.asyncio
+async def test_repository_returns_only_approved_classes_for_named_drug(
+    initialized_db: None,
+) -> None:
+    warfarin = await InteractionEntity.create(
+        entity_kind=InteractionEntityKind.DRUG,
+        canonical_name="와파린",
+        normalized_name="와파린",
+    )
+    anticoagulant = await TherapeuticClass.create(code="ANTICOAGULANT", display_name="항응고제")
+    await TherapeuticClassAlias.create(
+        therapeutic_class=anticoagulant,
+        alias="혈액 응고 억제제",
+        normalized_alias="혈액응고억제제",
+    )
+    await InteractionEntityTherapeuticClass.create(
+        interaction_entity=warfarin,
+        therapeutic_class=anticoagulant,
+        review_status=InteractionReviewStatus.APPROVED,
+        classification_dataset_version="therapeutic-class-v1",
+        source_id="approved-source",
+        document_id="approved-document",
+        record_id="approved-record",
+        raw_classification_text="와파린의 승인된 치료군 연결",
+    )
+    pending_class = await TherapeuticClass.create(code="PENDING_CLASS", display_name="미승인계열")
+    await InteractionEntityTherapeuticClass.create(
+        interaction_entity=warfarin,
+        therapeutic_class=pending_class,
+        review_status=InteractionReviewStatus.PENDING,
+        classification_dataset_version="therapeutic-class-v1",
+        source_id="pending-source",
+        document_id="pending-document",
+        record_id="pending-record",
+        raw_classification_text="미승인 연결",
+    )
+
+    class_names = await DbTherapeuticClassRepository(
+        active_dataset_version="therapeutic-class-v1",
+    ).find_approved_class_names(entity_names=["와파린"])
+
+    assert class_names == ["항응고제", "혈액 응고 억제제"]

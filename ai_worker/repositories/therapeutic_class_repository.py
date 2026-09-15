@@ -15,6 +15,7 @@ from app.models.interactions import (
     InteractionEntityAlias,
     InteractionEntityTherapeuticClass,
     MedicationInteractionEntity,
+    TherapeuticClass,
     TherapeuticClassAlias,
 )
 
@@ -24,6 +25,45 @@ class DbTherapeuticClassRepository:
 
     def __init__(self, *, active_dataset_version: str) -> None:
         self._active_dataset_version = active_dataset_version.strip()
+
+    async def find_approved_class_names(self, *, entity_names: list[str]) -> list[str]:
+        """Resolve verified therapeutic classes for explicitly named drug entities."""
+        normalized_names = {_compact_name(name) for name in entity_names if _compact_name(name)}
+        if not normalized_names:
+            return []
+
+        entity_ids = set(
+            await InteractionEntity.filter(
+                entity_kind=InteractionEntityKind.DRUG,
+                normalized_name__in=normalized_names,
+            ).values_list("id", flat=True)
+        )
+        entity_ids.update(
+            await InteractionEntityAlias.filter(
+                interaction_entity__entity_kind=InteractionEntityKind.DRUG,
+                normalized_alias__in=normalized_names,
+            ).values_list("interaction_entity_id", flat=True)
+        )
+        if not entity_ids:
+            return []
+
+        class_ids = set(
+            await InteractionEntityTherapeuticClass.filter(
+                interaction_entity_id__in=entity_ids,
+                review_status=InteractionReviewStatus.APPROVED,
+                classification_dataset_version=self._active_dataset_version,
+            ).values_list("therapeutic_class_id", flat=True)
+        )
+        if not class_ids:
+            return []
+
+        names = await TherapeuticClass.filter(id__in=class_ids).order_by("id").values_list("display_name", flat=True)
+        aliases = (
+            await TherapeuticClassAlias.filter(therapeutic_class_id__in=class_ids)
+            .order_by("id")
+            .values_list("alias", flat=True)
+        )
+        return list(dict.fromkeys(name.strip() for name in [*names, *aliases] if name.strip()))
 
     async def select_active_medications(
         self,

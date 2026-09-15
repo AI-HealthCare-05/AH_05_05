@@ -437,6 +437,9 @@ class AnswerMedicationQuestionUseCase:
             progress_callback,
             MedicationChatProgressStage.EVIDENCE_SEARCHING,
         )
+        approved_therapeutic_class_names = await self._approved_classes_for_interaction_overview(
+            query_plan=query_plan,
+        )
         async with self._tracer.span(
             "interaction_rules.search",
             run_type="tool",
@@ -463,6 +466,7 @@ class AnswerMedicationQuestionUseCase:
                 context=context,
                 rules=rules,
                 rule_status=rule_status,
+                approved_therapeutic_class_names=approved_therapeutic_class_names,
                 limit=limit,
             )
             rules_span.end(
@@ -599,6 +603,7 @@ class AnswerMedicationQuestionUseCase:
                 has_supplement_evidence and not query_plan.has_medication_product_cue and not interaction_question
             ),
             rag_unavailable=rag_unavailable,
+            approved_therapeutic_class_names=execution_plan.approved_therapeutic_class_names,
         )
         retrieval = coverage_retry.retrieval
         chunks = coverage_retry.chunks
@@ -2225,6 +2230,15 @@ class AnswerMedicationQuestionUseCase:
             or not request.history
             or resolution.scope is not MedicationQuestionScope.IN_SCOPE
             or not resolution.entities
+            or (
+                self._is_interaction_question(request.question)
+                and not self._PATIENT_CONTEXT_CUE_PATTERN.search(request.question)
+                and re.search(
+                    r"(?:안\s*되|피해야|주의할|조심해야).*(?:것|거|약|음식|영양제)|"
+                    r"(?:어떤|무슨|뭐|무엇).*(?:약|음식|영양제)|상호작용\s*(?:목록|종류)",
+                    request.question,
+                )
+            )
             or self._is_explicit_entity_guide_request(
                 question=request.question,
                 resolution=resolution,
@@ -4161,6 +4175,7 @@ class AnswerMedicationQuestionUseCase:
         answer_chunks: list[RetrievedKnowledgeChunk],
         prefer_supplement: bool,
         rag_unavailable: bool,
+        approved_therapeutic_class_names: list[str],
     ) -> _CoverageRetryOutcome:
         evaluator = MedicationEvidenceCoverageEvaluator()
         before = evaluator.evaluate(
@@ -4168,6 +4183,7 @@ class AnswerMedicationQuestionUseCase:
             guide_lookup=guide_lookup,
             rules=rules,
             chunks=answer_chunks,
+            approved_therapeutic_class_names=approved_therapeutic_class_names,
         )
         retry = CoverageGapQueryExpander().build(
             query_plan=query_plan,
@@ -4219,6 +4235,7 @@ class AnswerMedicationQuestionUseCase:
                 guide_lookup=guide_lookup,
                 rules=rules,
                 chunks=combined_answer_chunks,
+                approved_therapeutic_class_names=approved_therapeutic_class_names,
             )
             retry_unavailable = rag_unavailable or retry_attempt.unavailable
             observation = KnowledgeCoverageRetryObservation(
@@ -4273,12 +4290,14 @@ class AnswerMedicationQuestionUseCase:
         rules: list[InteractionRuleFact],
         rule_status: InteractionRuleLookupStatus,
         limit: int,
+        approved_therapeutic_class_names: list[str] | None = None,
     ) -> MedicationSearchExecutionPlan:
         return MedicationSearchExecutionPlan(
             query_plan=query_plan,
             patient_medication_names=[item.name for item in context.medications],
             patient_supplement_names=[item.name for item in context.supplements],
             approved_rule_pair_keys=[rule.pair_key for rule in rules],
+            approved_therapeutic_class_names=approved_therapeutic_class_names or [],
             approved_rule_status=rule_status,
             include_patient_context=bool(
                 cls._PATIENT_CONTEXT_CUE_PATTERN.search(
@@ -4289,6 +4308,20 @@ class AnswerMedicationQuestionUseCase:
             approved_rules_hash=cls._approved_rules_hash(rules),
             limit=limit,
         )
+
+    async def _approved_classes_for_interaction_overview(
+        self,
+        *,
+        query_plan: MedicationKnowledgeQueryPlan,
+    ) -> list[str]:
+        if self._therapeutic_class_repository is None or not self._is_single_entity_interaction_overview(query_plan):
+            return []
+        try:
+            return await self._therapeutic_class_repository.find_approved_class_names(
+                entity_names=query_plan.entity_names,
+            )
+        except Exception:
+            return []
 
     @classmethod
     def _is_single_entity_interaction_overview(cls, query_plan: MedicationKnowledgeQueryPlan) -> bool:
@@ -4769,18 +4802,28 @@ class AnswerMedicationQuestionUseCase:
             )
             for rule in rules
         )
-        sources.extend(
-            MedicationChatSource(
-                kind=MedicationChatSourceKind.PUBLIC_KNOWLEDGE,
-                title=chunk.metadata.title,
-                organization=chunk.metadata.provider,
-                url=chunk.metadata.source_url,
-                dataset_key="MEDICATION_KNOWLEDGE",
-                dataset_version=chunk.metadata.dataset_version,
-                vector_chunk_id=chunk.point_id,
-                source_page_number=chunk.metadata.page_start,
-                similarity_score=chunk.similarity_score,
+        # 출처 카드는 문서당 한 번만 표시하고, 원본 근거 청크 목록은 유지한다.
+        document_keys: set[tuple[str, str, str]] = set()
+        for chunk in chunks:
+            document_key = (
+                chunk.metadata.source_id,
+                chunk.metadata.document_id,
+                chunk.metadata.dataset_version,
             )
-            for chunk in chunks
-        )
+            if document_key in document_keys:
+                continue
+            document_keys.add(document_key)
+            sources.append(
+                MedicationChatSource(
+                    kind=MedicationChatSourceKind.PUBLIC_KNOWLEDGE,
+                    title=chunk.metadata.title,
+                    organization=chunk.metadata.provider,
+                    url=chunk.metadata.source_url,
+                    dataset_key="MEDICATION_KNOWLEDGE",
+                    dataset_version=chunk.metadata.dataset_version,
+                    vector_chunk_id=chunk.point_id,
+                    source_page_number=chunk.metadata.page_start,
+                    similarity_score=chunk.similarity_score,
+                )
+            )
         return sources
