@@ -10,7 +10,12 @@ interface GuidedCameraProps {
 }
 
 type ZoomRange = { min: number; max: number; step: number; value: number };
-type CameraCapabilities = MediaTrackCapabilities & { zoom?: { min: number; max: number; step?: number } };
+type CameraCapabilities = MediaTrackCapabilities & {
+  zoom?: { min: number; max: number; step?: number };
+  focusMode?: string[];
+  exposureMode?: string[];
+  whiteBalanceMode?: string[];
+};
 type CameraSettings = MediaTrackSettings & { zoom?: number };
 type StillCamera = {
   takePhoto: (settings?: { imageWidth: number; imageHeight: number }) => Promise<Blob>;
@@ -18,13 +23,47 @@ type StillCamera = {
 };
 type StillCameraConstructor = new (track: MediaStreamTrack) => StillCamera;
 
+const GUIDE_ASPECT = 4 / 3;
+// Give automatic camera controls time to settle; this is not a sharpness guarantee.
+const CAMERA_SETTLE_MS = 600;
+// Match app/services/ocr_image_input.py; keep supported photo bytes unchanged.
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MAX_IMAGE_EDGE = 10000;
+const MAX_IMAGE_PIXELS = 40_000_000;
+
+function isSupportedSize(width: number, height: number) {
+  return width > 0 && height > 0 && width <= MAX_IMAGE_EDGE && height <= MAX_IMAGE_EDGE
+    && width * height <= MAX_IMAGE_PIXELS;
+}
+
+async function isSupportedPhoto(photo: Blob) {
+  if (!photo.size || photo.size > MAX_UPLOAD_BYTES || !['image/jpeg', 'image/png'].includes(photo.type)) return false;
+  const url = URL.createObjectURL(photo);
+  const image = new Image();
+  try {
+    return await new Promise<boolean>((resolve) => {
+      image.onload = () => resolve(isSupportedSize(image.naturalWidth, image.naturalHeight));
+      image.onerror = () => resolve(false);
+      image.src = url;
+    });
+  } finally {
+    image.onload = null;
+    image.onerror = null;
+    image.src = '';
+    URL.revokeObjectURL(url);
+  }
+}
+
 export function GuidedCamera({ onCapture, onClose, onNativeCamera, onGallery }: GuidedCameraProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const trackRef = useRef<MediaStreamTrack | null>(null);
   const capturePendingRef = useRef(false);
   const activeRef = useRef(false);
+  const settleTimerRef = useRef<number | undefined>(undefined);
   const displayRef = useRef({ fullscreen: false, locked: false });
   const [ready, setReady] = useState(false);
+  const [settling, setSettling] = useState(true);
+  const [lowPreviewResolution, setLowPreviewResolution] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [error, setError] = useState('');
   const [landscapeRequested, setLandscapeRequested] = useState(false);
@@ -34,6 +73,15 @@ export function GuidedCamera({ onCapture, onClose, onNativeCamera, onGallery }: 
   const [zooming, setZooming] = useState(false);
   const [zoomHint, setZoomHint] = useState('');
   const [videoAspect, setVideoAspect] = useState(4 / 3);
+
+  function settleCamera() {
+    window.clearTimeout(settleTimerRef.current);
+    setSettling(true);
+    settleTimerRef.current = window.setTimeout(() => {
+      settleTimerRef.current = undefined;
+      if (activeRef.current) setSettling(false);
+    }, CAMERA_SETTLE_MS);
+  }
 
   async function changeZoom(value: number) {
     const track = trackRef.current;
@@ -46,6 +94,7 @@ export function GuidedCamera({ onCapture, onClose, onNativeCamera, onGallery }: 
       const actual = (track.getSettings() as CameraSettings).zoom ?? next;
       setZoom({ ...zoom, value: actual });
       setZoomHint('');
+      settleCamera();
     } catch {
       if (activeRef.current) setZoomHint('배율을 바꾸지 못했어요. 기본 카메라에서 조절해주세요.');
     } finally {
@@ -114,14 +163,25 @@ export function GuidedCamera({ onCapture, onClose, onNativeCamera, onGallery }: 
         const track = opened.getVideoTracks()[0];
         trackRef.current = track ?? null;
         try {
-          const range = (track?.getCapabilities?.() as CameraCapabilities | undefined)?.zoom;
+          const capabilities = track?.getCapabilities?.() as CameraCapabilities | undefined;
+          const range = capabilities?.zoom;
           if (range && Number.isFinite(range.min) && Number.isFinite(range.max) && range.min > 0 && range.max > range.min) {
             setZoom({
               min: range.min, max: range.max, step: range.step && range.step > 0 ? range.step : 0.1,
               value: (track.getSettings() as CameraSettings).zoom ?? range.min,
             });
           }
+          // Request only advertised modes, independently: one rejected control must not disable others.
+          for (const mode of ['focusMode', 'exposureMode', 'whiteBalanceMode'] as const) {
+            if (cancelled) return;
+            if (capabilities?.[mode]?.includes('continuous')) {
+              try {
+                await track.applyConstraints({ advanced: [{ [mode]: 'continuous' } as MediaTrackConstraintSet] });
+              } catch { /* Keep the device default when an optional control is rejected. */ }
+            }
+          }
         } catch { /* Camera controls are optional; the live stream remains usable. */ }
+        if (cancelled) return;
         const video = videoRef.current;
         if (!video) return;
         video.srcObject = opened;
@@ -144,6 +204,7 @@ export function GuidedCamera({ onCapture, onClose, onNativeCamera, onGallery }: 
     return () => {
       cancelled = true;
       activeRef.current = false;
+      window.clearTimeout(settleTimerRef.current);
       trackRef.current = null;
       stream?.getTracks().forEach((track) => track.stop());
       releaseDisplay();
@@ -153,7 +214,7 @@ export function GuidedCamera({ onCapture, onClose, onNativeCamera, onGallery }: 
 
   async function capturePhoto() {
     const video = videoRef.current;
-    if (!video || !ready || capturePendingRef.current || zooming || !video.videoWidth || !video.videoHeight) return;
+    if (!video || !ready || settling || capturePendingRef.current || zooming || !video.videoWidth || !video.videoHeight) return;
     capturePendingRef.current = true;
     setCapturing(true);
     try {
@@ -168,31 +229,46 @@ export function GuidedCamera({ onCapture, onClose, onNativeCamera, onGallery }: 
             const capabilities = await camera.getPhotoCapabilities?.();
             const width = capabilities?.imageWidth.max ?? 0;
             const height = capabilities?.imageHeight.max ?? 0;
-            if (width > 0 && height > 0) {
-              const scale = Math.min(1, 10000 / Math.max(width, height), Math.sqrt(40_000_000 / (width * height)));
+            if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+              const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(width, height), Math.sqrt(MAX_IMAGE_PIXELS / (width * height)));
               settings = { imageWidth: Math.floor(width * scale), imageHeight: Math.floor(height * scale) };
             }
           } catch { /* Default photo settings are still usable. */ }
           if (!activeRef.current) return;
-          const photo = await camera.takePhoto(settings);
+          let photo: Blob;
+          try {
+            photo = await camera.takePhoto(settings);
+          } catch (cause) {
+            if (!settings || !activeRef.current) throw cause;
+            // Some devices reject a requested size but still support a full-quality default exposure.
+            photo = await camera.takePhoto();
+          }
           if (!activeRef.current) return;
-          if (photo.size && (photo.type === 'image/jpeg' || photo.type === 'image/png')) {
+          if (await isSupportedPhoto(photo)) {
+            if (!activeRef.current) return;
             onCapture(new File([photo], `medication-${Date.now()}.${photo.type === 'image/png' ? 'png' : 'jpg'}`, { type: photo.type }));
             return;
           }
         } catch { /* Fall back to the complete native video frame when still capture is unavailable. */ }
       }
       if (!activeRef.current) return;
+      if (!isSupportedSize(video.videoWidth, video.videoHeight)) throw new Error('Video exceeds image limits');
       const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const context = canvas.getContext('2d');
-      if (!context) throw new Error('Canvas unavailable');
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.98));
-      if (!activeRef.current) return;
-      if (!blob) throw new Error('Photo encoding failed');
-      onCapture(new File([blob], `medication-${Date.now()}.jpg`, { type: 'image/jpeg' }));
+      try {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('Canvas unavailable');
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.98));
+        if (!activeRef.current) return;
+        if (!blob || blob.size > MAX_UPLOAD_BYTES) throw new Error('Photo encoding failed or exceeds image limits');
+        onCapture(new File([blob], `medication-${Date.now()}.jpg`, { type: 'image/jpeg' }));
+      } finally {
+        // Release the high-resolution pixel buffer immediately, including when the dialog was closed.
+        canvas.width = 0;
+        canvas.height = 0;
+      }
     } catch {
       if (activeRef.current) setError('사진을 저장하지 못했어요. 기본 카메라나 사진 선택을 이용해주세요.');
     } finally {
@@ -216,14 +292,24 @@ export function GuidedCamera({ onCapture, onClose, onNativeCamera, onGallery }: 
             </button>
           </header>
           <DialogDescription className="mt-2 text-center text-sm text-slate-300 landscape:sr-only">
-            약봉투의 네 모서리를 화면에 담아주세요. 사진 전체가 저장돼요.
+            문서의 네 모서리가 잘리지 않게 담아주세요. 사진 전체가 저장돼요.
           </DialogDescription>
 
           <div className="relative my-3 min-h-[min(24dvh,200px)] flex-1 overflow-hidden rounded-2xl bg-black landscape:col-start-1 landscape:row-start-2 landscape:my-0 landscape:min-h-0 landscape:h-full" style={{ containerType: 'size' }}>
             <video ref={videoRef} autoPlay muted playsInline aria-label="실시간 카메라"
-              onPlaying={(event) => { setReady(true); setVideoAspect(event.currentTarget.videoWidth / event.currentTarget.videoHeight || 4 / 3); }}
+              onPlaying={(event) => {
+                const video = event.currentTarget;
+                setReady(true);
+                setVideoAspect(video.videoWidth / video.videoHeight || 4 / 3);
+                setLowPreviewResolution(Math.max(video.videoWidth, video.videoHeight) < 1600);
+                settleCamera();
+              }}
               className="absolute inset-0 h-full w-full object-contain" />
-            <div data-testid="camera-capture-guide" aria-hidden style={{ width: `min(86cqw, ${86 * videoAspect}cqh)`, aspectRatio: videoAspect }}
+            <p className="pointer-events-none absolute inset-x-2 top-2 rounded-lg bg-black/75 px-3 py-2 text-center text-xs leading-relaxed text-white">네 모서리 바깥에 여백을 조금 남겨주세요.</p>
+            <div data-testid="camera-capture-guide" aria-hidden style={{
+              width: `min(${86 * Math.min(1, GUIDE_ASPECT / videoAspect)}cqw, ${86 * Math.min(videoAspect, GUIDE_ASPECT)}cqh)`,
+              aspectRatio: GUIDE_ASPECT,
+            }}
               className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-lg border border-white/30">
               <span className="absolute -left-0.5 -top-0.5 size-8 rounded-tl-lg border-l-4 border-t-4 border-white" />
               <span className="absolute -right-0.5 -top-0.5 size-8 rounded-tr-lg border-r-4 border-t-4 border-white" />
@@ -231,6 +317,11 @@ export function GuidedCamera({ onCapture, onClose, onNativeCamera, onGallery }: 
               <span className="absolute -bottom-0.5 -right-0.5 size-8 rounded-br-lg border-b-4 border-r-4 border-white" />
             </div>
             {!ready && !error && <p role="status" className="absolute inset-0 grid place-items-center px-8 text-center text-sm">카메라를 연결하고 있어요…</p>}
+            {ready && !error && <div className="pointer-events-none absolute inset-x-2 bottom-2 rounded-lg bg-black/75 px-3 py-2 text-center text-xs leading-relaxed text-white">
+              {settling ? <p role="status">잠시 흔들림 없이 기다려주세요…</p>
+                : lowPreviewResolution ? <p>미리보기 해상도가 낮아요. 선명한 원본은 기본 카메라 촬영을 권장해요.</p>
+                  : <p>글자가 선명한지 확인한 뒤 촬영해주세요.</p>}
+            </div>}
             {error && <div role="alert" className="absolute inset-0 flex items-center justify-center bg-slate-950/95 p-8 text-center text-base leading-relaxed">{error}</div>}
           </div>
 
@@ -249,13 +340,13 @@ export function GuidedCamera({ onCapture, onClose, onNativeCamera, onGallery }: 
           {rotationHint && <p role="status" className="mb-3 text-center text-sm leading-relaxed text-teal-200">{rotationHint}</p>}
           <p className="shrink-0 text-center text-sm leading-relaxed text-slate-300 landscape:hidden">밝은 곳에서 종이를 평평하게 펴고<br />글자에 초점을 맞춘 뒤 촬영해주세요.</p>
           <div className="my-4 flex shrink-0 justify-center">
-            <button type="button" aria-label="사진 촬영" disabled={!ready || capturing || zooming || Boolean(error)} onClick={() => void capturePhoto()}
+            <button type="button" aria-label="사진 촬영" disabled={!ready || settling || capturing || zooming || Boolean(error)} onClick={() => void capturePhoto()}
               className="flex size-20 items-center justify-center rounded-full border-4 border-white p-1.5 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-white disabled:opacity-40">
               <span className="flex size-full items-center justify-center rounded-full bg-primary"><Camera aria-hidden className="size-7 text-white" /></span>
             </button>
           </div>
           <div className="flex shrink-0 justify-center gap-3 landscape:flex-col landscape:gap-2">
-            <button type="button" onClick={onNativeCamera} className="min-h-12 rounded-xl bg-white/10 px-3 text-sm font-medium focus-visible:outline focus-visible:outline-white">기본 카메라로 촬영</button>
+            <button type="button" onClick={onNativeCamera} className="min-h-12 rounded-xl bg-white/10 px-3 text-sm font-medium focus-visible:outline focus-visible:outline-white">일반 카메라로 전환</button>
             <button type="button" onClick={onGallery} className="flex min-h-12 items-center gap-2 rounded-xl bg-white/10 px-3 text-sm font-medium focus-visible:outline focus-visible:outline-white"><ImageIcon aria-hidden className="size-4" />사진에서 선택</button>
           </div>
           </div>

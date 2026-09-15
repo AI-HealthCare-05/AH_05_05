@@ -183,9 +183,14 @@ def _candidate_from_line(blocks: tuple[OcrBlock, ...]) -> _Candidate | None:
     is_issuer = label_match is not None and label_match.group().startswith("발행기관")
     if is_issuer:
         # This header often continues with an unlabelled doctor and receipt columns.
-        # An issuer may also be a pharmacy: require an explicit institution suffix.
+        # An issuer may also be a pharmacy: require an institution or department suffix.
         source = _compact(source)
         institution_end = _ISSUING_INSTITUTION_END_PATTERN.search(source)
+        if institution_end is None:
+            department_source = _trim_person_after_department(source)
+            department_end = _DEPARTMENT_PATTERN.search(department_source)
+            if department_end is not None and department_end.end() == len(department_source):
+                institution_end = department_end
         if institution_end is None:
             return None
         source = source[: institution_end.end()]

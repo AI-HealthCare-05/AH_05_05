@@ -967,7 +967,25 @@ def _document_authority(group: list[_QuadCandidate]) -> _QuadCandidate:
         and 0.08 <= candidate.coverage <= 0.92
     ]
     if enclosing:
-        return max(enclosing, key=lambda candidate: candidate.coverage)
+        outer = max(enclosing, key=lambda candidate: candidate.coverage)
+        if (
+            outer.crop_suspicion
+            and outer.confidence < 0.60
+            and outer.boundary_confidence < MULTIPLE_DOCUMENT_MIN_BOUNDARY_CONFIDENCE
+        ):
+            # Textured background can form a larger, weak frame-touching contour.
+            # Prefer a well-supported full sheet, never a small receipt panel.
+            complete = [
+                candidate
+                for candidate in enclosing
+                if not candidate.crop_suspicion
+                and candidate.coverage >= MIN_SAFE_PERSPECTIVE_COVERAGE
+                and candidate.confidence >= 0.80
+                and candidate.boundary_confidence >= MULTIPLE_DOCUMENT_MIN_BOUNDARY_CONFIDENCE
+            ]
+            if complete:
+                return max(complete, key=lambda candidate: candidate.confidence)
+        return outer
     return max(
         group,
         key=lambda candidate: (
