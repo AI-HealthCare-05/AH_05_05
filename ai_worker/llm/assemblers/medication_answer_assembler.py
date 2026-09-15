@@ -45,6 +45,7 @@ class MedicationAnswerAssembler:
         chunks: list[RetrievedKnowledgeChunk],
         interaction_question: bool,
         interaction_overview_subject: str | None = None,
+        approved_therapeutic_class_names: list[str] | None = None,
         referenced_product_heading: str | None = None,
         family_reference: bool = False,
         ingredient_family_reference: bool = False,
@@ -92,6 +93,8 @@ class MedicationAnswerAssembler:
             ) or self._public_knowledge_section(
                 chunks=chunks,
                 interaction_question=interaction_question,
+                interaction_overview_subject=interaction_overview_subject,
+                approved_therapeutic_class_names=approved_therapeutic_class_names or [],
                 ingredient_family_reference=ingredient_family_reference,
                 response_subject=response_subject,
                 adverse_reaction_question=adverse_reaction_question,
@@ -177,6 +180,8 @@ class MedicationAnswerAssembler:
         *,
         chunks: list[RetrievedKnowledgeChunk],
         interaction_question: bool,
+        interaction_overview_subject: str | None,
+        approved_therapeutic_class_names: list[str],
         ingredient_family_reference: bool,
         response_subject: str | None,
         adverse_reaction_question: bool,
@@ -184,6 +189,11 @@ class MedicationAnswerAssembler:
     ) -> str:
         public_lines = [f"- {chunk.content}" for chunk in chunks[:4]]
         if interaction_question:
+            public_lines = MedicationAnswerAssembler._interaction_evidence_lines(
+                chunks=chunks[:4],
+                overview_subject=interaction_overview_subject,
+                approved_class_names=approved_therapeutic_class_names,
+            )
             return "검색된 상호작용 연구 근거\n" + "\n".join(public_lines)
         adverse_case_chunks = [
             chunk for chunk in chunks if chunk.metadata.document_type is KnowledgeDocumentType.ADVERSE_CASE_REPORT
@@ -229,6 +239,29 @@ class MedicationAnswerAssembler:
         if len(sections) == 1:
             sections.append("✉️ **안내사항**\n" + "\n".join(public_lines))
         return "\n\n".join(sections)
+
+    @staticmethod
+    def _interaction_evidence_lines(
+        *,
+        chunks: list[RetrievedKnowledgeChunk],
+        overview_subject: str | None,
+        approved_class_names: list[str],
+    ) -> list[str]:
+        subject = re.sub(r"\s+", "", overview_subject or "").casefold()
+        lines = []
+        for chunk in chunks:
+            content = re.sub(r"\s+", "", chunk.content).casefold()
+            class_name = next(
+                (
+                    name
+                    for name in approved_class_names
+                    if subject not in content and re.sub(r"\s+", "", name).casefold() in content
+                ),
+                None,
+            )
+            prefix = f"[약물 계열 수준 근거: {class_name}] " if class_name else ""
+            lines.append(f"- {prefix}{chunk.content}")
+        return lines
 
     @staticmethod
     def _named_functional_ingredient_sections(
@@ -290,7 +323,7 @@ class MedicationAnswerAssembler:
     ) -> str:
         """이상사례 문서를 질문용 짧은 보고서 구조로 재배열한다."""
 
-        sections = ["🩻 **부작용 보고서**"]
+        sections = ["🩻 **부작용 리포트**"]
         section_definitions = (
             (
                 "**이상사례**",
@@ -298,7 +331,7 @@ class MedicationAnswerAssembler:
                 2,
             ),
             (
-                "**상세 사항**",
+                "**추가설명**",
                 {
                     KnowledgeSectionType.CASE_SUMMARY,
                     KnowledgeSectionType.ASSESSMENT,

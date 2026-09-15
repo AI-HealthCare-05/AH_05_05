@@ -65,6 +65,44 @@ def test_overview_groups_drugs_and_supplements_without_contradictory_missing_not
     assert "확인하지 못한 조합" not in answer
 
 
+def test_assembler_labels_approved_class_evidence_as_class_level() -> None:
+    chunk = RetrievedKnowledgeChunk(
+        point_id="omega-3-interaction",
+        chunk_id="h" * 64,
+        content="경구제를 항응고제와 함께 투여하면 작용이 증가되어 부작용이 나타날 수 있다.",
+        embedding_text="오메가-3 항응고제 상호작용",
+        token_count=30,
+        similarity_score=0.9,
+        metadata=KnowledgeChunkMetadata(
+            source_id="kpicia",
+            document_id="omega-3-guide",
+            title="오메가-3",
+            provider="약학정보원",
+            access_scope=KnowledgeAccessScope.PUBLIC,
+            document_type=KnowledgeDocumentType.DRUG_ENCYCLOPEDIA,
+            dataset_version="knowledge-full-v17",
+            drug_names=["오메가-3"],
+            section_type=KnowledgeSectionType.INTERACTION,
+            page_start=4,
+            page_end=4,
+            chunk_index=0,
+            content_hash="h" * 64,
+        ),
+    )
+
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=[],
+        chunks=[chunk],
+        interaction_question=True,
+        interaction_overview_subject="와파린",
+        approved_therapeutic_class_names=["항응고제"],
+    )
+
+    assert "[약물 계열 수준 근거: 항응고제]" in answer
+
+
 def build_guide(**updates: str) -> MedicationGuideFact:
     values = {
         "medication_guide_id": 12,
@@ -614,9 +652,9 @@ def test_assemble_groups_adverse_case_report_into_event_and_detail_sections() ->
         adverse_reaction_question=True,
     )
 
-    assert answer.startswith("🩻 **부작용 보고서**")
+    assert answer.startswith("🩻 **부작용 리포트**")
     assert "**이상사례**\n- 독사조신 복용 뒤 심한 어지러움이 보고됐습니다." in answer
-    assert "**상세 사항**\n- 증상 발생 시점과 함께 복용한 약을 검토했습니다." in answer
+    assert "**추가설명**\n- 증상 발생 시점과 함께 복용한 약을 검토했습니다." in answer
     assert "공공자료 추가 설명" not in answer
 
 

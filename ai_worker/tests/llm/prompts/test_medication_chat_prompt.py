@@ -248,8 +248,8 @@ def test_build_messages_keeps_history_for_confirmed_session_reference() -> None:
 def test_system_prompt_requires_limited_markdown_product_answer() -> None:
     assert "✅ **효능**" in SYSTEM_PROMPT
     assert "🚨 **이상반응**" in SYSTEM_PROMPT
-    assert "`- ` 목록" in SYSTEM_PROMPT
-    assert "초안에 있는 이름만 독립한 굵은 줄" in SYSTEM_PROMPT
+    assert "`- ` bullet" in SYSTEM_PROMPT
+    assert "제품·성분명은 초안의 이름을 굵게 표시" in SYSTEM_PROMPT
     assert "값이 없는 항목은 출력하지" in SYSTEM_PROMPT
     assert "질문과 직접 관계있는 섹션" in SYSTEM_PROMPT
     assert "각 섹션은 최대 5개 bullet" in SYSTEM_PROMPT
@@ -277,7 +277,7 @@ def test_system_prompt_uses_v8_six_element_contract_and_private_checklist() -> N
 
 
 def test_system_prompt_forbids_repeating_unverified_interaction_notice() -> None:
-    assert "확인하지 못한 조합은 한 번만 표시" in SYSTEM_PROMPT
+    assert "그 밖의 미확인 조합 안내도 한 번만 표시" in SYSTEM_PROMPT
 
 
 def test_system_prompt_preserves_merged_answer_constraints() -> None:
@@ -288,7 +288,7 @@ def test_system_prompt_preserves_merged_answer_constraints() -> None:
 
 
 def test_system_prompt_limits_each_requested_section_to_short_bullets() -> None:
-    assert "각 bullet은 한 가지 핵심만 10어절 이내" in SYSTEM_PROMPT
+    assert "각 bullet은 한 핵심을 10어절 이내 단문" in SYSTEM_PROMPT
     assert "각 섹션은 최대 5개 bullet" in SYSTEM_PROMPT
 
 
@@ -484,9 +484,9 @@ def test_build_messages_keeps_requested_dosage_in_draft() -> None:
 
 def test_system_prompt_limits_interaction_answer_to_matching_evidence() -> None:
     assert "검증된 evidence claims" in SYSTEM_PROMPT
-    assert "의료 사실·수치·행동 지침은 초안 또는 검증된 claim 범위" in SYSTEM_PROMPT
+    assert "의료 사실·수치·행동·적용 조건은 초안과 검증된 claim 범위" in SYSTEM_PROMPT
 
 
 def test_system_prompt_distinguishes_product_and_ingredient_family_evidence() -> None:
-    assert "서버가 제공한 입력과 후보를 사실의 경계" in SYSTEM_PROMPT
+    assert "서버 입력·후보·근거·규칙·초안의 사실 범위를 지키세요" in SYSTEM_PROMPT
     assert "입력에 직접 근거가 없는 의료 사실은 확정하지" in SYSTEM_PROMPT
