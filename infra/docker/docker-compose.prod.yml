@@ -81,6 +81,7 @@ services:
     volumes:
       - static_volume:/app/templates
       - media_volume:/app/media
+      - ./uploads/badges:/app/app/static/media/badges
     tmpfs:
       - /run/ocr-images:size=1m,noexec,nosuid
       - /run/ocr-runtime:size=1m,noexec,nosuid
@@ -135,6 +136,7 @@ services:
     image: nginx:latest
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - ./frontend/dist:/usr/share/nginx/html:ro
       - static_volume:/vol/web/static
       - media_volume:/vol/web/media
       - certbot-conf:/etc/letsencrypt
