@@ -291,6 +291,8 @@ export function ChatPage({
   }
 
   function handleSend() {
+    if (composerDisabled || !draft.trim()) return;
+    composerRef.current?.focus({ preventScroll: true });
     void sendMessage(draft);
   }
 
@@ -599,7 +601,7 @@ export function ChatPage({
             aria-label="질문 입력"
             rows={1}
             value={draft}
-            disabled={composerDisabled}
+            disabled={historyLoading || view === 'loading'}
             onChange={(event) => setDraft(event.target.value)}
             onCompositionStart={() => {
               composerIsComposingRef.current = true;
@@ -618,7 +620,7 @@ export function ChatPage({
               event.preventDefault();
               handleSend();
             }}
-            placeholder={composerDisabled ? '답변을 기다리는 중이에요' : '궁금한 것을 입력하세요'}
+            placeholder={chatRequestPending || pending ? '다음 질문을 입력하세요' : '궁금한 것을 입력하세요'}
             className="rx-input h-control min-h-control min-w-0 flex-1 resize-none break-words rounded-input border border-input bg-card px-3.5 py-3 text-[length:var(--text-control)] text-foreground placeholder:text-tertiary-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted-bg disabled:text-disabled-foreground"
           />
           <Button
