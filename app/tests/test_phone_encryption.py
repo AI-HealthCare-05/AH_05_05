@@ -1,6 +1,7 @@
 import importlib
 
 import pytest
+from cryptography.fernet import Fernet
 
 TEST_PHONE_ENCRYPTION_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
@@ -45,3 +46,11 @@ def test_optional_phone_helpers_preserve_none():
 
     assert module.encrypt_phone_number(None, key=TEST_PHONE_ENCRYPTION_KEY) is None
     assert module.decrypt_phone_number(None, key=TEST_PHONE_ENCRYPTION_KEY) is None
+
+
+def test_phone_decryption_rejects_ciphertext_created_with_another_key():
+    module = _phone_encryption_module()
+    ciphertext = Fernet(Fernet.generate_key()).encrypt(b"01012345678").decode()
+
+    with pytest.raises(module.PhoneDecryptionError):
+        module.decrypt_phone_number(ciphertext, key=TEST_PHONE_ENCRYPTION_KEY)
