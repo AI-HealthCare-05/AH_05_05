@@ -40,6 +40,7 @@ class MedicationEvidenceCoverageEvaluator:
         guide_lookup: MedicationGuideLookup,
         rules: list[InteractionRuleFact],
         chunks: list[RetrievedKnowledgeChunk],
+        approved_therapeutic_class_names: list[str] | None = None,
     ) -> MedicationEvidenceCoverage:
         requested = [section for section in self._SUPPORTED_SECTIONS if section in query_plan.section_types]
         covered = self._covered_non_interaction_sections(
@@ -52,7 +53,36 @@ class MedicationEvidenceCoverageEvaluator:
             rules=rules,
             chunks=chunks,
         )
-        if KnowledgeSectionType.INTERACTION in requested and verified_pair_keys:
+        overview_supported = False
+        if len(query_plan.entity_names) == 1 and not query_plan.interaction_pair_keys:
+            subject = self._normalize(query_plan.entity_names[0])
+            overview_supported = (
+                any(
+                    subject in {self._normalize(rule.left_name), self._normalize(rule.right_name)}
+                    and any(self._has_value(text) for text in rule.effect_texts)
+                    for rule in rules
+                )
+                or any(
+                    chunk.metadata.section_type == KnowledgeSectionType.INTERACTION
+                    and subject
+                    in {
+                        self._normalize(name) for name in [*chunk.metadata.drug_names, *chunk.metadata.ingredient_names]
+                    }
+                    and subject in self._normalize(chunk.content)
+                    for chunk in chunks
+                )
+                or any(
+                    chunk.metadata.document_type.value == "DRUG_ENCYCLOPEDIA"
+                    and self._is_legacy_interaction_chunk(chunk)
+                    and any(
+                        self._normalize(class_name) in self._normalize(chunk.content)
+                        for class_name in approved_therapeutic_class_names or []
+                    )
+                    and self._has_value(chunk.content)
+                    for chunk in chunks
+                )
+            )
+        if KnowledgeSectionType.INTERACTION in requested and (verified_pair_keys or overview_supported):
             covered.append(KnowledgeSectionType.INTERACTION)
 
         return MedicationEvidenceCoverage(
@@ -60,6 +90,13 @@ class MedicationEvidenceCoverageEvaluator:
             covered_section_types=covered,
             missing_section_types=[section for section in requested if section not in covered],
             verified_interaction_pair_keys=verified_pair_keys,
+        )
+
+    @classmethod
+    def _is_legacy_interaction_chunk(cls, chunk: RetrievedKnowledgeChunk) -> bool:
+        compact_content = cls._normalize(chunk.content)
+        return compact_content.startswith("상호작용") and any(
+            marker in compact_content for marker in ("함께", "병용", "투여", "복용")
         )
 
     def _covered_non_interaction_sections(

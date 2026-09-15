@@ -192,10 +192,13 @@ class InteractionRuleRepository(Protocol):
         *,
         context: ActiveIntakeContext,
         query_entity_names: list[str] | None = None,
+        single_entity_overview: bool = False,
     ) -> list[InteractionRuleFact]: ...
 
 
 class TherapeuticClassRepository(Protocol):
+    async def find_approved_class_names(self, *, entity_names: list[str]) -> list[str]: ...
+
     async def select_active_medications(
         self,
         *,

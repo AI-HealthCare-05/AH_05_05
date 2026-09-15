@@ -21,11 +21,67 @@ from ai_worker.schemas.knowledge import (
 )
 from ai_worker.schemas.medication_search import (
     MedicationInteractionQueryPair,
+    MedicationKnowledgeQueryPlan,
     MedicationQueryEntity,
     MedicationQueryEntitySource,
     MedicationQueryEntityType,
     MedicationSearchExecutionPlan,
 )
+
+
+def test_interaction_heading_overrides_mislabelled_encyclopedia_section() -> None:
+    chunk = build_chunk(
+        document_type=KnowledgeDocumentType.DRUG_ENCYCLOPEDIA,
+        section_type=KnowledgeSectionType.ADVERSE_EVENT,
+        content="상호작용경구제를 항응고제와 함께 투여 시 작용이 증가할 수 있다.",
+    )
+    assert KnowledgeSectionType.INTERACTION in MedicationKnowledgeRetriever._effective_section_types(chunk)
+
+
+def test_approved_class_scoped_supplement_interaction_is_eligible_for_single_drug_overview() -> None:
+    chunk = build_chunk(
+        score=0.99,
+        document_type=KnowledgeDocumentType.DRUG_ENCYCLOPEDIA,
+        section_type=KnowledgeSectionType.ADVERSE_EVENT,
+        title="오메가-3",
+        content="상호작용경구제를 항응고제와 항혈소판제와 함께 투여 시 작용이 증가되어 부작용이 나타날 수 있다.",
+    ).model_copy(
+        update={
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "document_type": KnowledgeDocumentType.DRUG_ENCYCLOPEDIA,
+                    "section_type": KnowledgeSectionType.ADVERSE_EVENT,
+                    "drug_names": ["오메가-3"],
+                }
+            )
+        }
+    )
+    query_plan = MedicationKnowledgeQueryPlan(
+        original_query="와파린이랑 같이 먹으면 안되는거 알려줘",
+        expanded_query="와파린 항응고제 영양제 상호작용",
+        entity_names=["와파린"],
+        section_types=[KnowledgeSectionType.INTERACTION],
+    )
+    execution_plan = MedicationSearchExecutionPlan(
+        query_plan=query_plan,
+        approved_therapeutic_class_names=["항응고제"],
+        context_hash="a" * 64,
+        approved_rules_hash="b" * 64,
+    )
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=FakeKnowledgeStore([]),
+        dataset_version="knowledge-v17",
+    )
+
+    assert (
+        retriever._eligibility_reason(
+            chunk,
+            plan=execution_plan.query_plan,
+            approved_class_names=execution_plan.approved_therapeutic_class_names,
+        ).value
+        == "ELIGIBLE"
+    )
 
 
 class FakeEmbeddingProvider:

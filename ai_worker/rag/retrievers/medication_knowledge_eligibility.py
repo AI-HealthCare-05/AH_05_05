@@ -19,6 +19,7 @@ class MedicationKnowledgeEligibilityReason(StrEnum):
 PairTextMatcher = Callable[[MedicationKnowledgeQueryPlan, RetrievedKnowledgeChunk], bool]
 PlanMatcher = Callable[[MedicationKnowledgeQueryPlan], bool]
 CandidateMatcher = Callable[[RetrievedKnowledgeChunk, MedicationKnowledgeQueryPlan], bool]
+ApprovedClassMatcher = Callable[[RetrievedKnowledgeChunk, MedicationKnowledgeQueryPlan, list[str]], bool]
 DenseScore = Callable[[RetrievedKnowledgeChunk], float | None]
 Margin = Callable[[RetrievedKnowledgeChunk, MedicationKnowledgeQueryPlan], float]
 SectionTypes = Callable[[RetrievedKnowledgeChunk], set[KnowledgeSectionType]]
@@ -39,6 +40,7 @@ class MedicationKnowledgeEligibilityPolicy:
         matches_any_interaction_pair: CandidateMatcher,
         has_query_entities: PlanMatcher,
         matches_query_target: CandidateMatcher,
+        matches_approved_class_target: ApprovedClassMatcher,
         dense_confidence_score: DenseScore,
         eligibility_margin: Margin,
         effective_section_types: SectionTypes,
@@ -53,6 +55,7 @@ class MedicationKnowledgeEligibilityPolicy:
         self._matches_any_interaction_pair = matches_any_interaction_pair
         self._has_query_entities = has_query_entities
         self._matches_query_target = matches_query_target
+        self._matches_approved_class_target = matches_approved_class_target
         self._dense_confidence_score = dense_confidence_score
         self._eligibility_margin = eligibility_margin
         self._effective_section_types = effective_section_types
@@ -65,6 +68,7 @@ class MedicationKnowledgeEligibilityPolicy:
         result: RetrievedKnowledgeChunk,
         *,
         plan: MedicationKnowledgeQueryPlan,
+        approved_class_names: list[str] | None = None,
     ) -> MedicationKnowledgeEligibilityReason:
         if (
             plan.interaction_pair is not None
@@ -83,6 +87,7 @@ class MedicationKnowledgeEligibilityPolicy:
             and not self._requires_entity_pair_match(plan)
             and plan.interaction_pair is None
             and not self._matches_query_target(result, plan)
+            and not self._matches_approved_class_target(result, plan, approved_class_names or [])
         ):
             return MedicationKnowledgeEligibilityReason.ENTITY_MISMATCH
         if result.search_mode == KnowledgeSearchMode.BM25:

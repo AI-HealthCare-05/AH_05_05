@@ -47,9 +47,13 @@ def build_medication_chat_messages(
     payload = {
         "question": request.question,
         "history": (
-            [message.model_dump(mode="json") for message in request.history]
-            if request.session_reference.entities
-            else []
+            [message.model_dump(mode="json") for message in result.answer_context_history]
+            if result.answer_context_history
+            else (
+                [message.model_dump(mode="json") for message in request.history]
+                if request.session_reference.entities
+                else []
+            )
         ),
         "active_medication_names": (
             [item.name for item in context.medications] if show_active_medication_section else []

@@ -92,7 +92,14 @@ class ConversationResponseGenerator:
 
     @staticmethod
     def _format_answer(*, input: ConversationResponseInput, body: str) -> str:
-        normalized_body = " ".join(body.split())
+        normalized_lines: list[str] = []
+        for line in body.splitlines():
+            normalized_line = " ".join(line.split())
+            if normalized_line:
+                normalized_lines.append(normalized_line)
+            elif normalized_lines and normalized_lines[-1]:
+                normalized_lines.append("")
+        normalized_body = "\n".join(normalized_lines).strip()
         if input.intent is not ConversationIntent.SPECIFIC_SYMPTOM:
             return normalized_body
 

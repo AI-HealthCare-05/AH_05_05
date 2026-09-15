@@ -151,6 +151,7 @@ class MedicationChatReasonCode(StrEnum):
     FOLLOW_UP_SCHEDULE_UNAVAILABLE = "FOLLOW_UP_SCHEDULE_UNAVAILABLE"
     MEDICATION_NOTE_SUMMARY_REQUESTED = "MEDICATION_NOTE_SUMMARY_REQUESTED"
     MEDICATION_NOTE_SUMMARY_UNAVAILABLE = "MEDICATION_NOTE_SUMMARY_UNAVAILABLE"
+    ACTIVE_INTAKE_LIST_REQUESTED = "ACTIVE_INTAKE_LIST_REQUESTED"
     SENSITIVE_REQUEST_BLOCKED = "SENSITIVE_REQUEST_BLOCKED"
     CONVERSATION_SENSITIVE_EDUCATION = "CONVERSATION_SENSITIVE_EDUCATION"
     OUT_OF_SCOPE_REDIRECTED = "OUT_OF_SCOPE_REDIRECTED"
@@ -449,6 +450,10 @@ class MedicationChatResult(BaseModel):
         exclude=True,
     )
     official_warning_texts: list[str] = Field(
+        default_factory=list,
+        exclude=True,
+    )
+    answer_context_history: list[ChatHistoryMessage] = Field(
         default_factory=list,
         exclude=True,
     )

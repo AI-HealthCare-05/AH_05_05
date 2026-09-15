@@ -49,6 +49,20 @@ def test_v8_conversation_gate_limits_note_summary_to_explicit_requests() -> None
     assert "잠 잘자려면 뭘 먹어야해?" in document.system
 
 
+def test_v8_conversation_gate_routes_registered_lists_and_symptom_medicine_questions() -> None:
+    prompt_assets = _prompt_assets_module()
+
+    document = prompt_assets.load_prompt_chain_stage(
+        prompt_assets.MedicationPromptStage.CONVERSATION_GATE,
+    )
+
+    assert "ACTIVE_MEDICATION_LIST" in document.system
+    assert "ACTIVE_SUPPLEMENT_LIST" in document.system
+    assert "MEDICATION_GUIDE_FOLLOW_UP" in document.system
+    assert "SYMPTOM_MEDICATION_GUIDANCE" in document.system
+    assert "symptom_context" in document.compiled_system
+
+
 def test_v8_answer_generation_preserves_functional_goal_ingredient_lists() -> None:
     prompt_assets = _prompt_assets_module()
 
