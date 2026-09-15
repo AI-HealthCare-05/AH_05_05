@@ -336,6 +336,7 @@ class MedicationSearchExecutionPlan(BaseModel):
     patient_medication_names: list[str] = Field(default_factory=list)
     patient_supplement_names: list[str] = Field(default_factory=list)
     approved_rule_pair_keys: list[str] = Field(default_factory=list)
+    approved_therapeutic_class_names: list[str] = Field(default_factory=list)
     approved_rule_status: InteractionRuleLookupStatus = InteractionRuleLookupStatus.NO_APPROVED_RULE
     include_patient_context: bool = False
     context_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -346,6 +347,7 @@ class MedicationSearchExecutionPlan(BaseModel):
         "patient_medication_names",
         "patient_supplement_names",
         "approved_rule_pair_keys",
+        "approved_therapeutic_class_names",
     )
     @classmethod
     def normalize_source_values(cls, values: list[str]) -> list[str]:

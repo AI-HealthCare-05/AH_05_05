@@ -83,6 +83,25 @@ async def test_casual_response_never_exposes_active_medications() -> None:
     assert "리바록사반" not in answer
 
 
+async def test_conversation_response_preserves_section_and_bullet_layout() -> None:
+    generator = ConversationResponseGenerator(
+        client=StaticConversationResponseClient(
+            ConversationResponsePayload(
+                answer="안녕하세요.\n\n✅ **안내사항**\n- 첫 번째 항목입니다.\n- 두 번째 항목입니다."
+            )
+        )
+    )
+
+    answer = await generator.generate(
+        ConversationResponseInput(
+            question="안녕",
+            intent="GREETING",
+        )
+    )
+
+    assert "✅ **안내사항**\n- 첫 번째 항목입니다.\n- 두 번째 항목입니다." in answer
+
+
 def test_specific_symptom_fallback_requests_candidate_medicine_without_exposing_active_medications() -> None:
     generator = ConversationResponseGenerator(
         client=StaticConversationResponseClient(ConversationResponsePayload(answer="사용하지 않습니다."))

@@ -44,7 +44,7 @@ class MedicationKnowledgeRetriever:
     )
     _LEGACY_SECTION_HEADING = re.compile(
         r"(?P<boundary>\A|(?:\r?\n){2,}|[.!?]\s+)"
-        r"(?P<heading>효능[·․.]효과|용법(?:[·․.]용량)?|경고|금기|주의사항|부작용|이상반응)"
+        r"(?P<heading>효능[·․.]효과|용법(?:[·․.]용량)?|경고|금기|주의사항|부작용|이상반응|상호작용)"
         r"(?=\S)",
     )
     _EXACT_ENTITY_BONUS = 0.12
@@ -98,6 +98,7 @@ class MedicationKnowledgeRetriever:
                 result,
                 plan=plan,
             ),
+            matches_approved_class_target=self._matches_approved_class_target,
             dense_confidence_score=self._dense_confidence_score,
             eligibility_margin=lambda result, plan: self._eligibility_margin(
                 result,
@@ -128,9 +129,10 @@ class MedicationKnowledgeRetriever:
             embedding_provider=embedding_provider,
             vector_store=vector_store,
             dataset_version=normalized_version,
-            eligibility_evaluator=lambda result, plan: self._eligibility_reason(
+            eligibility_evaluator=lambda result, execution_plan: self._eligibility_reason(
                 result,
-                plan=plan,
+                plan=execution_plan.query_plan,
+                approved_class_names=execution_plan.approved_therapeutic_class_names,
             ).value,
             section_coverage_evaluator=lambda results, plan: self._has_requested_section_coverage(
                 results,
@@ -251,11 +253,32 @@ class MedicationKnowledgeRetriever:
         result: RetrievedKnowledgeChunk,
         *,
         plan: MedicationKnowledgeQueryPlan,
+        approved_class_names: list[str] | None = None,
     ) -> _EligibilityReason:
         return self._eligibility_policy.evaluate(
             result,
             plan=plan,
+            approved_class_names=approved_class_names,
         )
+
+    @classmethod
+    def _matches_approved_class_target(
+        cls,
+        result: RetrievedKnowledgeChunk,
+        plan: MedicationKnowledgeQueryPlan,
+        approved_class_names: list[str],
+    ) -> bool:
+        if not (
+            len(plan.entity_names) == 1
+            and KnowledgeSectionType.INTERACTION in plan.section_types
+            and not plan.interaction_pairs
+            and not plan.interaction_pair_keys
+            and approved_class_names
+            and KnowledgeSectionType.INTERACTION in cls._effective_section_types(result)
+        ):
+            return False
+        text = cls._normalize_name(f"{result.metadata.title} {result.content}")
+        return any(cls._normalize_name(name) in text for name in approved_class_names)
 
     @staticmethod
     def _declared_pair_matches(
@@ -423,6 +446,8 @@ class MedicationKnowledgeRetriever:
                 section_types.add(KnowledgeSectionType.DAILY_INTAKE)
             elif heading in {"부작용", "이상반응"}:
                 section_types.add(KnowledgeSectionType.ADVERSE_EVENT)
+            elif heading == "상호작용":
+                section_types.add(KnowledgeSectionType.INTERACTION)
             else:
                 section_types.add(KnowledgeSectionType.CAUTION)
 

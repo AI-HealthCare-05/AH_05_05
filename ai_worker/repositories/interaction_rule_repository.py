@@ -25,6 +25,7 @@ class DbInteractionRuleRepository:
         context: ActiveIntakeContext,
         query_entity_names: list[str] | None = None,
         include_query_neighbors: bool = False,
+        single_entity_overview: bool = False,
     ) -> list[InteractionRuleFact]:
         query_entity_ids = await self._resolve_query_entity_ids(query_entity_names or [])
         if include_query_neighbors:
@@ -46,6 +47,10 @@ class DbInteractionRuleRepository:
             )
             query_entity_ids.update(await self._resolve_active_entity_ids(target_context))
             if not query_entity_ids:
+                return []
+            pair_filter = Q(left_entity_id__in=query_entity_ids) | Q(right_entity_id__in=query_entity_ids)
+        elif single_entity_overview:
+            if len(query_entity_ids) != 1:
                 return []
             pair_filter = Q(left_entity_id__in=query_entity_ids) | Q(right_entity_id__in=query_entity_ids)
         else:

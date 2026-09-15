@@ -20,6 +20,7 @@ _DATE_PATTERN = re.compile(
     r"(?:(?P<separator>[./-])(?P<month>\d{1,2})(?P=separator)(?P<day>\d{1,2})|"
     r"(?P<compact_month>\d{2})(?P<compact_day>\d{2}))$"
 )
+_DATE_LEADING_MARKERS_PATTERN = re.compile(r"^[\s:：·•・ㆍᆞ･.]+")
 _STRENGTH_PATTERN = re.compile(
     r"(?<![\d./])\d+(?:\.\d+)?(?:/\d+(?:\.\d+)?)?"
     r"\s*(?:mg|g|mcg|ug|μg|ml|mℓ|밀리그램|그램|마이크로그램|%)(?!\w)",
@@ -208,7 +209,7 @@ def seoul_today() -> date:
 def parse_dispensed_date(text: str, *, today: date) -> str | None:
     """Normalize a printed date and enforce the two-digit future boundary."""
 
-    match = _DATE_PATTERN.fullmatch(_normalize_text(text))
+    match = _DATE_PATTERN.fullmatch(_DATE_LEADING_MARKERS_PATTERN.sub("", _normalize_text(text)))
     if match is None:
         return None
     printed_year = match.group("year")

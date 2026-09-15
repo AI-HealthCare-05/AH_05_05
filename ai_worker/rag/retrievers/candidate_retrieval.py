@@ -18,6 +18,7 @@ from ai_worker.rag.errors import (
 from ai_worker.schemas.knowledge import (
     KnowledgeSearchQuery,
     KnowledgeSearchTier,
+    KnowledgeSectionType,
     RetrievedKnowledgeChunk,
 )
 from ai_worker.schemas.medication_search import (
@@ -62,7 +63,7 @@ class MedicationKnowledgeSearchStore(Protocol):
     ) -> list[RetrievedKnowledgeChunk]: ...
 
 
-EligibilityEvaluator = Callable[[RetrievedKnowledgeChunk, MedicationKnowledgeQueryPlan], str]
+EligibilityEvaluator = Callable[[RetrievedKnowledgeChunk, MedicationSearchExecutionPlan], str]
 SectionCoverageEvaluator = Callable[[list[RetrievedKnowledgeChunk], MedicationKnowledgeQueryPlan], bool]
 
 
@@ -92,6 +93,21 @@ class MedicationKnowledgeCandidateRetriever:
         plan = execution_plan.query_plan
         candidate_limit = min(50, max(20, execution_plan.limit * 4))
         queries = list(dict.fromkeys([plan.expanded_query, *plan.alternate_queries]))
+        if self._is_interaction_overview(execution_plan):
+            subject = plan.entity_names[0]
+            queries = list(
+                dict.fromkeys(
+                    [
+                        *queries,
+                        f"{subject} 영양제 비타민 미네랄 상호작용",
+                        f"{subject} 음식 상호작용",
+                        *(
+                            f"{subject} {class_name} 영양제 음식 상호작용"
+                            for class_name in execution_plan.approved_therapeutic_class_names
+                        ),
+                    ]
+                )
+            )
         embedding_queries = [
             self._embedding_query_text(
                 query=query,
@@ -158,7 +174,7 @@ class MedicationKnowledgeCandidateRetriever:
                 for batch in tier_batches
                 for raw_rank, result in enumerate(batch, start=1)
             )
-            tier_reasons = [self._eligibility_evaluator(result, plan) for result in tier_results]
+            tier_reasons = [self._eligibility_evaluator(result, execution_plan) for result in tier_results]
             tier_eligible = [
                 result for result, reason in zip(tier_results, tier_reasons, strict=True) if reason == "ELIGIBLE"
             ]
@@ -172,11 +188,17 @@ class MedicationKnowledgeCandidateRetriever:
             if tier_eligible:
                 selected_search_tier = tier.name
             has_requested_section_coverage = self._section_coverage_evaluator(eligible, plan)
-            if tier.name == KnowledgeSearchTier.EXACT_PAIR:
+            is_interaction_overview = execution_plan.query_plan.interaction_overview or self._is_interaction_overview(
+                execution_plan
+            )
+            if tier.name == KnowledgeSearchTier.EXACT_PAIR and not is_interaction_overview:
                 has_requested_section_coverage = (
                     has_requested_section_coverage and self._has_complete_exact_pair_coverage(eligible, plan=plan)
                 )
-            if tier_eligible and (tier.name == KnowledgeSearchTier.SEMANTIC or has_requested_section_coverage):
+            if tier_eligible and (
+                tier.name == KnowledgeSearchTier.SEMANTIC
+                or (not is_interaction_overview and has_requested_section_coverage)
+            ):
                 break
 
         return MedicationKnowledgeCandidateSearchResult(
@@ -223,11 +245,24 @@ class MedicationKnowledgeCandidateRetriever:
         )
 
     @staticmethod
+    def _is_interaction_overview(execution_plan: MedicationSearchExecutionPlan) -> bool:
+        plan = execution_plan.query_plan
+        return (
+            len(plan.entity_names) == 1
+            and KnowledgeSectionType.INTERACTION in plan.section_types
+            and not plan.interaction_pair_keys
+            and not execution_plan.include_patient_context
+        )
+
+    @staticmethod
     def search_tiers(
         execution_plan: MedicationSearchExecutionPlan,
     ) -> list[MedicationKnowledgeSearchTier]:
         tiers: list[MedicationKnowledgeSearchTier] = []
-        if execution_plan.interaction_pair_keys and not execution_plan.query_plan.interaction_overview:
+        if execution_plan.interaction_pair_keys and not (
+            execution_plan.query_plan.interaction_overview
+            or MedicationKnowledgeCandidateRetriever._is_interaction_overview(execution_plan)
+        ):
             tiers.append(
                 MedicationKnowledgeSearchTier(
                     name=KnowledgeSearchTier.EXACT_PAIR,

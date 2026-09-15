@@ -638,13 +638,13 @@ export function OcrReviewPage() {
         <ErrorDialog
           open={timedOut}
           title="시간이 오래 걸리고 있어요"
-          message="판독이 아직 끝나지 않았어요. 그대로 기다리거나 약봉투를 다시 촬영할 수 있어요."
+          message="판독이 아직 끝나지 않았어요. 그대로 기다리거나 문서를 다시 등록할 수 있어요."
           retryLabel="계속 기다리기"
           onRetry={() => {
             setTimedOut(false);
             setPollAttempt((attempt) => attempt + 1);
           }}
-          secondaryLabel="다시 촬영"
+          secondaryLabel="문서 다시 등록"
           onSecondary={() => navigate('/document-upload', { replace: true })}
         />
       </>
@@ -661,7 +661,7 @@ export function OcrReviewPage() {
   if (unreadableDocument && !dismissedOcrFailure) {
     return (
       <PageFrame
-        title={needsPhotoRecapture ? '다시 촬영해주세요' : '약 정보를 추출하지 못했어요'}
+        title={needsPhotoRecapture ? '문서를 다시 등록해주세요' : '약 정보를 추출하지 못했어요'}
         onBack={retakePhoto}
       >
         <RegistrationProgress step={2} />
@@ -670,12 +670,12 @@ export function OcrReviewPage() {
           title={needsPhotoRecapture ? '약 정보를 추출하지 못했어요' : '추출 중 문제가 생겼어요'}
         >
           {needsPhotoRecapture
-            ? '복약안내문의 구김을 펴고 네 모서리가 모두 보이게 다시 촬영해주세요. 그림자와 빛 반사를 피하고, 글자가 선명한지 확인해주세요.'
-            : '약 정보를 추출하는 중 문제가 생겼어요. 잠시 후 다시 시도하거나 직접 입력할 수 있어요.'}
+            ? '문서의 네 모서리와 글자가 선명하게 보이는 사진으로 다시 등록해주세요. 구김, 그림자, 빛 반사가 없는지 확인해주세요.'
+            : '약 정보를 추출하는 중 문제가 생겼어요. 잠시 후 문서를 다시 등록하거나 직접 입력할 수 있어요.'}
         </Card>
         <div className="mt-auto flex flex-col gap-2 pb-4">
           <Button onClick={retakePhoto} disabled={retaking || saving}>
-            {retaking ? '취소 중...' : '다시 촬영하기'}
+            {retaking ? '취소 중...' : '문서 다시 등록'}
           </Button>
           <Button variant="secondary" onClick={() => setDismissedOcrFailure(true)}>
             직접 입력하기
@@ -687,10 +687,10 @@ export function OcrReviewPage() {
           message={
             loadError ??
             (needsPhotoRecapture
-              ? '약봉투에서 내용을 읽어내지 못했어요. 다시 촬영하거나 직접 입력할 수 있어요.'
-              : '약 정보를 추출하는 중 문제가 생겼어요. 잠시 후 다시 시도하거나 직접 입력할 수 있어요.')
+              ? '문서의 내용을 읽어내지 못했어요. 문서를 다시 등록하거나 약 정보를 직접 입력할 수 있어요.'
+              : '약 정보를 추출하는 중 문제가 생겼어요. 잠시 후 문서를 다시 등록하거나 직접 입력할 수 있어요.')
           }
-          retryLabel="다시 촬영"
+          retryLabel="문서 다시 등록"
           onRetry={retakePhoto}
           secondaryLabel="그대로 직접 입력"
           onSecondary={() => setDismissedOcrFailure(true)}
@@ -902,7 +902,7 @@ export function OcrReviewPage() {
                 {saving ? '저장 중...' : '저장하고 복약 시간 설정'}
               </Button>
               <Button variant="secondary" onClick={retakePhoto} disabled={retaking || saving}>
-                {retaking ? '취소 중...' : '다시 촬영하기'}
+                {retaking ? '취소 중...' : '문서 다시 등록'}
               </Button>
             </>
           )}
@@ -975,9 +975,9 @@ export function OcrReviewPage() {
           ocrCancelled
             ? '검토 가능한 시간이 지나 결과를 사용할 수 없어요. 약봉투를 다시 등록해주세요.'
             : loadError ??
-              '약봉투에서 내용을 읽어내지 못했어요. 다시 촬영하거나 직접 입력할 수 있어요.'
+              '문서의 내용을 읽어내지 못했어요. 문서를 다시 등록하거나 약 정보를 직접 입력할 수 있어요.'
         }
-        retryLabel="다시 촬영"
+        retryLabel="문서 다시 등록"
         onRetry={() => navigate('/document-upload', { replace: true })}
         secondaryLabel={ocrFailed ? '그대로 직접 입력' : undefined}
         onSecondary={ocrFailed ? () => setDismissedOcrFailure(true) : undefined}

@@ -59,7 +59,8 @@ class OpenAIMedicationAnswerGenerator:
     )
     _MARKDOWN_HEADING_PATTERN = re.compile(r"^\s{0,3}#{1,6}\s*")
     _SECTION_HEADER_PATTERN = re.compile(
-        r"^\s*(?P<icon>✅|⚠️|🚨|🚫|💊|💪🏻|🔁|🩻|✉️|📭|🧬|🍗)\s*\*\*(?P<title>[^*\n]+)\*\*\s*:?\s*$"
+        r"^\s*(?P<icon>✅|⚠️|🚨|🚫|💊|💪🏻|🔁|🩻|✉️|📭|🧬|🍗)\s*\*\*(?P<title>[^*\n]+)\*\*"
+        r"(?:\s+(?P<subtitle>\*\*(?:주의가 필요한 조합|참고할 상호작용|도움이 확인된 조합)\*\*))?\s*:?\s*$"
     )
     _STANDALONE_BOLD_LINE_PATTERN = re.compile(r"^\s*\*\*(?P<value>[^*\n]+)\*\*\s*$")
     _BOLD_MARKER_PATTERN = re.compile(r"\*\*(.+?)\*\*")
@@ -446,6 +447,7 @@ class OpenAIMedicationAnswerGenerator:
     ) -> str:
         """두 번째 생성도 장문이면 이상사례의 검증된 핵심만 안전하게 남긴다."""
 
+        answer = cls._normalize_adverse_report_headers(answer)
         if (
             not cls._requires_format_repair(answer)
             or not cls._is_adverse_case_report(draft_answer)
@@ -460,19 +462,32 @@ class OpenAIMedicationAnswerGenerator:
             return answer
 
         sections = [
-            "🩻 **부작용 보고서**",
+            "🩻 **부작용 리포트**",
             "**이상사례**\n- " + event,
         ]
         if detail is not None:
-            sections.append("**상세 사항**\n- " + detail)
+            sections.append("**추가설명**\n- " + detail)
         return "\n\n".join(sections)
 
     @staticmethod
-    def _is_adverse_case_report(answer: str) -> bool:
+    def _normalize_adverse_report_headers(answer: str) -> str:
+        """이전 초안도 새 리포트 제목으로 표시하되 다른 답변은 유지한다."""
+
+        aliases = {
+            "🩻 **부작용 보고서**": "🩻 **부작용 리포트**",
+            "**상세 사항**": "**추가설명**",
+        }
+        lines = answer.splitlines()
+        if not any(line.strip() in {"🩻 **부작용 보고서**", "🩻 **부작용 리포트**"} for line in lines):
+            return answer
+        return "\n".join(aliases.get(line.strip(), line) for line in lines)
+
+    @classmethod
+    def _is_adverse_case_report(cls, answer: str) -> bool:
         """초안과 생성 답변 모두가 사례 보고서 형식인지 확인한다."""
 
-        headers = {line.strip() for line in answer.splitlines()}
-        return {"🩻 **부작용 보고서**", "**이상사례**", "**상세 사항**"}.issubset(headers)
+        headers = {line.strip() for line in cls._normalize_adverse_report_headers(answer).splitlines()}
+        return {"🩻 **부작용 리포트**", "**이상사례**", "**추가설명**"}.issubset(headers)
 
     @classmethod
     def _adverse_report_lines(cls, answer: str) -> tuple[list[str], list[str]]:
@@ -484,7 +499,7 @@ class OpenAIMedicationAnswerGenerator:
             if line == "**이상사례**":
                 section = event_lines
                 continue
-            if line == "**상세 사항**":
+            if line in {"**상세 사항**", "**추가설명**"}:
                 section = detail_lines
                 continue
             if section is not None and line:
@@ -675,6 +690,7 @@ class OpenAIMedicationAnswerGenerator:
     def _to_limited_markdown(cls, answer: str) -> str:
         """답변에서는 체크 표시가 붙은 소제목 강조와 목록만 허용한다."""
 
+        answer = cls._normalize_adverse_report_headers(answer)
         normalized_lines: list[str] = []
         interaction_lines: list[str] | None = None
         for line in answer.splitlines():
@@ -686,7 +702,8 @@ class OpenAIMedicationAnswerGenerator:
             if section_header is not None:
                 icon = section_header.group("icon")
                 title = section_header.group("title").strip()
-                normalized_lines.append(f"{icon} **{title}**")
+                subtitle = section_header.group("subtitle") or ""
+                normalized_lines.append(f"{icon} **{title}** {subtitle}".rstrip())
                 if cls._INTERACTION_SECTION_TITLE in title:
                     interaction_lines = []
                 continue

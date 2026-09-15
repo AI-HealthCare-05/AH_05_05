@@ -14,13 +14,16 @@ test.beforeEach(async ({ page }) => {
 
 type CameraResponse = 'ready' | 'denied' | 'pending';
 
-async function installCamera(page: Page, response: CameraResponse) {
-  await page.addInitScript((nextResponse) => {
+async function installCamera(page: Page, response: CameraResponse, options: { zoom?: boolean; still?: 'ready' | 'failed' } = {}) {
+  await page.addInitScript(({ nextResponse, options }) => {
     const state = {
       requests: 0,
       stoppedTracks: 0,
       resolve: undefined as undefined | ((value: MediaStream) => void),
       stream: undefined as MediaStream | undefined,
+      zoomValues: [] as number[],
+      photoCalls: 0,
+      photoBlob: undefined as Blob | undefined,
     };
 
     const createTrackedStream = () => {
@@ -40,6 +43,16 @@ async function installCamera(page: Page, response: CameraResponse) {
       }
       const stream = canvas.captureStream();
       for (const track of stream.getTracks()) {
+        let zoom = 1;
+        if (options.zoom) {
+          const getSettings = track.getSettings.bind(track);
+          Object.defineProperty(track, 'getCapabilities', { value: () => ({ zoom: { min: 1, max: 4, step: 0.5 } }) });
+          Object.defineProperty(track, 'getSettings', { value: () => ({ ...getSettings(), zoom }) });
+          Object.defineProperty(track, 'applyConstraints', { value: async (constraints: { advanced: { zoom: number }[] }) => {
+            zoom = constraints.advanced[0].zoom;
+            state.zoomValues.push(zoom);
+          } });
+        }
         const originalStop = track.stop.bind(track);
         Object.defineProperty(track, 'stop', {
           configurable: true,
@@ -56,6 +69,20 @@ async function installCamera(page: Page, response: CameraResponse) {
       configurable: true,
       value: state,
     });
+    Object.defineProperty(window, 'ImageCapture', { configurable: true, value: options.still ? class {
+      async getPhotoCapabilities() { return { imageWidth: { max: 1600 }, imageHeight: { max: 1200 } }; }
+      async takePhoto() {
+        state.photoCalls += 1;
+        if (options.still === 'failed') throw new DOMException('unsupported', 'NotSupportedError');
+        const photo = document.createElement('canvas');
+        photo.width = 1600;
+        photo.height = 1200;
+        photo.getContext('2d')!.fillRect(0, 0, 1600, 1200);
+        const blob = await new Promise<Blob>((resolve) => photo.toBlob((value) => resolve(value!), 'image/png'));
+        state.photoBlob = blob;
+        return blob;
+      }
+    } : undefined });
     Object.defineProperty(navigator, 'mediaDevices', {
       configurable: true,
       value: {
@@ -75,7 +102,7 @@ async function installCamera(page: Page, response: CameraResponse) {
         },
       },
     });
-  }, response);
+  }, { nextResponse: response, options });
 }
 
 async function openDocumentUpload(page: Page) {
@@ -112,18 +139,76 @@ test('지원되는 보안 컨텍스트에서 카메라를 열어 촬영한 JPEG 
   const videoBox = await video.boundingBox();
   expect(guideBox).not.toBeNull();
   expect(videoBox).not.toBeNull();
-  const scale = Math.max(videoBox!.width / 720, videoBox!.height / 960);
-  const expectedSize = [Math.round(guideBox!.width / scale), Math.round(guideBox!.height / scale)];
+  const expectedSize = [720, 960];
   await shutter.click();
 
   const preview = page.getByRole('img', { name: '선택한 약봉투 미리보기' });
   await expect(preview).toBeVisible();
   await expect(page.getByText(/\.jpg\s*·/)).toBeVisible();
   await expect.poll(() => preview.evaluate((image) => [image.naturalWidth, image.naturalHeight])).toEqual(expectedSize);
-  expect(expectedSize[0] / expectedSize[1]).toBeCloseTo(1.5, 2);
   await page.screenshot({ path: testInfo.outputPath('landscape-capture-preview.png'), fullPage: true });
   await expect(dialog).toBeHidden();
   await expect.poll(() => page.evaluate(() => window.__cameraGuideTest.stoppedTracks)).toBe(requestedStreams);
+});
+
+test('모바일 촬영은 기본 카메라를 열고 가이드 촬영도 별도로 제공한다', async ({ page }) => {
+  await installCamera(page, 'ready');
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'maxTouchPoints', { configurable: true, value: 5 });
+    const matchMedia = window.matchMedia.bind(window);
+    window.matchMedia = (query) => {
+      const result = matchMedia(query);
+      if (query === '(pointer: coarse)') Object.defineProperty(result, 'matches', { value: true });
+      return result;
+    };
+  });
+  await openDocumentUpload(page);
+  const chooserPromise = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: '촬영하기', exact: true }).click();
+  const chooser = await chooserPromise;
+  expect(await chooser.element().getAttribute('capture')).toBe('environment');
+  expect(await page.evaluate(() => window.__cameraGuideTest.requests)).toBe(0);
+  await page.getByRole('button', { name: '가이드 보며 촬영', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '약봉투 촬영' })).toBeVisible();
+});
+
+test('지원 기기의 실제 배율을 변경하고 정지 사진 원본을 재인코딩 없이 보존한다', async ({ page }, testInfo) => {
+  await installCamera(page, 'ready', { zoom: true, still: 'ready' });
+  await openDocumentUpload(page);
+  await page.getByRole('button', { name: '가이드 보며 촬영', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '약봉투 촬영' });
+  const zoom = dialog.getByRole('slider', { name: '촬영 배율' });
+  await expect(zoom).toBeEnabled();
+  await zoom.fill('2');
+  await expect.poll(() => page.evaluate(() => window.__cameraGuideTest.zoomValues)).toEqual([2]);
+  await expect(dialog.getByText('2.0×', { exact: true })).toBeVisible();
+  const nativeButton = await dialog.getByRole('button', { name: '기본 카메라로 촬영' }).boundingBox();
+  expect(nativeButton!.y + nativeButton!.height).toBeLessThanOrEqual(812);
+  await dialog.screenshot({ path: testInfo.outputPath('camera-zoom-mobile.png') });
+  await dialog.getByRole('button', { name: '사진 촬영' }).click();
+  const preview = page.getByRole('img', { name: '선택한 약봉투 미리보기' });
+  await expect(preview).toBeVisible();
+  await expect.poll(() => preview.evaluate((image) => [image.naturalWidth, image.naturalHeight])).toEqual([1600, 1200]);
+  expect(await preview.evaluate(async (image) => {
+    const saved = await (await fetch(image.src)).blob();
+    const original = window.__cameraGuideTest.photoBlob!;
+    const originalBytes = new Uint8Array(await original.arrayBuffer());
+    return saved.type === original.type && saved.size === original.size
+      && new Uint8Array(await saved.arrayBuffer()).every((value, index) => value === originalBytes[index]);
+  })).toBe(true);
+});
+
+test('정지 사진 촬영을 지원하지 않으면 영상 전체 해상도로 저장한다', async ({ page }) => {
+  await installCamera(page, 'ready', { still: 'failed' });
+  await openDocumentUpload(page);
+  await page.getByRole('button', { name: '가이드 보며 촬영', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '약봉투 촬영' });
+  await expect(dialog.getByText('배율 조절은 기본 카메라에서 이용해주세요.')).toBeVisible();
+  await dialog.getByRole('button', { name: '사진 촬영' }).click();
+  const preview = page.getByRole('img', { name: '선택한 약봉투 미리보기' });
+  await expect(preview).toBeVisible();
+  await expect.poll(() => preview.evaluate((image) => [image.naturalWidth, image.naturalHeight])).toEqual([720, 960]);
+  expect(await page.evaluate(() => window.__cameraGuideTest.photoCalls)).toBe(1);
 });
 
 test('보안 컨텍스트가 아니면 안내 카메라 대신 기존 기본 카메라 파일 선택기를 연다', async ({ page }) => {
@@ -211,6 +296,9 @@ declare global {
       stoppedTracks: number;
       resolve?: (stream: MediaStream) => void;
       stream?: MediaStream;
+      zoomValues: number[];
+      photoCalls: number;
+      photoBlob?: Blob;
     };
   }
 }

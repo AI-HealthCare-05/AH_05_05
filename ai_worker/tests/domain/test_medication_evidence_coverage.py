@@ -25,6 +25,74 @@ from ai_worker.schemas.medication_search import (
 )
 
 
+def test_single_entity_approved_rule_covers_interaction_for_llm_rewrite() -> None:
+    plan = build_plan(KnowledgeSectionType.INTERACTION).model_copy(update={"entity_names": ["와파린"]})
+    rule = InteractionRuleFact(
+        interaction_rule_id=1,
+        pair_key="a" * 64,
+        pair_type="DRUG_DRUG",
+        left_name="와파린",
+        right_name="이그라티모드",
+        risk_level="CAUTION",
+        effect_texts=["warfarin의항응고효과증가"],
+    )
+    evaluator = MedicationEvidenceCoverageEvaluator()
+    coverage = evaluator.evaluate(query_plan=plan, guide_lookup=MedicationGuideLookup(), rules=[rule], chunks=[])
+    assert coverage.covered_section_types == [KnowledgeSectionType.INTERACTION]
+    unrelated = rule.model_copy(update={"left_name": "아스피린"})
+    assert (
+        evaluator.evaluate(
+            query_plan=plan, guide_lookup=MedicationGuideLookup(), rules=[unrelated], chunks=[]
+        ).covered_section_types
+        == []
+    )
+
+
+def test_approved_class_evidence_covers_overview_without_verifying_a_pair() -> None:
+    plan = build_plan(KnowledgeSectionType.INTERACTION).model_copy(
+        update={"original_query": "와파린 상호작용 알려줘", "entity_names": ["와파린"]}
+    )
+    chunk = build_interaction_chunk(pair_keys=[]).model_copy(
+        update={
+            "content": "상호작용경구제를 항응고제와 함께 투여 시 작용이 증가되어 부작용이 나타날 수 있다.",
+            "metadata": build_interaction_chunk(pair_keys=[]).metadata.model_copy(
+                update={
+                    "document_type": KnowledgeDocumentType.DRUG_ENCYCLOPEDIA,
+                    "section_type": KnowledgeSectionType.ADVERSE_EVENT,
+                    "drug_names": ["오메가-3"],
+                }
+            ),
+        }
+    )
+
+    coverage = MedicationEvidenceCoverageEvaluator().evaluate(
+        query_plan=plan,
+        guide_lookup=MedicationGuideLookup(),
+        rules=[],
+        chunks=[chunk],
+        approved_therapeutic_class_names=["항응고제"],
+    )
+
+    assert coverage.covered_section_types == [KnowledgeSectionType.INTERACTION]
+    assert coverage.verified_interaction_pair_keys == []
+
+
+def test_unapproved_or_unmatched_class_evidence_does_not_cover_interaction() -> None:
+    plan = build_plan(KnowledgeSectionType.INTERACTION).model_copy(
+        update={"original_query": "와파린 상호작용 알려줘", "entity_names": ["와파린"]}
+    )
+    chunk = build_interaction_chunk(pair_keys=[], content="항응고제와 함께 투여 시 주의합니다.")
+
+    coverage = MedicationEvidenceCoverageEvaluator().evaluate(
+        query_plan=plan,
+        guide_lookup=MedicationGuideLookup(),
+        rules=[],
+        chunks=[chunk],
+    )
+
+    assert coverage.covered_section_types == []
+
+
 def build_plan(
     *section_types: KnowledgeSectionType,
     pair_key: str | None = None,

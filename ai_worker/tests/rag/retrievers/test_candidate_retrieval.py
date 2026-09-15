@@ -10,7 +10,17 @@ from ai_worker.rag.retrievers import candidate_retrieval
 from ai_worker.rag.retrievers.candidate_retrieval import (
     MedicationKnowledgeCandidateRetriever,
 )
+from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_search import MedicationSearchExecutionPlan
+
+
+def test_overview_does_not_limit_search_to_existing_drug_rule_pairs() -> None:
+    plan = build_execution_plan()
+    query = plan.query_plan.model_copy(
+        update={"entity_names": ["와파린"], "section_types": [KnowledgeSectionType.INTERACTION]}
+    )
+    plan = plan.model_copy(update={"query_plan": query, "approved_rule_pair_keys": ["c" * 64]})
+    assert all(tier.name.value != "EXACT_PAIR" for tier in MedicationKnowledgeCandidateRetriever.search_tiers(plan))
 
 
 class FakeEmbeddingProvider:
@@ -20,6 +30,29 @@ class FakeEmbeddingProvider:
     async def embed_query(self, query: str) -> list[float]:
         self.queries.append(query)
         return [0.6, 0.8]
+
+
+@pytest.mark.asyncio
+async def test_overview_continues_semantic_search_after_entity_coverage() -> None:
+    class PopulatedStore(FakeKnowledgeStore):
+        async def search(self, *, query_vector, search_query):
+            self.queries.append(search_query)
+            return [object()]
+
+    plan = build_execution_plan()
+    query = plan.query_plan.model_copy(
+        update={"entity_names": ["와파린"], "section_types": [KnowledgeSectionType.INTERACTION]}
+    )
+    store = PopulatedStore()
+    retriever = MedicationKnowledgeCandidateRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v17",
+        eligibility_evaluator=lambda *_: "ELIGIBLE",
+        section_coverage_evaluator=lambda *_: True,
+    )
+    result = await retriever.retrieve(execution_plan=plan.model_copy(update={"query_plan": query}))
+    assert [tier.value for tier in result.attempted_search_tiers] == ["ENTITY", "SEMANTIC"]
 
 
 class FakeKnowledgeStore:
@@ -129,6 +162,27 @@ async def test_retrieve_embeds_query_with_resolved_entities_and_requested_sectio
     assert embedding_provider.queries[0].startswith("[질문] 마그네슘은 왜 먹나요?")
     assert "[대상] 마그네슘" in embedding_provider.queries[0]
     assert "[요청 섹션] FUNCTION" in embedding_provider.queries[0]
+
+
+@pytest.mark.asyncio
+async def test_interaction_overview_embeds_query_for_approved_therapeutic_class() -> None:
+    embedding_provider = FakeEmbeddingProvider()
+    retriever = MedicationKnowledgeCandidateRetriever(
+        embedding_provider=embedding_provider,
+        vector_store=FakeKnowledgeStore(),
+        dataset_version="knowledge-full-v17",
+        eligibility_evaluator=lambda _result, _plan: "ELIGIBLE",
+        section_coverage_evaluator=lambda _results, _plan: True,
+    )
+    plan = build_execution_plan()
+    query_plan = plan.query_plan.model_copy(
+        update={"entity_names": ["와파린"], "section_types": [KnowledgeSectionType.INTERACTION]}
+    )
+    plan = plan.model_copy(update={"query_plan": query_plan, "approved_therapeutic_class_names": ["항응고제"]})
+
+    await retriever.retrieve(execution_plan=plan)
+
+    assert any("항응고제" in query and "상호작용" in query for query in embedding_provider.queries)
 
 
 @pytest.mark.asyncio

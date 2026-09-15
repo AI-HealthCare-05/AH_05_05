@@ -345,7 +345,7 @@ test('전처리본 수신 실패는 사진 삭제 확인을 보내지 않는다'
 });
 
 for (const width of [375, 1280]) {
-  test(`OCR 재촬영은 기존 작업 취소 완료 후 촬영 화면으로 이동한다 (${width})`, async ({ page }, testInfo) => {
+  test(`OCR 문서 재등록은 기존 작업 취소 완료 후 등록 화면으로 이동한다 (${width})`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await authenticate(page);
     await page.route(`**${OCR_URL}`, (route) => fulfillJson(route, readyOcrResult));
@@ -360,7 +360,7 @@ for (const width of [375, 1280]) {
       await route.fulfill({ status: 204 });
     });
     await page.goto(`/dev/ocr-review?batchId=${DOCUMENT_ID}`);
-    await page.getByRole('button', { name: '다시 촬영하기', exact: true }).click();
+    await page.getByRole('button', { name: '문서 다시 등록', exact: true }).click();
     await expect.poll(() => cancelCount).toBe(1);
     await expect(page).toHaveURL(/ocr-review/);
     await expect(page.getByRole('button', { name: '취소 중...', exact: true })).toBeDisabled();
@@ -372,7 +372,7 @@ for (const width of [375, 1280]) {
   });
 }
 
-test('OCR 재촬영 취소 요청이 실패하면 검토 화면에서 다시 시도할 수 있다', async ({ page }) => {
+test('OCR 문서 재등록 취소 요청이 실패하면 검토 화면에서 다시 시도할 수 있다', async ({ page }) => {
   await authenticate(page);
   await page.route(`**${OCR_URL}`, (route) => fulfillJson(route, readyOcrResult));
   await page.route(`**${OCR_URL}/*image`, (route) => route.fulfill({ status: 404 }));
@@ -383,10 +383,10 @@ test('OCR 재촬영 취소 요청이 실패하면 검토 화면에서 다시 시
     else await route.fulfill({ status: 204 });
   });
   await page.goto(`/dev/ocr-review?batchId=${DOCUMENT_ID}`);
-  await page.getByRole('button', { name: '다시 촬영하기', exact: true }).click();
+  await page.getByRole('button', { name: '문서 다시 등록', exact: true }).click();
   await expect(page.getByText('기존 OCR 작업을 취소하지 못했어요. 다시 시도해주세요.', { exact: true })).toBeVisible();
   await expect(page).toHaveURL(/ocr-review/);
-  await page.getByRole('button', { name: '다시 촬영하기', exact: true }).click();
+  await page.getByRole('button', { name: '문서 다시 등록', exact: true }).click();
   await expect(page).toHaveURL(/document-upload/);
   expect(cancelCount).toBe(2);
 });
@@ -2683,7 +2683,7 @@ test('OCR 별칭 저장이 실패해도 같은 확정을 재시도하고 중복 
 });
 
 for (const headerOnly of [false, true]) {
-  test(`약이 추출되지 않으면 재촬영을 안내한다 (병원명만 추출: ${headerOnly})`, async ({ page }) => {
+  test(`약이 추출되지 않으면 문서 재등록을 안내한다 (병원명만 추출: ${headerOnly})`, async ({ page }) => {
     await authenticate(page);
     await page.route('**/api/v1/ocr/jobs/501', route => fulfillJson(route, {
       ...readyOcrResult,
@@ -2700,7 +2700,7 @@ for (const headerOnly of [false, true]) {
     });
     await page.goto('/ocr-review?batchId=501');
     await expect(page.getByText('약 정보를 추출하지 못했어요', { exact: true })).toBeVisible();
-    await expect(page.getByText('다시 촬영해주세요', { exact: true })).toBeVisible();
+    await expect(page.getByText('문서를 다시 등록해주세요', { exact: true })).toBeVisible();
     const failureDialog = page.getByRole('dialog', { name: '문서를 읽지 못했어요' });
     await expect(failureDialog).toBeVisible();
     await expect(page.getByLabel('복약 별칭')).toHaveCount(0);
@@ -2713,7 +2713,7 @@ for (const headerOnly of [false, true]) {
       await expect(page.getByText('약 정보를 직접 입력해주세요', { exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: '직접 추가' })).toBeVisible();
     } else {
-      await failureDialog.getByRole('button', { name: '다시 촬영', exact: true }).click();
+      await failureDialog.getByRole('button', { name: '문서 다시 등록', exact: true }).click();
       await expect(page).toHaveURL(/\/document-upload$/);
       expect(cancelCount).toBe(1);
     }
@@ -2730,13 +2730,13 @@ test('명시적 재촬영 OCR 실패만 사진 품질 안내를 표시한다', a
 
   await page.goto('/ocr-review?batchId=recapture-required');
 
-  await expect(page.getByText('다시 촬영해주세요', { exact: true })).toBeVisible();
+  await expect(page.getByText('문서를 다시 등록해주세요', { exact: true })).toBeVisible();
   await expect(
-    page.getByText('복약안내문의 구김을 펴고 네 모서리가 모두 보이게 다시 촬영해주세요.'),
+    page.getByText('문서의 네 모서리와 글자가 선명하게 보이는 사진으로 다시 등록해주세요.'),
   ).toBeVisible();
   const failureDialog = page.getByRole('dialog', { name: '문서를 읽지 못했어요' });
   await expect(failureDialog).toBeVisible();
-  await expect(failureDialog.getByRole('button', { name: '다시 촬영', exact: true })).toBeVisible();
+  await expect(failureDialog.getByRole('button', { name: '문서 다시 등록', exact: true })).toBeVisible();
   await expect(failureDialog.getByRole('button', { name: '그대로 직접 입력', exact: true })).toBeVisible();
 });
 
@@ -2780,15 +2780,15 @@ test('이미 완료되었거나 실패한 문서 OCR 상태를 기존 화면으�
   await page.goto('/dev/ocr-review');
   const failureDialog = page.getByRole('dialog');
   await expect(failureDialog.getByRole('heading', { name: '약 정보를 확인하지 못했어요' })).toBeVisible();
-  await expect(failureDialog.getByRole('button', { name: '다시 촬영' })).toBeVisible();
+  await expect(failureDialog.getByRole('button', { name: '문서 다시 등록' })).toBeVisible();
   await expect(failureDialog.getByRole('button', { name: '그대로 직접 입력' })).toBeVisible();
   await expect(page.getByText('추출 중 문제가 생겼어요', { exact: true })).toBeVisible();
   await expect(
-    failureDialog.getByText('약 정보를 추출하는 중 문제가 생겼어요. 잠시 후 다시 시도하거나 직접 입력할 수 있어요.'),
+    failureDialog.getByText('약 정보를 추출하는 중 문제가 생겼어요. 잠시 후 문서를 다시 등록하거나 직접 입력할 수 있어요.'),
   ).toBeVisible();
-  await expect(page.getByText('다시 촬영해주세요', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('문서를 다시 등록해주세요', { exact: true })).toHaveCount(0);
   await expect(
-    page.getByText('복약안내문의 구김을 펴고 네 모서리가 모두 보이게 다시 촬영해주세요.'),
+    page.getByText('문서의 네 모서리와 글자가 선명하게 보이는 사진으로 다시 등록해주세요.'),
   ).toHaveCount(0);
   await expect(page.getByLabel('복약 별칭')).toHaveCount(0);
   await expect(page.getByText('나머지는 잘 읽혔습니다.', { exact: false })).toHaveCount(0);

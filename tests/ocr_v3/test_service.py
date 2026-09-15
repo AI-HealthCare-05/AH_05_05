@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -50,6 +51,7 @@ def _processed(*, quality_state: QualityState = QualityState.PROCESSED) -> objec
         quality_state=quality_state,
         reasons=("image_too_blurry",) if quality_state is QualityState.RECAPTURE_REQUIRED else (),
         template_image=SimpleNamespace(jpeg_bytes=b"processed-jpeg"),
+        operations=("output_saturate_unsharp_mild",),
     )
 
 
@@ -407,3 +409,138 @@ async def test_llm_failure_remains_a_successful_deterministic_fallback(monkeypat
         "code": "LLM_TIMEOUT",
     }
     assert analysis.structuring_model == "gpt-test"
+
+
+def _missing_table_result(code="TABLE_NOT_FOUND"):
+    return replace(
+        _successful_pipeline_result(),
+        medication_rows=MedicationRowsResult(None, (), ()),
+        project_review={"fields": {}, "medications": [], "lowConfidenceCount": 0},
+        stages=(
+            StageResult("ocr", "succeeded", 20, 1),
+            StageResult("candidate", "failed", 2, 0, code),
+            *(StageResult(name, "skipped", 0, 0, "UPSTREAM_FAILED") for name in ("resolve", "llm", "validate")),
+        ),
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("second_fails", [False, True])
+async def test_missing_table_retries_once_without_unsharp_and_accounts_for_both_calls(monkeypatch, second_fails):
+    from app.services.medication_ocr_v3 import service as subject
+
+    first = _processed()
+    alternate = _processed()
+    alternate.operations = ()
+    alternate.template_image.jpeg_bytes = b"alternate-jpeg"
+    preprocess = Mock(side_effect=[first, alternate])
+    pipeline = AsyncMock(
+        side_effect=[
+            _missing_table_result(),
+            _missing_table_result() if second_fails else _successful_pipeline_result(),
+        ]
+    )
+    monkeypatch.setattr(subject, "preprocess_image", preprocess)
+    monkeypatch.setattr(subject, "build_privacy_safe_provider_image", lambda p, masks: p.template_image.jpeg_bytes)
+    monkeypatch.setattr(subject, "analyze_processed_image", pipeline)
+
+    result = await MedicationOcrV3Service(provider=object()).analyze(_validated_image())
+
+    assert pipeline.await_count == 2
+    assert [call.kwargs["preprocess_version"] for call in preprocess.call_args_list] == ["v3.4.1", "v3.4.2"]
+    assert pipeline.call_args_list[1].args[1] == b"alternate-jpeg"
+    assert result.preprocess_version == "v3.4.2"
+    assert result.processed_image_bytes == b"alternate-jpeg"
+    assert result.stages[1]["callCount"] == 2
+    assert result.stages[1]["elapsedMs"] == 40
+    assert result.stages[2]["elapsedMs"] == 4
+    assert bool(result.project_review["medications"]) is not second_fails
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("version", "code"),
+    [
+        ("v3.4.2", "TABLE_NOT_FOUND"),
+        ("v3.4.1", "AMBIGUOUS_MEDICATION_TABLE"),
+    ],
+)
+async def test_table_retry_does_not_repeat_alternate_profile_or_bypass_ambiguity(monkeypatch, version, code):
+    from app.services.medication_ocr_v3 import service as subject
+
+    preprocess = Mock(return_value=_processed())
+    pipeline = AsyncMock(return_value=_missing_table_result(code))
+    monkeypatch.setattr(subject, "preprocess_image", preprocess)
+    monkeypatch.setattr(subject, "build_privacy_safe_provider_image", Mock(return_value=b"safe"))
+    monkeypatch.setattr(subject, "analyze_processed_image", pipeline)
+    result = await MedicationOcrV3Service(provider=object(), preprocess_version=version).analyze(_validated_image())
+    assert pipeline.await_count == 1
+    assert preprocess.call_count == 1
+    assert result.project_review["medications"] == []
+
+
+@pytest.mark.asyncio
+async def test_cancel_before_table_retry_does_not_make_second_provider_call(monkeypatch):
+    from app.services.medication_ocr_v3 import service as subject
+
+    pipeline = AsyncMock(return_value=_missing_table_result())
+    monkeypatch.setattr(subject, "preprocess_image", Mock(return_value=_processed()))
+    monkeypatch.setattr(subject, "build_privacy_safe_provider_image", Mock(return_value=b"safe"))
+    monkeypatch.setattr(subject, "analyze_processed_image", pipeline)
+    with pytest.raises(subject.MedicationOcrV3CancelledError):
+        await MedicationOcrV3Service(provider=object(), is_cancelled=AsyncMock(return_value=True)).analyze(
+            _validated_image()
+        )
+    assert pipeline.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_table_retry_rejects_unsafe_alternate_without_another_ocr_call(monkeypatch):
+    from app.services.medication_ocr_v3 import service as subject
+
+    pipeline = AsyncMock(return_value=_missing_table_result())
+    monkeypatch.setattr(
+        subject,
+        "preprocess_image",
+        Mock(side_effect=[_processed(), _processed(quality_state=QualityState.RECAPTURE_REQUIRED)]),
+    )
+    monkeypatch.setattr(subject, "build_privacy_safe_provider_image", Mock(return_value=b"safe"))
+    monkeypatch.setattr(subject, "analyze_processed_image", pipeline)
+    result = await MedicationOcrV3Service(provider=object()).analyze(_validated_image())
+    assert pipeline.await_count == 1
+    assert result.preprocess_version == "v3.4.1"
+    assert result.project_review["medications"] == []
+
+
+@pytest.mark.asyncio
+async def test_provider_failure_on_table_retry_reports_both_ocr_calls(monkeypatch):
+    from app.services.medication_ocr_v3 import service as subject
+
+    failure = AnalyzePipelineFailure(
+        code=OcrErrorCode.OCR_TIMEOUT,
+        status_code=504,
+        stages=(StageResult("ocr", "failed", 30, 1, "OCR_TIMEOUT"),),
+    )
+    pipeline = AsyncMock(side_effect=[_missing_table_result(), failure])
+    monkeypatch.setattr(subject, "preprocess_image", Mock(return_value=_processed()))
+    monkeypatch.setattr(subject, "build_privacy_safe_provider_image", Mock(return_value=b"safe"))
+    monkeypatch.setattr(subject, "analyze_processed_image", pipeline)
+    with pytest.raises(OcrProviderTimeoutError) as error:
+        await MedicationOcrV3Service(provider=object()).analyze(_validated_image())
+    assert pipeline.await_count == 2
+    assert error.value.stages[1]["callCount"] == 2
+    assert error.value.stages[1]["elapsedMs"] == 50
+
+
+@pytest.mark.asyncio
+async def test_missing_table_without_sharpening_does_not_retry(monkeypatch):
+    from app.services.medication_ocr_v3 import service as subject
+
+    processed = _processed()
+    processed.operations = ()
+    pipeline = AsyncMock(return_value=_missing_table_result())
+    monkeypatch.setattr(subject, "preprocess_image", Mock(return_value=processed))
+    monkeypatch.setattr(subject, "build_privacy_safe_provider_image", Mock(return_value=b"safe"))
+    monkeypatch.setattr(subject, "analyze_processed_image", pipeline)
+    await MedicationOcrV3Service(provider=object()).analyze(_validated_image())
+    assert pipeline.await_count == 1

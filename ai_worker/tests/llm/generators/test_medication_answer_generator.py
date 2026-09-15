@@ -404,6 +404,8 @@ async def test_generator_compacts_an_unrepaired_adverse_case_report() -> None:
         result=result,
     )
 
+    assert outcome.result.answer.startswith("🩻 **부작용 리포트**")
+    assert "**추가설명**" in outcome.result.answer
     assert "현기증" in outcome.result.answer
     assert "WHO-UMC 평가에서 상당히 확실함으로 분류됨." in outcome.result.answer
     assert "탐스로신" not in outcome.result.answer
@@ -453,9 +455,23 @@ async def test_generator_compacts_adverse_case_report_when_evidence_coverage_fal
     )
 
     assert outcome.observation.status == MedicationAnswerRewriteStatus.DRAFT_FALLBACK
+    assert outcome.result.answer.startswith("🩻 **부작용 리포트**")
+    assert "**추가설명**" in outcome.result.answer
     assert "현기증이 보고됨." in outcome.result.answer
     assert "WHO-UMC 평가에서 상당히 확실함으로 분류됨." in outcome.result.answer
     assert "시간적 연관성" not in outcome.result.answer
+
+
+def test_adverse_report_headers_normalize_without_changing_other_sections() -> None:
+    generator = OpenAIMedicationAnswerGenerator
+    legacy = "🩻 **부작용 보고서**\n\n**이상사례**\n- 현기증\n\n**상세 사항**\n- 경과를 검토했습니다."
+    expected = legacy.replace("부작용 보고서", "부작용 리포트").replace("상세 사항", "추가설명")
+    assert generator._to_limited_markdown(legacy) == expected
+    assert generator._to_limited_markdown(expected) == expected
+    assert generator._is_adverse_case_report(legacy)
+    assert generator._is_adverse_case_report(expected)
+    assert generator._adverse_report_lines(expected) == (["현기증"], ["경과를 검토했습니다."])
+    assert generator._to_limited_markdown("**상세 사항**\n- 다른 정보") == "**상세 사항**\n- 다른 정보"
 
 
 async def test_generator_uses_accurate_model_for_interaction_answer_when_enabled() -> None:
@@ -606,6 +622,37 @@ def test_generator_preserves_question_interaction_pair_and_intake_divider() -> N
     assert "🔁 **질문 상호작용**" in answer
     assert "**[타이레놀-마그네슘]**" in answer
     assert "- 현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 못했습니다." in answer
+
+
+def test_generator_keeps_combined_food_interaction_heading_at_top_level() -> None:
+    draft_answer = (
+        "**와파린**\n\n"
+        "🔁 **약물 상호작용**\n\n"
+        "**주의가 필요한 조합**\n"
+        "- 메나테트레논 ↔ 와파린: 와파린의 항응고 효과가 감소할 수 있습니다.\n\n"
+        "🔁 **음식 상호작용**\n\n"
+        "**주의가 필요한 조합**\n"
+        "- 녹차, 홍차, 우롱차: 비타민 K 함유로 와파린의 항응고 효과를 감소시킬 수 있습니다."
+    )
+    generated_answer = (
+        "**와파린**\n\n"
+        "🔁 **약물 상호작용**\n\n"
+        "**주의가 필요한 조합**\n"
+        "- 메나테트레논 ↔ 와파린: 와파린의 항응고 효과가 감소할 수 있습니다.\n"
+        "  🔁 **음식 상호작용** **주의가 필요한 조합**\n"
+        "- 녹차, 홍차, 우롱차: 비타민 K 함유로 와파린의 항응고 효과를 감소시킬 수 있습니다."
+    )
+
+    answer = OpenAIMedicationAnswerGenerator._format_generated_answer(
+        draft_answer=draft_answer,
+        generated_answer=generated_answer,
+    )
+
+    lines = answer.splitlines()
+    food_heading_index = lines.index("🔁 **음식 상호작용** **주의가 필요한 조합**")
+    assert lines[food_heading_index - 1].startswith("- 메나테트레논")
+    food_bullets = [line for line in lines[food_heading_index + 1 :] if line.strip()]
+    assert food_bullets[0].startswith("- 녹차, 홍차, 우롱차:")
 
 
 async def test_generator_skips_llm_when_no_grounded_sources() -> None:

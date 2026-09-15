@@ -98,7 +98,7 @@ _HEADERLESS_NAME_STRENGTH_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _MEDICATION_NAME_FORM_PATTERN = re.compile(
-    r"(?:정|캡슐|시럽|크림|연고|현탁액|내복액|외용액|점안액|주사액|"
+    r"(?:정|캡슐|캅셀|시럽|크림|연고|현탁액|내복액|외용액|점안액|주사액|"
     r"과립|패취|패치|겔)(?=$|[_\s(0-9./·…⋯-])",
     re.IGNORECASE,
 )
@@ -1158,11 +1158,24 @@ def _guidance_layout_rows(
             for block in line.blocks
             if header.instruction_band[0] <= block.bbox.center_x <= header.instruction_band[1]
         )
+        parsed = _guidance_instruction_cells(instruction_blocks)
+        if parsed is None:
+            continue
+        schedule_block_ids = {block_id for cell in parsed if cell is not None for block_id in cell.block_ids}
+        schedule_blocks = tuple(block for block in instruction_blocks if block.source.block_id in schedule_block_ids)
+        if not schedule_blocks:
+            continue
+        schedule_center = median(block.bbox.center_y for block in schedule_blocks)
+        schedule_height = median(block.bbox.height for block in schedule_blocks)
         name_blocks = [
             block
             for block in line.blocks
             if header.name_band[0] <= block.bbox.center_x <= header.name_band[1]
             and _compact_text(block.source.text) not in _PHOTO_LABELS
+            # A provider may put the next line of a product description into
+            # this same visual line. Keep only title text aligned with the
+            # schedule cells; description text is usually one line lower.
+            and abs(block.bbox.center_y - schedule_center) <= schedule_height * 0.90
         ]
         name_cell = _layout_cell(name_blocks)
         if name_cell is None or not _looks_like_medication_name(tuple(name_blocks)):
@@ -1172,9 +1185,6 @@ def _guidance_layout_rows(
             name_cell,
             instruction_blocks,
         ):
-            continue
-        parsed = _guidance_instruction_cells(instruction_blocks)
-        if parsed is None:
             continue
         dose_cell, times_cell, days_cell = parsed
         cells: LayoutCells = (name_cell, dose_cell, times_cell, days_cell)
@@ -1224,6 +1234,8 @@ def _combined_guidance_candidates(
         if len(schedules) != 1:
             continue
         schedule_block, schedule, schedule_is_strict = schedules[0]
+        schedule_center = schedule_block.bbox.center_y
+        schedule_height = schedule_block.bbox.height
         name_blocks = tuple(
             block
             for block in line.blocks
@@ -1233,6 +1245,10 @@ def _combined_guidance_candidates(
             and _header_match(block.source.text) is None
             and _SUMMARY_ROW_MARKER_PATTERN.search(block.source.text) is None
             and (efficacy_lane_left is None or block.bbox.x_min < efficacy_lane_left)
+            # The OCR line cluster can include a product's following
+            # description line. The schedule is the row anchor; retain title
+            # blocks on its baseline and exclude the lower description line.
+            and abs(block.bbox.center_y - schedule_center) <= max(block.bbox.height, schedule_height) * 0.90
         )
         if not name_blocks or not _looks_like_medication_name(name_blocks):
             continue
@@ -1464,8 +1480,21 @@ def _inferred_combined_guidance_headers(
     blocks = tuple(block for line in line_groups for block in line.blocks)
     header_blocks = tuple(block for block in blocks if "복약안내" in _normalized_header_text(block.source.text))
     if len(header_blocks) != 1:
-        return ()
-    header = header_blocks[0]
+        # A page title can repeat the same marker above the medication table.
+        # When the table's merged guidance header shares a line with the
+        # explicit 약품명 header, that co-line is the only safe disambiguator.
+        co_located_headers = tuple(
+            block
+            for line in line_groups
+            if any(_normalized_header_text(item.source.text) == "약품명" for item in line.blocks)
+            for block in line.blocks
+            if "복약안내" in _normalized_header_text(block.source.text)
+        )
+        if len(co_located_headers) != 1:
+            return ()
+        header = co_located_headers[0]
+    else:
+        header = header_blocks[0]
     schedule_blocks = tuple(
         block
         for block in blocks
@@ -1531,7 +1560,12 @@ def _stacked_receipt_headers(
             return ()
         lower_blocks.append(matches[0])
     pairs = []
-    for lower, upper_texts in zip(lower_blocks, (("1회",), ("일투여", "1일투여"), ("총투약",)), strict=True):
+    dose_upper_texts = ("1회", "회") if _compact_text(dose.source.text) == "약량" else ("1회",)
+    for lower, upper_texts in zip(
+        lower_blocks,
+        (dose_upper_texts, ("일투여", "1일투여"), ("총투약",)),
+        strict=True,
+    ):
         matches = [
             block
             for block in blocks
@@ -1590,7 +1624,8 @@ def _local_stacked_receipt_candidates(blocks: tuple[_GeometryBlock, ...]) -> tup
     """Recover a single unambiguous receipt row from original, local geometry."""
     candidates = []
     for dose_header in blocks:
-        if _compact_text(dose_header.source.text) != "투약량":
+        dose_header_text = _compact_text(dose_header.source.text)
+        if dose_header_text not in {"투약량", "약량"}:
             continue
         headers = _stacked_receipt_headers(dose_header, blocks)
         if not headers:
@@ -1601,8 +1636,31 @@ def _local_stacked_receipt_candidates(blocks: tuple[_GeometryBlock, ...]) -> tup
         name = _stacked_receipt_name(values[0], blocks)
         if name is None:
             continue
+        if dose_header_text == "약량" and not _has_matching_main_medication_name(name, blocks):
+            continue
         candidates.append(_stacked_receipt_candidate(name, values, headers))
     return tuple(candidates) if len(candidates) == 1 else ()
+
+
+def _has_matching_main_medication_name(
+    receipt_name: _GeometryBlock,
+    blocks: tuple[_GeometryBlock, ...],
+) -> bool:
+    """Require a unique, spatially separate product-title corroborator for a weak header."""
+
+    receipt_key = _inline_name_key(receipt_name.source.text)
+    if not receipt_key:
+        return False
+    matches = tuple(
+        block
+        for block in blocks
+        if block.source.block_id != receipt_name.source.block_id
+        and block.bbox.x_max < receipt_name.bbox.x_min
+        and _contains_hangul(block.source.text)
+        and _MEDICATION_NAME_FORM_PATTERN.search(_inline_name_key(block.source.text)) is not None
+        and _compatible_inline_name(_inline_name_key(block.source.text), receipt_key)
+    )
+    return len(matches) == 1
 
 
 def _stacked_receipt_candidate(

@@ -517,6 +517,50 @@ def _crop_suspicion(quad: Quad, width: int, height: int) -> bool:
     return touching >= 2
 
 
+def _bottom_crop_has_blank_tail(gray: UInt8Image, quad: Quad) -> bool:
+    """Return whether a bottom-only frame contact ends in a blank visible tail.
+
+    The check only considers a document whose two bottom corners touch the frame
+    while all other sides remain inside it. The visible quad is rectified for
+    measurement only; callers must discard the geometry when this returns true
+    instead of inventing the missing bottom corners.
+    """
+
+    height, width = gray.shape[:2]
+    margin = max(3.0, min(width, height) * 0.006)
+    bottom_contacts = sum(point.y >= height - margin for point in quad)
+    if bottom_contacts != 2 or any(
+        point.x <= margin or point.x >= width - margin or point.y <= margin for point in quad
+    ):
+        return False
+
+    source = _quad_array(quad).astype(np.float32)
+    target = np.asarray(
+        ((0.0, 0.0), (511.0, 0.0), (511.0, 511.0), (0.0, 511.0)),
+        dtype=np.float32,
+    )
+    try:
+        matrix = cv2.getPerspectiveTransform(source, target)
+        rectified = cv2.warpPerspective(
+            gray,
+            matrix,
+            (512, 512),
+            flags=cv2.INTER_AREA,
+            borderMode=cv2.BORDER_REPLICATE,
+        )
+    except (cv2.error, np.linalg.LinAlgError, ValueError):
+        return False
+
+    # Include the frame edge: a glyph clipped by the bottom can occupy only
+    # the last few rows. Side insets keep the two known side borders out.
+    tail = rectified[round(512 * 0.70) : 512, round(512 * 0.08) : round(512 * 0.92)]
+    if tail.size == 0:
+        return False
+    edge_density = float(np.mean(cv2.Canny(tail, 40, 120) > 0))
+    dark_density = float(np.mean(tail < 130))
+    return dark_density <= 0.02 and edge_density <= 0.003
+
+
 def _stabilize_document_detection(
     detection: DocumentDetection,
     width: int,
@@ -1211,7 +1255,13 @@ def _detect_document(rgb: UInt8Image, profile: _PreprocessProfile) -> DocumentDe
     hough = _hough_candidate(canny, working, width, height, colors)
     if hough is not None:
         candidates.append(hough)
-    if not candidates or max(candidate.confidence for candidate in candidates) < profile.grabcut_trigger_confidence:
+    # Small redactions and receipt panels can have very sharp, confident edges.
+    # Only a document-sized candidate may suppress the enclosing-page search.
+    if not any(
+        candidate.coverage >= MIN_SAFE_PERSPECTIVE_COVERAGE
+        and candidate.confidence >= profile.grabcut_trigger_confidence
+        for candidate in candidates
+    ):
         candidates.extend(_grabcut_document_candidates(working, profile, colors))
 
     groups = _group_nested_candidates(candidates)
@@ -1265,6 +1315,16 @@ def _detect_document(rgb: UInt8Image, profile: _PreprocessProfile) -> DocumentDe
         and 1.35 <= abs(_signed_area(evidence)) / max(abs(_signed_area(best.quad)), 1.0) <= 6.0
         for evidence in _three_sided_flat_crop_evidence(gray)
     )
+    if (
+        best.crop_suspicion
+        and best.coverage >= MIN_SAFE_PERSPECTIVE_COVERAGE
+        and likely_count == 1
+        and _bottom_crop_has_blank_tail(gray, best.quad)
+    ):
+        # The visible table is complete and only a blank paper tail continues
+        # past the frame. Drop the incomplete quad so perspective code cannot
+        # invent the missing bottom corners; preprocessing will keep the frame.
+        return DocumentDetection(None, likely_count, 0.0, False)
     if (
         original_width * original_height >= MAX_LOW_RESOLUTION_CROP_EVIDENCE_PIXELS
         and best.confidence < 0.70
