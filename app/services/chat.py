@@ -1,5 +1,7 @@
 import asyncio
+import logging
 import time
+import traceback
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -55,6 +57,8 @@ from app.services.common_codes import CommonCodeService, normalize_common_code
 
 CHAT_ANSWER_TIMEOUT_SECONDS = 30.0
 CHAT_API_GUARD_TIMEOUT_SECONDS = 31.0
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -402,6 +406,17 @@ class ChatApplicationService:
             raise ChatUpstreamUnavailableError from error
         except Exception as error:
             duration_ms = self._duration_ms(started_at)
+            traceback_locations = " <- ".join(
+                f"{frame.filename.rsplit('/', 1)[-1]}:{frame.lineno}:{frame.name}"
+                for frame in traceback.extract_tb(error.__traceback__)[-8:]
+            )
+            logger.error(
+                "chat_processing_failed request_id=%s trace_id=%s exception_type=%s traceback=%s",
+                command.request_id,
+                root_span.trace_id,
+                type(error).__name__,
+                traceback_locations or "unavailable",
+            )
             await self._repository.fail_request(
                 assistant_message_id=accepted.assistant_message.id,
                 error_code="CHAT_PROCESSING_FAILED",

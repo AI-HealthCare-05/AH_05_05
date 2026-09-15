@@ -104,6 +104,54 @@ def test_medication_note_summary_route_is_persisted_as_patient_db() -> None:
     assert ChatRepository._chat_route(result) is ChatRouteType.PATIENT_DB
 
 
+@pytest.mark.parametrize(
+    "names", [["마그네슘", "아연", "마그네슘", "아연", "마그네슘"], ["마그네슘", "아연", "칼슘", "철분", "비타민 D"]]
+)
+async def test_session_reference_payload_deduplicates_and_bounds_question_targets(names: list[str]) -> None:
+    interpretation = MedicationQuestionInterpretation(
+        original_question="같이 먹어도 돼?",
+        resolved_question="같이 먹어도 돼?",
+        scope=MedicationQuestionScope.IN_SCOPE,
+        resolution_status=MedicationExpressionResolutionStatus.UNCHANGED,
+        intent=MedicationQuestionIntent.INTERACTION,
+        confidence=MedicationQuestionConfidence.HIGH,
+        normalized_entities=[
+            MedicationQueryEntity(
+                surface=name,
+                canonical_name=name,
+                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                kind=InteractionEntityKind.SUPPLEMENT,
+                source=MedicationQueryEntitySource.CATALOG,
+            )
+            for name in names
+        ],
+        query_plan_hash="b" * 64,
+    )
+    result = build_core_result().model_copy(update={"question_interpretation": interpretation})
+
+    payload = ChatRepository._session_reference_payload(result)
+
+    assert payload is not None
+    assert [entity["name"] for entity in payload["entities"]] == list(dict.fromkeys(names))[:4]
+    user = await create_user()
+    repository = ChatRepository()
+    accepted = await repository.accept_request(
+        user_id=user.id,
+        care_episode_id=None,
+        conversation_id=None,
+        request_id=str(result.request_id),
+        content=interpretation.original_question,
+    )
+    completed = await repository.complete_request(
+        assistant_message_id=accepted.assistant_message.id,
+        result=result,
+        duration_ms=15,
+    )
+    assert completed.status is ChatMessageStatus.COMPLETED
+    assert completed.content == result.answer
+    assert completed.session_reference == payload
+
+
 def test_follow_up_schedule_route_is_persisted_as_patient_db() -> None:
     result = build_core_result().model_copy(
         update={"route": MedicationChatRoute.FOLLOW_UP_SCHEDULE},

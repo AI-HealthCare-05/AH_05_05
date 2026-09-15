@@ -739,7 +739,10 @@ class ChatRepository:
         ]
         if not entities:
             return None
-        return MedicationChatSessionReference(entities=entities).model_dump(mode="json")
+        # 검색용 엔터티에는 별칭·활성 복약정보가 함께 들어올 수 있다.
+        # 이 보조 기억의 크기 때문에 완성된 답변 저장이 실패하지 않게 한다.
+        unique_entities = list(dict.fromkeys(entities))
+        return MedicationChatSessionReference(entities=unique_entities[:4]).model_dump(mode="json")
 
     async def fail_request(
         self,

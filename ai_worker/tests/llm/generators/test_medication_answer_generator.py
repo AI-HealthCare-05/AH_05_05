@@ -127,6 +127,113 @@ async def test_generator_repairs_an_overlong_bullet_once() -> None:
     assert outcome.result.answer == "⚠️ **주의사항**\n- 정기적 음주 시 의료진과 상담하세요."
     assert len(client.all_messages) == 2
     assert "형식 보정" in str(client.all_messages[-1])
+    assert "공식 복용 중단·상담 지시는 초안 표현을 그대로 보존" in str(client.all_messages[-1])
+
+
+async def test_generator_compacts_adverse_effect_list_and_keeps_official_stop_instruction() -> None:
+    warning = "이 약 복용 후 발진이 나타나면 즉시 복용을 중단하십시오."
+    long_answer = (
+        "**타이레놀산500밀리그램(아세트아미노펜)**\n\n🚨 **이상반응**\n- "
+        "쇽증상과 천식발작, 혈소판감소, 과립구감소, 용혈성빈혈, 메트헤모글로빈혈증, 혈소판기능저하, "
+        "청색증, 과민증상, 구역, 구토, 식욕부진, 위장출혈 등이 발생하는 경우 " + warning
+    )
+    concise_answer = (
+        "**타이레놀산500밀리그램(아세트아미노펜)**\n\n🚨 **이상반응**\n- "
+        "쇽증상·천식발작·과민반응 등이 나타나면 복용을 중단하고 상담하세요.\n- " + warning
+    )
+    client = FakeAnswerClient(
+        responses=[
+            {"answer": long_answer, "section_types": ["CAUTION"]},
+            {"answer": concise_answer, "section_types": ["CAUTION"]},
+        ]
+    )
+    result = build_result().model_copy(
+        update={
+            "answer": long_answer,
+            "official_warning_texts": [warning],
+            "evidence_coverage": MedicationEvidenceCoverage(
+                requested_section_types=[KnowledgeSectionType.CAUTION],
+                covered_section_types=[KnowledgeSectionType.CAUTION],
+            ),
+        }
+    )
+    generator = OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client)
+
+    outcome = await generator.generate(
+        request=build_request().model_copy(update={"question": "타이레놀산 이상반응만 알려줘"}),
+        context=ActiveIntakeContext(user_id=1),
+        result=result,
+    )
+
+    assert len(client.all_messages) == 2
+    assert warning in outcome.result.answer
+    assert "메트헤모글로빈혈증" not in outcome.result.answer
+    assert outcome.observation.status == MedicationAnswerRewriteStatus.REWRITTEN
+
+
+async def test_generator_repairs_uncovered_section_in_public_knowledge_summary() -> None:
+    """단일 성분 원문을 요약하다 섹션을 잘못 선언해도 원문으로 바로 돌아가지 않는다."""
+
+    draft = (
+        "**와파린**\n\n✉️ **안내사항**\n\n"
+        "- 키워드 와파린약물동태학상호작용녹차홍차,,,,\n\n1.차\n\n"
+        "녹차뿐만아니라홍차및우롱차에는비타민K가함유되어있다. "
+        "비타민K는와파린의항응고효과를감소시킬수있다."
+    )
+    summary = "**와파린**\n\n✉️ **안내사항**\n\n- 비타민 K는 와파린의 항응고 효과를 줄일 수 있습니다."
+    client = FakeAnswerClient(
+        responses=[
+            {"answer": summary, "section_types": ["CAUTION"]},
+            {"answer": summary, "section_types": []},
+        ]
+    )
+    result = build_result().model_copy(
+        update={
+            "answer": draft,
+            "sources": [
+                MedicationChatSource(
+                    kind=MedicationChatSourceKind.PUBLIC_KNOWLEDGE,
+                    title="와파린과 생약 및 식품의 상호작용",
+                )
+            ],
+            "evidence_coverage": MedicationEvidenceCoverage(requested_section_types=[], covered_section_types=[]),
+        }
+    )
+    generator = OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client)
+
+    outcome = await generator.generate(
+        request=build_request().model_copy(update={"question": "와파린"}),
+        context=ActiveIntakeContext(user_id=1),
+        result=result,
+    )
+
+    assert outcome.result.answer == summary
+    assert outcome.observation.status == MedicationAnswerRewriteStatus.REWRITTEN
+    assert outcome.observation.fallback_used is False
+    assert outcome.observation.declared_section_types == []
+    assert len(client.all_messages) == 2
+    assert "covered_section_types" in client.all_messages[-1][-1].content
+    assert "5개" in client.all_messages[-1][-1].content
+    assert outcome.result.sources == result.sources
+
+
+async def test_generator_revalidates_repaired_section_without_allowing_new_dosage() -> None:
+    client = FakeAnswerClient(
+        responses=[
+            {"answer": "⚠️ **주의사항**\n- 복용 시 주의가 필요합니다.", "section_types": ["CAUTION"]},
+            {"answer": "✉️ **안내사항**\n- 하루 10정을 복용하세요.", "section_types": []},
+        ]
+    )
+    result = build_result().model_copy(
+        update={"evidence_coverage": MedicationEvidenceCoverage(requested_section_types=[], covered_section_types=[])}
+    )
+    generator = OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client)
+
+    outcome = await generator.generate(request=build_request(), context=ActiveIntakeContext(user_id=1), result=result)
+
+    assert len(client.all_messages) == 2
+    assert outcome.result.answer == result.answer
+    assert outcome.observation.fallback_reason == MedicationAnswerFallbackReason.GENERATED_DOSAGE_NOT_IN_DRAFT
 
 
 async def test_generator_keeps_official_warning_verbatim_when_rewrite_changes_a_stop_instruction() -> None:
@@ -242,6 +349,14 @@ async def test_generator_repairs_interaction_to_the_requested_pair_only() -> Non
     assert "**[와파린-비타민 K]**" in outcome.result.answer
     assert "녹차" not in outcome.result.answer
     assert len(client.all_messages) == 2
+
+
+def test_adverse_detail_does_not_turn_causality_rubric_into_a_case_assessment() -> None:
+    rubric = [
+        "WHO-UMC 인과성 평가 기준 Causality term Assessment criteria",
+        "확실함 Certain 상당히 확실함 Probable/Likely 가능함 Possible",
+    ]
+    assert OpenAIMedicationAnswerGenerator._compact_adverse_detail(rubric) is None
 
 
 async def test_generator_compacts_an_unrepaired_adverse_case_report() -> None:

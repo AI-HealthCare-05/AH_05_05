@@ -40,6 +40,41 @@ def build_guide(**updates: str) -> MedicationGuideFact:
     return MedicationGuideFact(**values)
 
 
+def test_interaction_overview_separates_drugs_from_supplements_and_food() -> None:
+    rules = [
+        InteractionRuleFact(
+            interaction_rule_id=index,
+            pair_key=str(index) * 64,
+            pair_type=kind,
+            left_name="와파린",
+            right_name=name,
+            risk_level="CAUTION",
+            effect_texts=[fact],
+        )
+        for index, (kind, name, fact) in enumerate(
+            [
+                ("DRUG_DRUG", "약 A", "상호작용 근거 A"),
+                ("DRUG_SUPPLEMENT", "성분 B", "상호작용 근거 B"),
+                ("DRUG_FOOD", "음식 C", "상호작용 근거 C"),
+            ],
+            start=1,
+        )
+    ]
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=rules,
+        chunks=[],
+        interaction_question=True,
+        interaction_overview=True,
+    )
+    drugs, others = answer.split("🍗 **그 외 상호작용**")
+    assert "🧬 **약과 상호작용**" in drugs
+    assert "약 A" in drugs and "성분 B" not in drugs
+    assert "성분 B" in others and "음식 C" in others
+    assert "확인하지 못한" not in answer
+
+
 def test_assemble_omits_empty_product_guide_fields() -> None:
     answer = MedicationAnswerAssembler().assemble(
         context=ActiveIntakeContext(user_id=1),

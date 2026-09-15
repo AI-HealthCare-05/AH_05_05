@@ -228,6 +228,14 @@ def test_system_prompt_requires_limited_markdown_product_answer() -> None:
     assert "10어절 이내" in SYSTEM_PROMPT
 
 
+def test_system_prompt_summarizes_ocr_draft_without_inventing_section_metadata() -> None:
+    assert "covered_section_types가 빈 목록" in SYSTEM_PROMPT
+    assert "section_types도 빈 목록" in SYSTEM_PROMPT
+    assert "원문 키워드 목록·목차·항목 번호" in SYSTEM_PROMPT
+    assert "질문: 와파린" in SYSTEM_PROMPT
+    assert "비타민 K는 와파린의 항응고 효과를 줄일 수 있습니다." in SYSTEM_PROMPT
+
+
 def test_system_prompt_uses_v8_six_element_contract_and_private_checklist() -> None:
     assert MEDICATION_CHAT_PROMPT_VERSION == "medication-chat-prompt-v8"
     for heading in (

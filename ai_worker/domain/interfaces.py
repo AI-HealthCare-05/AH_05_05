@@ -192,6 +192,7 @@ class InteractionRuleRepository(Protocol):
         *,
         context: ActiveIntakeContext,
         query_entity_names: list[str] | None = None,
+        include_query_neighbors: bool = False,
     ) -> list[InteractionRuleFact]: ...
 
 

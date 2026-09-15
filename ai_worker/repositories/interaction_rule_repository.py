@@ -1,3 +1,5 @@
+from tortoise.expressions import Q
+
 from ai_worker.schemas.interaction import normalize_interaction_name
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
@@ -22,19 +24,41 @@ class DbInteractionRuleRepository:
         *,
         context: ActiveIntakeContext,
         query_entity_names: list[str] | None = None,
+        include_query_neighbors: bool = False,
     ) -> list[InteractionRuleFact]:
-        entity_ids = await self._resolve_active_entity_ids(context)
-        entity_ids.update(
-            await self._resolve_query_entity_ids(query_entity_names or []),
-        )
-        if len(entity_ids) < 2:
-            return []
+        query_entity_ids = await self._resolve_query_entity_ids(query_entity_names or [])
+        if include_query_neighbors:
+            # 상대 성분을 묻는 질문은 질문 대상에 직접 연결된 규칙만 조회한다.
+            target_names = {normalize_interaction_name(name).casefold() for name in (query_entity_names or [])}
+            target_context = context.model_copy(
+                update={
+                    "medications": [
+                        item
+                        for item in context.medications
+                        if normalize_interaction_name(item.name).casefold() in target_names
+                    ],
+                    "supplements": [
+                        item
+                        for item in context.supplements
+                        if normalize_interaction_name(item.name).casefold() in target_names
+                    ],
+                }
+            )
+            query_entity_ids.update(await self._resolve_active_entity_ids(target_context))
+            if not query_entity_ids:
+                return []
+            pair_filter = Q(left_entity_id__in=query_entity_ids) | Q(right_entity_id__in=query_entity_ids)
+        else:
+            entity_ids = await self._resolve_active_entity_ids(context)
+            entity_ids.update(query_entity_ids)
+            if len(entity_ids) < 2:
+                return []
+            pair_filter = Q(left_entity_id__in=entity_ids, right_entity_id__in=entity_ids)
 
         rules = await InteractionRule.filter(
+            pair_filter,
             review_status=InteractionReviewStatus.APPROVED,
             rule_dataset_version=self._active_dataset_version,
-            left_entity_id__in=entity_ids,
-            right_entity_id__in=entity_ids,
         ).prefetch_related(
             "left_entity",
             "right_entity",

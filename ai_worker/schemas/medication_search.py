@@ -258,6 +258,7 @@ class MedicationKnowledgeQueryPlan(BaseModel):
     )
     interaction_types: list[InteractionPairType] = Field(default_factory=list)
     interaction_pair_keys: list[str] = Field(default_factory=list)
+    interaction_overview: bool = False
     medication_product_lookup_names: list[str] = Field(default_factory=list)
     has_medication_product_cue: bool = False
 

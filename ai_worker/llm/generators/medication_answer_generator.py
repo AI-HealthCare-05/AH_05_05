@@ -59,7 +59,7 @@ class OpenAIMedicationAnswerGenerator:
     )
     _MARKDOWN_HEADING_PATTERN = re.compile(r"^\s{0,3}#{1,6}\s*")
     _SECTION_HEADER_PATTERN = re.compile(
-        r"^\s*(?P<icon>✅|⚠️|🚨|🚫|💊|💪🏻|🔁|🩻|✉️|📭)\s*\*\*(?P<title>[^*\n]+)\*\*\s*:?\s*$"
+        r"^\s*(?P<icon>✅|⚠️|🚨|🚫|💊|💪🏻|🔁|🩻|✉️|📭|🧬|🍗)\s*\*\*(?P<title>[^*\n]+)\*\*\s*:?\s*$"
     )
     _STANDALONE_BOLD_LINE_PATTERN = re.compile(r"^\s*\*\*(?P<value>[^*\n]+)\*\*\s*$")
     _BOLD_MARKER_PATTERN = re.compile(r"\*\*(.+?)\*\*")
@@ -199,6 +199,9 @@ class OpenAIMedicationAnswerGenerator:
                 reason=MedicationAnswerFallbackReason.PATIENT_CONTEXT_ONLY,
             )
         chain, selected_model_name = self._chain_for_result(result)
+        covered_section_types = (
+            result.evidence_coverage.covered_section_types if result.evidence_coverage is not None else None
+        )
         compacted_adverse_case_report = False
         try:
             payload = await self._invoke_chain(
@@ -212,7 +215,18 @@ class OpenAIMedicationAnswerGenerator:
                 draft_answer=result.answer,
                 generated_answer=payload.answer,
             )
-            if self._requires_format_repair(generated_answer):
+            grounding_failure = self._grounding_failure_reason(
+                draft_answer=result.answer,
+                generated_answer=generated_answer,
+                declared_section_types=payload.section_types,
+                covered_section_types=covered_section_types,
+            )
+            # 짧은 요약이어도 섹션 선언이 틀리면 한 번 보정한다.
+            # 최종 근거 검증은 그대로 유지하며, 형식 보정과 호출 예산을 공유한다.
+            if (
+                self._requires_format_repair(generated_answer)
+                or grounding_failure == MedicationAnswerFallbackReason.UNSUPPORTED_EVIDENCE_SECTION
+            ):
                 payload = await self._invoke_chain(
                     chain=chain,
                     request=request,
@@ -247,9 +261,7 @@ class OpenAIMedicationAnswerGenerator:
             draft_answer=result.answer,
             generated_answer=generated_answer,
             declared_section_types=payload.section_types,
-            covered_section_types=(
-                result.evidence_coverage.covered_section_types if result.evidence_coverage is not None else None
-            ),
+            covered_section_types=covered_section_types,
             allow_uncovered_adverse_case_report=compacted_adverse_case_report,
         )
         if fallback_reason is not None:
@@ -495,7 +507,7 @@ class OpenAIMedicationAnswerGenerator:
         text = " ".join(lines).strip()
         if not text:
             return None
-        if "WHO-UMC" in text and re.search(r"상당히\s*확실", text):
+        if "WHO-UMC" in text and re.search(r"상당히\s*확실함['\"’”]?\s*(?:입니다|으로\s*(?:평가|분류))", text):
             return "WHO-UMC 평가에서 상당히 확실함으로 분류됨."
         if "시간적 연관" in text or "시간적 관련" in text:
             return "약물 복용과 증상 발생의 시간적 관계를 검토함."

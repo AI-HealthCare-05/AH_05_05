@@ -435,12 +435,13 @@ async def test_send_marks_assistant_failed_before_raising_503() -> None:
     }
 
 
-async def test_send_marks_assistant_failed_after_unexpected_error() -> None:
+async def test_send_logs_safe_diagnostics_for_unexpected_error(caplog) -> None:
     repository = FakeRepository()
     tracer = RecordingChatTracer()
+    private_error_detail = "private exception detail"
     service = ChatApplicationService(
         repository=repository,
-        core_service=FakeCore(error=RuntimeError("unexpected")),
+        core_service=FakeCore(error=RuntimeError(private_error_detail)),
         tracer=tracer,
         clock=iter([1.0, 2.2]).__next__,
     )
@@ -451,6 +452,12 @@ async def test_send_marks_assistant_failed_after_unexpected_error() -> None:
             command=build_command(),
         )
 
+    assert "exception_type=RuntimeError" in caplog.text
+    assert f"request_id={build_command().request_id}" in caplog.text
+    assert f"trace_id={TRACE_ID}" in caplog.text
+    assert "test_chat_service.py:" in caplog.text
+    assert private_error_detail not in caplog.text
+    assert build_command().message not in caplog.text
     assert repository.failed == {
         "assistant_message_id": 101,
         "error_code": "CHAT_PROCESSING_FAILED",

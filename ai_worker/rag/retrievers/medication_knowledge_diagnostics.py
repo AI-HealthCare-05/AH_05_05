@@ -70,6 +70,7 @@ class MedicationKnowledgeDiagnosticsBuilder:
             rejected_below_score_count=eligibility_reasons.count("BELOW_SCORE"),
             rejected_entity_mismatch_count=eligibility_reasons.count("ENTITY_MISMATCH"),
             rejected_pair_mismatch_count=eligibility_reasons.count("PAIR_MISMATCH"),
+            rejected_reference_material_count=eligibility_reasons.count("REFERENCE_MATERIAL"),
             accepted_count=len(selected),
             parent_context_child_count=parent_context_child_count,
             parent_context_attached_count=parent_context_attached_count,

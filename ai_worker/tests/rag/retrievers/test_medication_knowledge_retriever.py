@@ -136,6 +136,47 @@ async def test_search_preserves_embedding_failure_stage() -> None:
     assert isinstance(exc_info.value.__cause__, RuntimeError)
 
 
+async def test_adverse_report_retrieval_selects_case_facts_instead_of_assessment_rubric() -> None:
+    def case_chunk(key, score, section, heading, text):
+        chunk = build_chunk(
+            score,
+            chunk_id=key * 64,
+            document_id="case-1",
+            document_type=KnowledgeDocumentType.ADVERSE_CASE_REPORT,
+            section_type=section,
+            title="독사조신 심한어지러움",
+            content=text,
+        )
+        return chunk.model_copy(
+            update={
+                "metadata": chunk.metadata.model_copy(update={"drug_names": ["독사조신"], "section_title": heading})
+            }
+        )
+
+    event = case_chunk("a", 0.95, KnowledgeSectionType.ADVERSE_EVENT, "이상사례", "현기증이 보고됐습니다.")
+    rubric = case_chunk(
+        "b",
+        0.94,
+        KnowledgeSectionType.ASSESSMENT,
+        "WHO-UMC 인과성 평가 기준",
+        "Causality term 평가 기준 Assessment criteria 확실함 상당히 확실함 가능함",
+    )
+    assessment = case_chunk(
+        "c", 0.8, KnowledgeSectionType.ASSESSMENT, "상세 사항", "복용 중단 후 호전되어 상당히 확실함으로 평가했습니다."
+    )
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=FakeKnowledgeStore([[event, rubric, assessment]]),
+        dataset_version="knowledge-baseline-v1",
+    )
+
+    result = await retriever.search_with_diagnostics(execution_plan=build_execution_plan("독사조신 어지러움"))
+
+    assert {chunk.chunk_id for chunk in result.chunks} == {event.chunk_id, assessment.chunk_id}
+    assert not any("Assessment criteria" in chunk.content for chunk in result.chunks)
+    assert result.diagnostics.rejected_reference_material_count == 1
+
+
 async def test_search_preserves_vector_store_failure_stage() -> None:
     retriever = MedicationKnowledgeRetriever(
         embedding_provider=FakeEmbeddingProvider(),
@@ -684,6 +725,7 @@ async def test_search_with_diagnostics_counts_fallback_and_rejection_reasons() -
         "rejected_below_score_count": 1,
         "rejected_entity_mismatch_count": 1,
         "rejected_pair_mismatch_count": 0,
+        "rejected_reference_material_count": 0,
         "accepted_count": 1,
         "parent_context_child_count": 1,
         "parent_context_attached_count": 0,
@@ -1513,6 +1555,38 @@ async def test_search_rejects_single_ingredient_chunk_for_pair_question() -> Non
 
     assert result.chunks == []
     assert result.diagnostics.rejected_pair_mismatch_count == 1
+
+
+async def test_overview_accepts_food_evidence_linked_to_one_registered_drug() -> None:
+    chunk = build_chunk(
+        0.9,
+        title="와파린과 식품",
+        content="와파린과 음식 A의 직접 상호작용 설명",
+        document_type=KnowledgeDocumentType.DRUG_FOOD_INTERACTION_GUIDE,
+        section_type=KnowledgeSectionType.INTERACTION,
+    )
+    chunk.metadata.drug_names = ["와파린"]
+    execution = build_execution_plan("와파린 타이레놀 상호작용")
+    execution = execution.model_copy(
+        update={
+            "query_plan": execution.query_plan.model_copy(
+                update={
+                    "interaction_overview": True,
+                    "interaction_pairs": [],
+                    "interaction_pair_keys": [],
+                }
+            )
+        }
+    )
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=FakeKnowledgeStore(responses=[[chunk]] * 10),
+        dataset_version="knowledge-full-v1",
+        min_similarity_score=0.65,
+    )
+    result = await retriever.search_with_diagnostics(execution_plan=execution)
+    assert result.chunks == [chunk]
+    assert result.diagnostics.rejected_pair_mismatch_count == 0
 
 
 async def test_search_multi_entity_question_accepts_only_chunks_matching_a_pair() -> None:

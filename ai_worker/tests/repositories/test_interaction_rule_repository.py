@@ -181,6 +181,33 @@ async def test_interaction_repository_returns_only_approved_rules(
     )
 
     assert [rule.interaction_rule_id for rule in rules] == [approved.id]
+    repository = DbInteractionRuleRepository(active_dataset_version="dur-v1")
+    empty_context = ActiveIntakeContext(user_id=1)
+    assert await repository.find_approved_rules(context=empty_context, query_entity_names=["와파린"]) == []
+    neighbors = await repository.find_approved_rules(
+        context=empty_context,
+        query_entity_names=["와파린"],
+        include_query_neighbors=True,
+    )
+    assert [rule.interaction_rule_id for rule in neighbors] == [approved.id]
+    product_context = ActiveIntakeContext(
+        user_id=1,
+        medications=[
+            context.medications[1].model_copy(update={"name": "와파린정5mg"}),
+        ],
+    )
+    product_neighbors = await repository.find_approved_rules(
+        context=product_context,
+        query_entity_names=["와파린정5mg"],
+        include_query_neighbors=True,
+    )
+    assert [rule.interaction_rule_id for rule in product_neighbors] == [approved.id]
+    assert (
+        await repository.find_approved_rules(
+            context=context, query_entity_names=["없는 성분"], include_query_neighbors=True
+        )
+        == []
+    )
     assert rules[0].effect_texts == [
         "출혈 위험이 증가할 수 있어 전문가 확인이 필요합니다.",
         "제품 라벨의 복용 주의사항도 함께 확인해 주세요.",

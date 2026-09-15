@@ -171,9 +171,12 @@ class MedicationKnowledgeCandidateRetriever:
                 entity_filtered_count += len(tier_results)
             if tier_eligible:
                 selected_search_tier = tier.name
-            if tier_eligible and (
-                tier.name == KnowledgeSearchTier.SEMANTIC or self._section_coverage_evaluator(eligible, plan)
-            ):
+            has_requested_section_coverage = self._section_coverage_evaluator(eligible, plan)
+            if tier.name == KnowledgeSearchTier.EXACT_PAIR:
+                has_requested_section_coverage = (
+                    has_requested_section_coverage and self._has_complete_exact_pair_coverage(eligible, plan=plan)
+                )
+            if tier_eligible and (tier.name == KnowledgeSearchTier.SEMANTIC or has_requested_section_coverage):
                 break
 
         return MedicationKnowledgeCandidateSearchResult(
@@ -186,6 +189,20 @@ class MedicationKnowledgeCandidateRetriever:
             entity_filtered_count=entity_filtered_count,
             broad_candidate_count=broad_candidate_count,
         )
+
+    @staticmethod
+    def _has_complete_exact_pair_coverage(
+        results: list[RetrievedKnowledgeChunk],
+        *,
+        plan: MedicationKnowledgeQueryPlan,
+    ) -> bool:
+        """모든 질문 pair가 직접 pair-key 청크로 확보된 경우에만 exact tier에서 멈춘다."""
+
+        required_pair_keys = set(plan.interaction_pair_keys)
+        if not required_pair_keys:
+            return False
+        covered_pair_keys = {pair_key for result in results for pair_key in result.metadata.interaction_pair_keys}
+        return required_pair_keys.issubset(covered_pair_keys)
 
     @staticmethod
     def _embedding_query_text(
@@ -210,7 +227,7 @@ class MedicationKnowledgeCandidateRetriever:
         execution_plan: MedicationSearchExecutionPlan,
     ) -> list[MedicationKnowledgeSearchTier]:
         tiers: list[MedicationKnowledgeSearchTier] = []
-        if execution_plan.interaction_pair_keys:
+        if execution_plan.interaction_pair_keys and not execution_plan.query_plan.interaction_overview:
             tiers.append(
                 MedicationKnowledgeSearchTier(
                     name=KnowledgeSearchTier.EXACT_PAIR,
