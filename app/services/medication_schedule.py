@@ -84,12 +84,10 @@ class MedicationScheduleService:
                 raise MedicationScheduleNotFoundError()
 
             medications = await Medication.filter(care_episode_id=episode.id).using_db(connection).order_by("id")
+            changed_at = self._mutation_time_provider()
             # OCR의 과거 조제일로 종료 판정되어도 최초 복용 시간 등록은 허용한다.
             is_ocr_registration = episode.source_ocr_job_id is not None and episode.medication_start_slot is None
-            if (
-                not is_ocr_registration
-                and medication_end_date(episode, medications) < datetime.now(config.TIMEZONE).date()
-            ):
+            if not is_ocr_registration and medication_end_date(episode, medications) < changed_at.date():
                 raise MedicationScheduleFinishedError()
 
             medication_ids = {medication.id for medication in medications}
@@ -102,7 +100,6 @@ class MedicationScheduleService:
             if settings is None:
                 settings = await UserSettings.create(user_id=user.id, using_db=connection)
             previous_meal_times = custom_challenge_meal_times(settings)
-            changed_at = self._mutation_time_provider()
             for slot, value in meal_times.items():
                 setattr(settings, SLOT_TIME_FIELDS[slot], value)
             await settings.save(using_db=connection, update_fields=list(SLOT_TIME_FIELDS.values()))
