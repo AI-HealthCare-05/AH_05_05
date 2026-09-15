@@ -18,7 +18,8 @@ export function DocumentUploadPage() {
   const closeCamera = useCallback(() => setCameraOpen(false), []);
 
   function openCamera() {
-    if (window.isSecureContext && typeof navigator.mediaDevices?.getUserMedia === 'function') {
+    const mobileCamera = navigator.maxTouchPoints > 0 && window.matchMedia('(pointer: coarse)').matches;
+    if (!mobileCamera && window.isSecureContext && typeof navigator.mediaDevices?.getUserMedia === 'function') {
       setCameraOpen(true);
     } else {
       cameraInputRef.current?.click();
@@ -161,6 +162,9 @@ export function DocumentUploadPage() {
                 <Camera aria-hidden className="mr-2 size-5" />
                 촬영하기
               </Button>
+              {window.isSecureContext && typeof navigator.mediaDevices?.getUserMedia === 'function' && (
+                <Button variant="secondary" onClick={() => setCameraOpen(true)}>가이드 보며 촬영</Button>
+              )}
               <Button variant="secondary" onClick={() => galleryInputRef.current?.click()}>
                 <ImageIcon aria-hidden className="mr-2 size-5" />
                 갤러리에서 선택

@@ -129,6 +129,53 @@ def test_dispensed_date_keeps_right_or_below_value_with_other_panel_date(x: int,
     assert [block.block_id for block in catalog.date_candidates] == ["dispensed"]
 
 
+def test_dispensed_date_accepts_bullet_prefixed_split_label_from_medguide_021() -> None:
+    source = OcrResult(
+        (
+            _block("receipt-date", "2020-07-22", 109, 82, 50, 7),
+            _block("label-start", "·조제", 492, 75, 27, 12),
+            _block("label-end", "일자", 519, 73, 21, 12),
+            _block("dispensed", "2020-07-22", 544, 72, 55, 12),
+        )
+    )
+    layout = build_ocr_layout(source)
+    catalog = build_evidence_catalog(source, layout, materialize_medication_rows(layout))
+
+    assert [block.block_id for block in catalog.date_candidates] == ["dispensed"]
+    assert parse_dispensed_date(catalog.date_candidates[0].text, today=date(2020, 7, 22)) == "2020-07-22"
+
+
+def test_dispensed_date_accepts_marker_prefixed_label_and_value_from_medguide_020() -> None:
+    source = OcrResult(
+        (
+            _block("label", "·조제일자", 458, 69, 48, 12),
+            _block("dispensed", ":2020-11-05", 509, 70, 59, 10),
+        )
+    )
+    layout = build_ocr_layout(source)
+    catalog = build_evidence_catalog(source, layout, materialize_medication_rows(layout))
+
+    assert [block.block_id for block in catalog.date_candidates] == ["dispensed"]
+    assert parse_dispensed_date(catalog.date_candidates[0].text, today=date(2020, 11, 5)) == "2020-11-05"
+
+
+def test_dispensed_date_accepts_three_token_label_from_medguide_008() -> None:
+    source = OcrResult(
+        (
+            _block("label-start", "조", 384, 125, 14, 13),
+            _block("label-middle", "제", 401, 125, 15, 15),
+            _block("label-end", "일자", 420, 126, 35, 16),
+            _block("separator", ":", 458, 129, 5, 9),
+            _block("dispensed", "2023-06-01", 467, 125, 79, 13),
+        )
+    )
+    layout = build_ocr_layout(source)
+    catalog = build_evidence_catalog(source, layout, materialize_medication_rows(layout))
+
+    assert [block.block_id for block in catalog.date_candidates] == ["dispensed"]
+    assert parse_dispensed_date(catalog.date_candidates[0].text, today=date(2023, 6, 1)) == "2023-06-01"
+
+
 @pytest.mark.parametrize(
     "suffix,x,y,expected",
     [
@@ -148,6 +195,36 @@ def test_dispensed_date_accepts_only_adjacent_split_label(suffix: str, x: int, y
     )
     layout = build_ocr_layout(source)
     catalog = build_evidence_catalog(source, layout, materialize_medication_rows(layout))
+    assert [block.block_id for block in catalog.date_candidates] == expected
+
+
+@pytest.mark.parametrize("scale", [1, 3])
+@pytest.mark.parametrize(
+    "value_x,value_y,value_height,expected",
+    [
+        (466, 114, 24, ["dispensed"]),  # Taller, slightly raised date on the same row.
+        (466, 118, 19, ["dispensed"]),  # Same font shifted upward.
+        (466, 130, 19, ["dispensed"]),  # Same font shifted downward.
+        (455, 120, 24, ["dispensed"]),  # A skewed box slightly overlaps the label horizontally.
+        (466, 102, 24, []),  # Date belongs to the row above.
+        (466, 99, 44, []),  # Tall upper heading overlaps but is not a local value.
+        (650, 114, 24, []),  # Matching height in a different panel.
+    ],
+)
+def test_dispensed_date_preserves_overlapping_same_row_geometry(
+    scale: int, value_x: int, value_y: int, value_height: int, expected: list[str]
+) -> None:
+    source = OcrResult(
+        (
+            _block("label-start", "조", 383 * scale, 124 * scale, 15 * scale, 16 * scale),
+            _block("label-middle", "제", 400 * scale, 124 * scale, 16 * scale, 16 * scale),
+            _block("label-end", "일자", 419 * scale, 124 * scale, 37 * scale, 19 * scale),
+            _block("dispensed", "2026-09-21", value_x * scale, value_y * scale, 89 * scale, value_height * scale),
+        )
+    )
+    layout = build_ocr_layout(source)
+    catalog = build_evidence_catalog(source, layout, materialize_medication_rows(layout))
+
     assert [block.block_id for block in catalog.date_candidates] == expected
 
 

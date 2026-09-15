@@ -48,6 +48,7 @@ _DATE_LABEL_GRAMMAR = r"조제\s*일(?:\s*자)?"
 _DATE_LABEL_PATTERN = re.compile(_DATE_LABEL_GRAMMAR)
 _DATE_VALUE_ONLY_PATTERN = re.compile(r"^\d{2,4}[./-]\d{1,2}[./-]\d{1,2}$")
 _DATE_LABEL_AND_VALUE_PATTERN = re.compile(r"^" + _DATE_LABEL_GRAMMAR + r"[\s:：,·-]+\d{2,4}[./-]\d{1,2}[./-]\d{1,2}$")
+_DATE_LEADING_MARKERS_PATTERN = re.compile(r"^[\s:：·•・ㆍᆞ･.]+")
 _SUMMARY_DOSE_PATTERN = re.compile(
     r"(?:적량|(?:[1-9][0-9]*(?:\.[0-9]+)?|0\.[0-9]+)(?:정|캡슐|포|m[lℓ]))",
     re.IGNORECASE,
@@ -841,8 +842,28 @@ def _date_candidate_ids(
     anchors = [bbox for source, bbox in eligible.values() if _DATE_LABEL_PATTERN.search(_normalized(source.text))]
     # Providers can tokenize 조제 / 일자 separately. Join only local label
     # fragments; unrelated fields on the global line never enlarge the anchor.
-    starts = [bbox for source, bbox in eligible.values() if _normalized(source.text) == "조제"]
-    ends = [bbox for source, bbox in eligible.values() if _normalized(source.text).rstrip(":：") in {"일", "일자"}]
+    label_fragments = tuple((_strip_date_label_markers(source.text), bbox) for source, bbox in eligible.values())
+    starts = [bbox for text, bbox in label_fragments if text == "조제"]
+    for first_text, first_bbox in label_fragments:
+        if first_text != "조":
+            continue
+        for second_text, second_bbox in label_fragments:
+            if second_text != "제":
+                continue
+            height = min(first_bbox.height, second_bbox.height)
+            if (
+                0 <= second_bbox.x_min - first_bbox.x_max <= height
+                and abs(first_bbox.center_y - second_bbox.center_y) <= height * 0.35
+            ):
+                starts.append(
+                    AxisAlignedBBox(
+                        first_bbox.x_min,
+                        min(first_bbox.y_min, second_bbox.y_min),
+                        second_bbox.x_max,
+                        max(first_bbox.y_max, second_bbox.y_max),
+                    )
+                )
+    ends = [bbox for text, bbox in label_fragments if text.rstrip(":：") in {"일", "일자"}]
     for start in starts:
         for end in ends:
             height = min(start.height, end.height)
@@ -857,6 +878,7 @@ def _date_candidate_ids(
         block_id
         for block_id, (source, _) in eligible.items()
         if _DATE_LABEL_AND_VALUE_PATTERN.fullmatch(_normalized(source.text))
+        or _DATE_LABEL_AND_VALUE_PATTERN.fullmatch(_strip_date_label_markers(source.text))
     }
     for label_bbox in anchors:
         for block_id, bbox in date_values:
@@ -866,17 +888,28 @@ def _date_candidate_ids(
 
 
 def _is_explicit_date_value(text: str) -> bool:
-    return _DATE_VALUE_ONLY_PATTERN.fullmatch(_normalized(text)) is not None
+    return _DATE_VALUE_ONLY_PATTERN.fullmatch(_strip_date_label_markers(text)) is not None
+
+
+def _strip_date_label_markers(text: str) -> str:
+    """Ignore OCR punctuation attached to a date label or its value."""
+
+    return _DATE_LEADING_MARKERS_PATTERN.sub("", _normalized(text))
 
 
 def _is_local_date_value(label: AxisAlignedBBox, value: AxisAlignedBBox) -> bool:
     # A tall next-visit heading can share the global line with the label. Bind
     # to the label's own box, never to that line's union box or an above row.
     height = min(label.height, value.height)
+    vertical_overlap = min(label.y_max, value.y_max) - max(label.y_min, value.y_min)
+    # Slightly raised or slanted date text can have a higher box top than its
+    # label. Strong overlap with comparable text height still proves the row;
+    # a tall heading above the label must not gain this exception.
+    aligned_text_boxes = max(label.height, value.height) <= height * 1.6 and vertical_overlap >= height * 0.65
     same_row = (
         value.x_min >= label.x_max - height * 0.25
         and value.x_min - label.x_max <= max(label.width, height * 2.0)
-        and value.y_min >= label.y_min - height * 0.35
+        and (value.y_min >= label.y_min - height * 0.35 or aligned_text_boxes)
         and abs(value.center_y - label.center_y) <= height * 0.6
     )
     overlap = min(label.x_max, value.x_max) - max(label.x_min, value.x_min)

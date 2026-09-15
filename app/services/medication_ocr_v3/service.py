@@ -6,7 +6,7 @@ import asyncio
 import math
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Never
 
 from app.core.exceptions import (
@@ -136,11 +136,60 @@ class MedicationOcrV3Service:
             structurer=self._structurer,
             is_cancelled=self._is_cancelled,
         )
+        used_preprocess_version = self._preprocess_version
+        retried = False
+        if (
+            self._preprocess_version == "v3.4.1"
+            and isinstance(pipeline_result, AnalyzePipelineResult)
+            and any(stage.name == "candidate" and stage.code == "TABLE_NOT_FOUND" for stage in pipeline_result.stages)
+            and "output_saturate_unsharp_mild" in processed.operations
+        ):
+            # Unsharp filtering can merge small receipt digits into OCR math tokens.
+            # Retry once with the existing non-sharpening small-print profile;
+            # retain all normal table, grounding, and quality checks.
+            if self._is_cancelled is not None and await self._is_cancelled():
+                raise MedicationOcrV3CancelledError(
+                    [
+                        _stage(name="preprocess", status="succeeded", elapsed_ms=preprocess_elapsed_ms, call_count=0),
+                        *(_stage_from_core(stage) for stage in pipeline_result.stages),
+                    ]
+                )
+            retry_started = time.perf_counter()
+            alternate = await asyncio.to_thread(
+                preprocess_image, image.content, image.media_type, preprocess_version="v3.4.2"
+            )
+            if alternate.quality_state is not QualityState.RECAPTURE_REQUIRED:
+                alternate_jpeg = await asyncio.to_thread(build_privacy_safe_provider_image, alternate, ())
+                preprocess_elapsed_ms += _elapsed_ms(retry_started)
+                previous_stages = {stage.name: stage for stage in pipeline_result.stages}
+                pipeline_result = await analyze_processed_image(
+                    self._provider,
+                    alternate_jpeg,
+                    structurer=self._structurer,
+                    is_cancelled=self._is_cancelled,
+                )
+                pipeline_result = replace(
+                    pipeline_result,
+                    stages=tuple(
+                        replace(
+                            stage,
+                            elapsed_ms=stage.elapsed_ms + previous_stages[stage.name].elapsed_ms,
+                            call_count=stage.call_count + previous_stages[stage.name].call_count,
+                        )
+                        for stage in pipeline_result.stages
+                    ),
+                )
+                processed = alternate
+                used_preprocess_version = "v3.4.2"
+                retried = True
+            else:
+                preprocess_elapsed_ms += _elapsed_ms(retry_started)
         preprocess_stage = _stage(
             name="preprocess",
             status="succeeded",
             elapsed_ms=preprocess_elapsed_ms,
             call_count=0,
+            code="TABLE_RETRY_V3_4_2" if retried else None,
         )
         if isinstance(pipeline_result, AnalyzePipelineFailure):
             _raise_job_provider_error(
@@ -167,7 +216,7 @@ class MedicationOcrV3Service:
             structuring_model=_structuring_model(pipeline_result, self._structurer),
             prompt_version=getattr(self._structurer, "prompt_version", PROMPT_VERSION),
             schema_version=PROJECT_SCHEMA_VERSION,
-            preprocess_version=self._preprocess_version,
+            preprocess_version=used_preprocess_version,
             processed_image_bytes=processed.template_image.jpeg_bytes,
         )
 
