@@ -1,7 +1,6 @@
 import os
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from importlib import import_module
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -521,87 +520,6 @@ class TestMedicationGuideOcrJobService(TestCase):
             await service._mark_worker_interrupted(job, job.input_manifest, now=datetime.now(config.TIMEZONE))
             failed = await OcrJob.get(id=job_id)
             assert failed.stage_results == {"timings": None, "stages": []}
-
-    async def test_stage_envelope_migration_leaves_unknown_and_conflicting_data_untouched(self) -> None:
-        migration = import_module("app.core.db.migrations.models.33_20260907223001_stage_results_envelope")
-        user = await create_user("ocr-envelope-conflicts@example.com")
-        cases = [
-            ({"unknown": []}, {"timings": {"totalMs": 100}}),
-            ({"timings": {"totalMs": 200}, "stages": []}, {"timings": {"totalMs": 100}}),
-            ({"timings": None, "stages": [], "futureMetadata": "keep"}, {"source": "keep"}),
-            ([{"elapsedMs": 4}], ["legacy-manifest"]),
-        ]
-        with TemporaryDirectory() as directory:
-            service = MedicationGuideOcrJobService(storage=TemporaryOcrStorage(Path(directory)), redis_pool=FakeRedis())
-            ids = []
-            for index, (stages, manifest) in enumerate(cases):
-                accepted = await service.submit(user, f"envelope-conflict-{index}", upload())
-                job_id = int(accepted.ocr_job_id)
-                ids.append(job_id)
-                await OcrJob.filter(id=job_id).update(stage_results=stages, input_manifest=manifest)
-            for migrate in (migration.upgrade, migration.upgrade, migration.downgrade, migration.downgrade):
-                await OcrJob._meta.db.execute_script(await migrate(OcrJob._meta.db))
-                for job_id, (stages, manifest) in zip(ids, cases, strict=True):
-                    job = await OcrJob.get(id=job_id)
-                    assert job.stage_results == stages
-                    assert job.input_manifest == manifest
-
-    async def test_stage_envelope_migration_preserves_history_and_is_repeatable(self) -> None:
-        migration = import_module("app.core.db.migrations.models.33_20260907223001_stage_results_envelope")
-        user = await create_user("ocr-envelope-migration@example.com")
-        stages = [
-            {"name": "preprocess", "status": "succeeded", "elapsedMs": 4, "callCount": 0},
-            {"name": "llm", "status": "skipped", "elapsedMs": 0, "callCount": 0, "code": "DETERMINISTIC_SUFFICIENT"},
-        ]
-        timings = {"queueWaitMs": 100, "persistMs": 200, "totalMs": 1500}
-        cases = [
-            (
-                stages,
-                {"source": "keep", "timings": timings},
-                {"timings": timings, "stages": stages},
-                {"source": "keep"},
-            ),
-            (stages, {"source": "keep"}, {"timings": None, "stages": stages}, {"source": "keep"}),
-            ([], {"source": "keep"}, {"timings": None, "stages": []}, {"source": "keep"}),
-            (None, {"source": "keep", "timings": timings}, {"timings": timings, "stages": None}, {"source": "keep"}),
-            (None, {"source": "keep"}, None, {"source": "keep"}),
-            (
-                {"timings": timings, "stages": stages},
-                {"source": "keep"},
-                {"timings": timings, "stages": stages},
-                {"source": "keep"},
-            ),
-        ]
-        with TemporaryDirectory() as directory:
-            service = MedicationGuideOcrJobService(storage=TemporaryOcrStorage(Path(directory)), redis_pool=FakeRedis())
-            ids = []
-            for index, (old_stages, manifest, _, _) in enumerate(cases):
-                accepted = await service.submit(user, f"envelope-migration-{index}", upload())
-                job_id = int(accepted.ocr_job_id)
-                ids.append(job_id)
-                await OcrJob.filter(id=job_id).update(stage_results=old_stages, input_manifest=manifest)
-            for _ in range(2):
-                await OcrJob._meta.db.execute_script(await migration.upgrade(OcrJob._meta.db))
-                for job_id, (_, _, expected, manifest) in zip(ids, cases, strict=True):
-                    job = await OcrJob.get(id=job_id)
-                    assert job.stage_results == expected
-                    assert job.input_manifest == manifest
-                    if expected is not None:
-                        assert list(job.stage_results) == ["timings", "stages"]
-            for _ in range(2):
-                await OcrJob._meta.db.execute_script(await migration.downgrade(OcrJob._meta.db))
-                for job_id, (_, _, expected, manifest) in zip(ids, cases, strict=True):
-                    job = await OcrJob.get(id=job_id)
-                    assert job.stage_results == (expected["stages"] if expected is not None else None)
-                    expected_manifest = dict(manifest)
-                    if expected is not None and expected["timings"] is not None:
-                        expected_manifest["timings"] = expected["timings"]
-                    assert job.input_manifest == expected_manifest
-            await OcrJob._meta.db.execute_script(await migration.upgrade(OcrJob._meta.db))
-            for job_id, (_, _, expected, manifest) in zip(ids, cases, strict=True):
-                job = await OcrJob.get(id=job_id)
-                assert job.stage_results == expected
-                assert job.input_manifest == manifest
 
     async def test_final_publication_retries_database_only_and_preserves_analysis(self) -> None:
         user = await create_user("ocr-publication-retry@example.com")

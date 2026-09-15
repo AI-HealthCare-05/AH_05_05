@@ -1,5 +1,3 @@
-import importlib
-
 import app.models as models
 from app.core.db.databases import TORTOISE_APP_MODELS
 from app.models.chat import ChatSession
@@ -33,16 +31,3 @@ def test_chat_session_uses_nullable_like_feedback_instead_of_score() -> None:
     assert fields["is_like"].null is True
     assert fields["reason_code"].null is True
     assert fields["reason_code"].max_length == 20
-
-
-async def test_migration_discards_legacy_chat_score() -> None:
-    migration = importlib.import_module(
-        "app.core.db.migrations.models.23_20260903212549_add_common_codes_chat_feedback"
-    )
-
-    upgrade_sql = await migration.upgrade(None)
-    downgrade_sql = await migration.downgrade(None)
-
-    assert "DROP CHECK `chk_chat_session_score`" in upgrade_sql
-    assert "DROP COLUMN `score`" in upgrade_sql
-    assert "ADD `score` INT" in downgrade_sql

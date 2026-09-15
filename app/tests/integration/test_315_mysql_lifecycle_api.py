@@ -12,7 +12,7 @@ import re
 from contextlib import ExitStack, contextmanager
 from datetime import datetime, timedelta
 from decimal import Decimal
-from importlib import import_module
+from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -49,6 +49,7 @@ os.environ.update(
 
 from app.core import config  # noqa: E402
 from app.core.db.databases import TORTOISE_ORM  # noqa: E402
+from app.core.db.reference_seed import apply_reference_seed  # noqa: E402
 from app.core.utils.security import hash_password  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.care import CareEpisode  # noqa: E402
@@ -102,9 +103,8 @@ async def _server_statement(statement: str) -> None:
 async def isolated_mysql_schema() -> None:
     """Create and finally drop only this run's current-model MySQL database.
 
-    Blank-to-head Aerich is intentionally not used: immutable legacy migration 4
-    returns empty SQL on MySQL. Migration 43 has its own isolated 42-to-43 test;
-    this suite owns the real application/API behavior on the current model schema.
+    This suite owns the real application/API behavior on the current model schema
+    and applies the current versioned reference seed directly.
     """
 
     await _server_statement(f"CREATE DATABASE `{MYSQL_DATABASE}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
@@ -112,15 +112,8 @@ async def isolated_mysql_schema() -> None:
         await Tortoise.init(config=TORTOISE_ORM)
         await Tortoise.generate_schemas(safe=True)
         connection = Tortoise.get_connection("default")
-        # Reproduce the immutable reference-data path needed by migration 42.
-        # Current-model schema generation creates tables only, not these rows.
-        for module_name in (
-            "app.core.db.migrations.models.38_20260908132414_seed_custom_challenge_defaults",
-            "app.core.db.migrations.models.40_20260909000000_rename_custom_challenge_check_type_group",
-            "app.core.db.migrations.models.42_20260909180000_merge_challenge_schema_heads",
-        ):
-            seed_migration = import_module(module_name)
-            await connection.execute_script(await seed_migration.upgrade(connection))
+        seed_dir = Path(__file__).resolve().parents[3] / "data" / "reference_seed"
+        await apply_reference_seed(connection, seed_dir)
         database_row = (await connection.execute_query_dict("SELECT DATABASE() AS database_name"))[0]
         assert database_row["database_name"] == MYSQL_DATABASE
         engines = await connection.execute_query_dict(
