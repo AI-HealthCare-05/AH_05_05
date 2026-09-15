@@ -822,6 +822,218 @@ async def test_vague_symptom_uses_conversation_gate_without_retrieval() -> None:
     assert "어디" in result.answer
 
 
+async def test_current_medication_list_uses_only_registered_medications() -> None:
+    retriever = RecordingQueryPlanRetriever()
+    result = await build_use_case(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=10,
+                    name="리바록사반정(항응고제)",
+                )
+            ],
+            supplements=[
+                ActiveSupplement(
+                    registration_id=2,
+                    supplement_nutrient_id=3,
+                    name="비타민 D",
+                    dose_amount="1",
+                    dose_unit="정",
+                    start_date=date(2026, 9, 1),
+                )
+            ],
+        ),
+        retriever=retriever,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="ACTIVE_MEDICATION_LIST",
+                safety_signal="NONE",
+                confidence="HIGH",
+            )
+        ),
+    ).execute(build_request("지금 먹고 있는 약 알려줘"))
+
+    assert result.route is MedicationChatRoute.ACTIVE_INTAKE
+    assert result.answer == "💊 **복약정보**\n- 리바록사반정"
+    assert "비타민 D" not in result.answer
+    assert retriever.received_kwargs is None
+
+
+async def test_current_supplement_list_uses_only_registered_supplements() -> None:
+    result = await build_use_case(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=10,
+                    name="리바록사반정",
+                )
+            ],
+            supplements=[
+                ActiveSupplement(
+                    registration_id=2,
+                    supplement_nutrient_id=3,
+                    name="비타민 D",
+                    dose_amount="1",
+                    dose_unit="정",
+                    start_date=date(2026, 9, 1),
+                )
+            ],
+        ),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="ACTIVE_SUPPLEMENT_LIST",
+                safety_signal="NONE",
+                confidence="HIGH",
+            )
+        ),
+    ).execute(build_request("내가 먹는 영양제 알려줘"))
+
+    assert result.route is MedicationChatRoute.ACTIVE_INTAKE
+    assert result.answer == "💪🏻 **영양제 정보**\n- 비타민 D"
+    assert "리바록사반" not in result.answer
+
+
+async def test_medication_follow_up_resolves_recent_product_and_searches_requested_section() -> None:
+    retriever = RecordingQueryPlanRetriever()
+    request = build_request("주의할 증상이 있어?").model_copy(
+        update={
+            "history": [ChatHistoryMessage(role=ChatRole.USER, content="타이레놀은 뭐야?")],
+            "session_reference": MedicationChatSessionReference(
+                entities=[
+                    MedicationChatSessionReferenceEntity(
+                        name="타이레놀정500밀리그람",
+                        entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                        kind=InteractionEntityKind.DRUG,
+                    )
+                ]
+            ),
+        }
+    )
+
+    await build_use_case(
+        retriever=retriever,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="MEDICATION_GUIDE_FOLLOW_UP",
+                safety_signal="NONE",
+                confidence="HIGH",
+            )
+        ),
+    ).execute(request)
+
+    assert retriever.received_kwargs is not None
+    query_plan = retriever.received_kwargs["execution_plan"].query_plan
+    assert query_plan.entity_names == ["타이레놀정500밀리그람"]
+    assert KnowledgeSectionType.CAUTION in query_plan.section_types
+
+
+async def test_symptom_medicine_question_searches_function_evidence_with_recent_symptom() -> None:
+    evidence_chunk = build_chunk().model_copy(
+        update={
+            "content": "두통 완화에 사용되는 의약품의 효능 정보입니다.",
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "document_type": KnowledgeDocumentType.REGULATORY_DRUG_LABEL,
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                    "drug_names": ["아세트아미노펜"],
+                }
+            ),
+        }
+    )
+    retriever = RecordingQueryPlanRetriever(chunks=[evidence_chunk])
+    request = build_request("무슨 약을 먹어야 해?").model_copy(
+        update={"history": [ChatHistoryMessage(role=ChatRole.USER, content="머리가 아파")]}
+    )
+
+    result = await build_use_case(
+        retriever=retriever,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="SYMPTOM_MEDICATION_GUIDANCE",
+                safety_signal="NONE",
+                confidence="HIGH",
+                symptom_context="머리가 아파",
+            )
+        ),
+    ).execute(request)
+
+    assert retriever.received_kwargs is not None
+    query_plan = retriever.received_kwargs["execution_plan"].query_plan
+    assert "머리가 아파" in query_plan.expanded_query
+    assert query_plan.section_types == [KnowledgeSectionType.FUNCTION]
+    assert KnowledgeDocumentType.DRUG_ENCYCLOPEDIA in query_plan.document_types
+    assert result.route is MedicationChatRoute.MEDICATION_GUIDE
+    assert result.answer_context_history == [ChatHistoryMessage(role=ChatRole.USER, content="머리가 아파")]
+
+
+async def test_unresolved_medicine_question_never_uses_conversation_gate_answer() -> None:
+    response_generator = StaticConversationResponseGenerator("타이레놀은 통증과 발열에 사용됩니다.")
+    retriever = RecordingQueryPlanRetriever()
+    result = await build_use_case(
+        retriever=retriever,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="MEDICATION_GUIDE",
+                safety_signal="NONE",
+                confidence="HIGH",
+            )
+        ),
+        conversation_response_generator=response_generator,
+    ).execute(build_request("타이레놀산 효능 알려줘"))
+
+    assert result.route is not MedicationChatRoute.OUT_OF_SCOPE
+    assert response_generator.inputs == []
+    assert retriever.received_kwargs is not None
+    assert (
+        KnowledgeDocumentType.REGULATORY_DRUG_LABEL
+        in retriever.received_kwargs["execution_plan"].query_plan.document_types
+    )
+
+
+async def test_symptom_context_must_match_current_or_recent_user_message() -> None:
+    retriever = RecordingQueryPlanRetriever()
+    result = await build_use_case(
+        retriever=retriever,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="SYMPTOM_MEDICATION_GUIDANCE",
+                safety_signal="NONE",
+                confidence="HIGH",
+                symptom_context="가슴 통증",
+            )
+        ),
+    ).execute(
+        build_request("무슨 약을 먹어야 해?").model_copy(
+            update={"history": [ChatHistoryMessage(role=ChatRole.USER, content="머리가 아파")]}
+        )
+    )
+
+    assert result.route is MedicationChatRoute.CLARIFICATION
+    assert retriever.received_kwargs is None
+
+
 async def test_follow_up_schedule_question_returns_registered_upcoming_visits() -> None:
     schedule_provider = StaticFollowUpScheduleProvider(
         [

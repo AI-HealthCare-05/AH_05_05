@@ -136,7 +136,7 @@ def test_build_messages_includes_only_structured_evidence_reasoning_result() -> 
     }
 
 
-def test_build_messages_omits_unreferenced_history_from_general_question() -> None:
+def test_build_messages_keeps_only_server_selected_answer_context_history() -> None:
     request = MedicationChatRequest(
         request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
         user_id=1,
@@ -168,6 +168,34 @@ def test_build_messages_omits_unreferenced_history_from_general_question() -> No
     payload = json.loads(user_content.removeprefix("입력 데이터(JSON)\n"))
     assert payload["history"] == []
     assert "리바록사반" not in user_content
+
+
+def test_build_messages_includes_server_selected_symptom_context() -> None:
+    request = MedicationChatRequest(
+        request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+        user_id=1,
+        question="무슨 약을 먹어야 해?",
+    )
+    result = MedicationChatResult(
+        request_id=request.request_id,
+        answer="근거 기반 초안입니다.",
+        route=MedicationChatRoute.MEDICATION_GUIDE,
+        safety_status=SafetyStatus.SAFE,
+        prompt_version="draft-v1",
+        schema_version="medication-chat-result-v1",
+        answer_context_history=[ChatHistoryMessage(role=ChatRole.USER, content="머리가 아파")],
+    )
+
+    messages = build_medication_chat_messages(
+        request=request,
+        context=ActiveIntakeContext(user_id=1),
+        result=result,
+    )
+
+    user_content = messages[-1].content
+    assert isinstance(user_content, str)
+    payload = json.loads(user_content.removeprefix("입력 데이터(JSON)\n"))
+    assert payload["history"] == [{"role": "USER", "content": "머리가 아파"}]
 
 
 def test_build_messages_keeps_history_for_confirmed_session_reference() -> None:
