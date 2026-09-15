@@ -16,7 +16,7 @@ services:
 
   # 2. Vector Database
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.19.0
     container_name: qdrant
     restart: always
     networks:
@@ -116,6 +116,7 @@ services:
     env_file: .env
     environment:
       QDRANT_URL: http://qdrant:6333
+      REDIS_URL: redis://redis:6379/0
     restart: always
     mem_limit: 4G
     networks:
