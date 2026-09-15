@@ -142,8 +142,7 @@ function OfficialHomeChallengeSummary({ principal }: { principal: string | null 
     || (item.today_verification?.verification_date === today && item.today_verification.status === 'APPROVED');
 
   const officialCards: TodayChallengeCard[] = (official.items ?? []).filter(item =>
-    (item.status === 'ACTIVE' || item.status === 'COMPLETED') && (item.can_verify || officialDone(item))
-    && koreaDate.format(new Date(item.started_at)) <= today && (Date.parse(item.end_at) > Date.now() || officialDone(item)),
+    item.status === 'ACTIVE' || (item.status === 'COMPLETED' && officialDone(item)),
   ).map(item => ({ id: 'official-' + item.id, title: item.challenge_name, href: '/challenges/participations/' + item.id, official: true,
     image: item.challenge.reward_badge?.image_path ? apiAssetUrl(item.challenge.reward_badge.image_path) : '/images/challenges/badge-walk.png',
     badgeName: item.challenge.reward_badge?.name ?? '공식 챌린지 배지',
@@ -151,14 +150,16 @@ function OfficialHomeChallengeSummary({ principal }: { principal: string | null 
     completed: officialDone(item), pending: pending[item.id], error: actionErrors[item.id],
     onCheckIn: item.status === 'ACTIVE' && item.can_verify && item.today === today && item.challenge.check_type_code === 'SELF' ? () => void checkIn(item) : undefined }));
   const customCards: TodayChallengeCard[] = (custom.items ?? []).filter(item =>
-    (item.status === 'ACTIVE' || item.status === 'COMPLETED') && item.occurrences.some(occurrence => occurrence.scheduledDate === today),
+    item.status === 'ACTIVE' || (item.status === 'COMPLETED' && item.occurrences.some(occurrence => occurrence.scheduledDate === today)),
   ).map(item => {
     const days = customChallengeDayProgress(item);
+    const todayOccurrences = item.occurrences.filter(occurrence => occurrence.scheduledDate === today);
     const fallback = item.challengeType === 'SUPPLEMENT' ? 'supplement' : item.challengeType === 'VISIT' ? 'review' : 'medication';
     return { id: 'custom-' + item.id, title: item.challengeName, href: '/challenges/custom-participations/' + item.id, official: false,
       image: item.rewardBadge?.imagePath ? apiAssetUrl(item.rewardBadge.imagePath) : '/images/challenges/badge-' + fallback + '.png', badgeName: item.rewardBadge?.name ?? '맞춤 챌린지 배지',
       progress: days.completed + ' / ' + days.target + '일', rate: rate(days.rate, days.target),
-      completed: item.occurrences.filter(occurrence => occurrence.scheduledDate === today).every(occurrence => occurrence.isCompleted) };
+      idleLabel: todayOccurrences.length === 0 ? '오늘 예정 없음' : undefined,
+      completed: todayOccurrences.length > 0 && todayOccurrences.every(occurrence => occurrence.isCompleted) };
   });
   const items = [...officialCards, ...customCards];
   const hasActiveParticipation = (official.items ?? []).some(item => item.status === 'ACTIVE')

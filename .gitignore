@@ -20,6 +20,12 @@ wheels/
 .codex-work/
 frontend/package-lock.json
 
+# Local attachments, package cache, and generated deliverables (not app sources)
+/.codex-remote-attachments/
+/.pnpm-store/
+/output/
+/test-artifacts/
+
 # OS-generated metadata
 .DS_Store
 Thumbs.db

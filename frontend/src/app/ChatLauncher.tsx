@@ -11,7 +11,9 @@ export function ChatLauncher({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const { authenticated, principalKey } = useSession();
   const [loginOpen, setLoginOpen] = useState(false);
-  const hidden = ['/', '/login', '/tutorial', '/dev/gallery'].includes(pathname)
+  const registrationPath = pathname.replace(/^\/dev(?=\/)/, '').replace(/\/$/, '');
+  const inMedicationRegistration = ['/document-upload', '/ocr-review', '/medication-schedule'].includes(registrationPath);
+  const hidden = inMedicationRegistration || ['/', '/login', '/tutorial', '/dev/gallery'].includes(pathname)
     || pathname === '/chat' || pathname.startsWith('/chat/') || pathname.startsWith('/dev/chat');
   const activate = useCallback(() => {
     if (authenticated && principalKey) navigate('/chat');
