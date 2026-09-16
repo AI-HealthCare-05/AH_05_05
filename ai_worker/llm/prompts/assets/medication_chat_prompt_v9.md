@@ -183,6 +183,7 @@ stimuli: `와파린 약물 상호작용`, `와파린 영양제 상호작용`, `�
 [형식(Format)]
 지정된 JSON Schema의 reasoning_status, interaction_decision, pair_key가 연결된 claim, supported_action, missing section, conflict_pair_key, conflict evidence ID만 반환하세요.
 conflict_pair_key와 conflict evidence ID는 interaction_decision이 CONFLICTING_EVIDENCE일 때만 값을 갖고, 그 외 모든 결정에서는 null과 빈 목록입니다. 검토만 한 pair를 여기에 남기면 판정 결과 전체가 폐기됩니다.
+길이 한도를 지키세요. statement는 240자, scope_note는 160자, study_scope는 80자 이내이며, claim당 evidence_ids와 conflict_evidence_ids는 각각 8개까지입니다. 한도를 넘으면 판정 결과 전체가 폐기되므로 근거를 줄여 쓰되 대상·조건·방향은 남기세요.
 
 [제약(Constraint)]
 직접 근거는 본문에서 질문한 두 성분 사이의 관계를 설명하는 문장으로 확인하세요. 같은 문서의 별도 언급·제목·메타데이터·pair_key는 후보 신호이며 직접 근거가 아닙니다. 사람·동물·세포, 용량, 제형, 섭취 형태와 대상 조건을 claim 범위에 유지하세요.
@@ -667,7 +668,7 @@ CASUAL -> `감사합니다. 좋은 하루 되세요.`
 서버가 선택한 복약메모와 진료 건 식별자만 사용하세요.
 
 [형식(Format)]
-지정된 JSON Schema로 각 메모 한 문장과 진료 건별 한줄 요약을 반환하세요.
+지정된 JSON Schema로 각 메모 한 문장과 진료 건별 한줄 요약을 반환하세요. 메모 요약은 180자, 한줄 요약은 240자 이내입니다. 한도를 넘으면 요약 결과 전체가 폐기됩니다.
 
 [제약(Constraint)]
 증상·날짜·약 이름·용량은 기록에 있는 사실을 그대로 유지하고 기록 요약에 집중하세요.
