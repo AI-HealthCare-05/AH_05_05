@@ -341,8 +341,8 @@ export function GuidedCamera({ onCapture, onClose, onNativeCamera, onGallery }: 
           <p className="shrink-0 text-center text-sm leading-relaxed text-slate-300 landscape:hidden">밝은 곳에서 종이를 평평하게 펴고<br />글자에 초점을 맞춘 뒤 촬영해주세요.</p>
           <div className="my-4 flex shrink-0 justify-center">
             <button type="button" aria-label="사진 촬영" disabled={!ready || settling || capturing || zooming || Boolean(error)} onClick={() => void capturePhoto()}
-              className="flex size-20 items-center justify-center rounded-full border-4 border-white p-1.5 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-white disabled:opacity-40">
-              <span className="flex size-full items-center justify-center rounded-full bg-primary"><Camera aria-hidden className="size-7 text-white" /></span>
+              className="flex size-20 items-center justify-center rounded-full border-4 border-white p-1.5 shadow-lg focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-white disabled:opacity-40">
+              <span className="flex size-full items-center justify-center rounded-full bg-primary shadow-inner"><Camera aria-hidden className="size-7 text-white" /></span>
             </button>
           </div>
           <div className="flex shrink-0 justify-center gap-3 landscape:flex-col landscape:gap-2">

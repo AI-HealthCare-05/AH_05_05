@@ -239,15 +239,6 @@ function NutrientRangeBar({ total, valueFormat }: { total: NutrientTotal; valueF
         <div
           data-range-track
           className="absolute inset-x-0 top-2 h-2 rounded-pill bg-muted-bg"
-          style={
-            hasUpperLimit
-              ? undefined
-              : {
-                  maskImage: 'linear-gradient(to right, black 0%, black 80%, transparent 100%)',
-                  WebkitMaskImage:
-                    'linear-gradient(to right, black 0%, black 80%, transparent 100%)',
-                }
-          }
         >
           <div
             data-range-fill

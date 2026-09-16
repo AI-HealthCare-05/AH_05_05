@@ -93,7 +93,7 @@ test('현재 채팅 화면에서 인증이 끝나면 이전 계정의 세션 목
 });
 
 test('답변 대기 중 인증이 끝나면 이전 계정의 질문과 늦은 답변을 남기지 않는다', async ({ page }) => {
-  await page.getByRole('button', { name: '새 채팅' }).click();
+  await page.getByRole('button', { name: '새 상담' }).click();
   const pendingQuestion = '인증 종료 전에 보낸 질문';
   await page.getByRole('textbox', { name: '질문 입력' }).fill(pendingQuestion);
   await page.getByRole('button', { name: '보내기' }).click();
