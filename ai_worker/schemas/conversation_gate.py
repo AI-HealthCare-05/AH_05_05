@@ -1,4 +1,5 @@
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -10,6 +11,7 @@ from ai_worker.schemas.medication_search import MedicationQuestionConfidence
 class ConversationIntent(StrEnum):
     GREETING = "GREETING"
     CASUAL = "CASUAL"
+    GENERAL_HEALTH_FOLLOW_UP = "GENERAL_HEALTH_FOLLOW_UP"
     VAGUE_SYMPTOM = "VAGUE_SYMPTOM"
     SPECIFIC_SYMPTOM = "SPECIFIC_SYMPTOM"
     MEDICATION_GUIDE = "MEDICATION_GUIDE"
@@ -65,21 +67,37 @@ class ConversationClassification(BaseModel):
             raise ValueError("상호작용 참조 대상은 중복될 수 없습니다.")
         return normalized
 
+    @model_validator(mode="before")
+    @classmethod
+    def clear_fields_outside_their_intent(cls, value: Any) -> Any:
+        """의도와 무관한 보조 필드는 거부하지 않고 비운다.
+
+        OpenAI strict 모드는 교차 필드 조건을 스키마로 표현할 수 없고 모든 속성을
+        required로 내리므로, 모델은 매 호출에서 보조 필드를 채울 수밖에 없다.
+        보조 필드 하나 때문에 분류 전체를 버리면 의도 분기를 잃고 규칙 기반 경로로
+        조용히 떨어진다. 실제로 고정 평가셋에서 이 손실이 반복 관측됐다.
+        """
+
+        if not isinstance(value, dict):
+            return value
+        intent = value.get("intent")
+        intent = getattr(intent, "value", intent)
+        normalized = dict(value)
+        if intent != ConversationIntent.SYMPTOM_MEDICATION_GUIDANCE.value:
+            normalized["symptom_context"] = None
+        if intent != ConversationIntent.MEDICATION_NOTE_SUMMARY.value:
+            normalized["note_summary_scope"] = None
+        references = normalized.get("interaction_reference_names") or []
+        if intent != ConversationIntent.SYMPTOM_INTERACTION_FOLLOW_UP.value or len(references) != 2:
+            normalized["interaction_reference_names"] = []
+        return normalized
+
     @model_validator(mode="after")
-    def validate_note_summary_scope(self) -> "ConversationClassification":
-        is_note_summary = self.intent is ConversationIntent.MEDICATION_NOTE_SUMMARY
-        if is_note_summary and self.note_summary_scope is None:
+    def validate_required_fields_for_intent(self) -> "ConversationClassification":
+        if self.intent is ConversationIntent.MEDICATION_NOTE_SUMMARY and self.note_summary_scope is None:
             raise ValueError("MEDICATION_NOTE_SUMMARY에는 note_summary_scope가 필요합니다.")
-        if not is_note_summary and self.note_summary_scope is not None:
-            raise ValueError("복약메모 요약이 아닌 intent에는 note_summary_scope를 사용할 수 없습니다.")
-        if self.interaction_reference_names and self.intent is not ConversationIntent.SYMPTOM_INTERACTION_FOLLOW_UP:
-            raise ValueError("상호작용 후속 질문이 아닌 intent에는 참조 대상을 사용할 수 없습니다.")
-        if self.interaction_reference_names and len(self.interaction_reference_names) != 2:
-            raise ValueError("상호작용 참조 대상은 두 개여야 합니다.")
         if self.intent is ConversationIntent.SYMPTOM_MEDICATION_GUIDANCE and not self.symptom_context:
             raise ValueError("SYMPTOM_MEDICATION_GUIDANCE에는 확인된 symptom_context가 필요합니다.")
-        if self.intent is not ConversationIntent.SYMPTOM_MEDICATION_GUIDANCE and self.symptom_context is not None:
-            raise ValueError("증상 기반 약 정보 요청이 아닌 intent에는 symptom_context를 사용할 수 없습니다.")
         return self
 
 

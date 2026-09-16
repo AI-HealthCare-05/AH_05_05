@@ -66,7 +66,7 @@ async def test_chain_sends_only_four_recent_messages_and_returns_structured_outp
         "대화 5",
         "대화 6",
     ]
-    assert CONVERSATION_GATE_PROMPT_VERSION == "conversation-gate-prompt-v7"
+    assert CONVERSATION_GATE_PROMPT_VERSION == "conversation-gate-prompt-v9"
     for heading in (
         "역할(Role)",
         "작업(Task)",

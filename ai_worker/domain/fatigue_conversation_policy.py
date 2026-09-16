@@ -19,9 +19,13 @@ class FatigueConversationDecision:
 class FatigueConversationPolicy:
     """피로 관련 질문을 제품 추천보다 안전한 문진으로 먼저 전환한다."""
 
+    FOLLOW_UP_MARKER = "먼저 다음을 알려주시면 안전한 범위에서 일반 정보를 정리해 드릴 수 있습니다."
+    LIFESTYLE_SECTION = "💬 **생활습관 확인**"
+
     _FATIGUE_PATTERN = re.compile(
         r"피곤|피로|기운\s*(?:없|이\s*없)|무기력|쉽게\s*지침",
     )
+    _PAIN_PATTERN = re.compile(r"통증|두통|복통|요통|아프|아파|쑤시|쑤셔")
 
     def evaluate(self, question: str) -> FatigueConversationDecision | None:
         if not self._FATIGUE_PATTERN.search(question):
@@ -34,16 +38,10 @@ class FatigueConversationPolicy:
                     "신호가 있으면 즉시 119 또는 가까운 응급의료기관에 도움을 요청하세요."
                 ),
             )
+        # Pain requests use the symptom consultation gate, not supplement follow-up.
+        if self._PAIN_PATTERN.search(question):
+            return None
         return FatigueConversationDecision(
             disposition=FatigueConversationDisposition.FOLLOW_UP,
-            answer=(
-                "피로는 수면·식사·스트레스·현재 복용 제품 등 여러 요인과 관련될 수 있어 "
-                "특정 제품을 바로 고르기는 어렵습니다.\n\n"
-                "먼저 다음을 알려주시면 안전한 범위에서 일반 정보를 정리해 드릴 수 있습니다.\n"
-                "- 피로가 시작된 시점과 지속 기간\n"
-                "- 숨참, 흉통, 실신, 심한 어지러움 같은 급한 증상 여부\n"
-                "- 현재 복용 중인 약과 영양제, 최근 추가·변경한 제품\n"
-                "- 수면 시간, 식사·음주 습관, 최근 생활 변화\n\n"
-                "증상이 지속되거나 일상생활에 영향을 주면 의료진과 상담해 원인을 확인하세요."
-            ),
+            answer=(f"{self.LIFESTYLE_SECTION}\n\n- 수면 시간과 식사, 음주 습관, 최근 생활 변화를 알려주세요."),
         )

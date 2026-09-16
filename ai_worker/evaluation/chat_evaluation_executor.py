@@ -149,6 +149,10 @@ class ChatCoreEvaluationExecutor:
                     [code.value for code in interpretation.reason_codes] if interpretation is not None else []
                 ),
                 answer=result.answer,
+                rewrite_status=(result.answer_observation.status if result.answer_observation is not None else None),
+                fallback_reason=(
+                    result.answer_observation.fallback_reason if result.answer_observation is not None else None
+                ),
             )
 
     def _elapsed_ms(self, started_at: float) -> float:

@@ -14,6 +14,10 @@ from ai_worker.schemas.chat_evaluation import (
     ChatEvaluationObservation,
     ChatEvaluationReport,
 )
+from ai_worker.schemas.medication_chat import (
+    MedicationAnswerFallbackReason,
+    MedicationAnswerRewriteStatus,
+)
 
 
 class ChatEvaluationExecutor(Protocol):
@@ -32,8 +36,10 @@ class ChatEvaluator:
         manifest: ChatEvaluationManifest,
     ) -> ChatEvaluationReport:
         results: list[ChatEvaluationCaseResult] = []
+        rewrite_outcomes: list[tuple[MedicationAnswerRewriteStatus | None, MedicationAnswerFallbackReason | None]] = []
         for case in manifest.cases:
             observation = await self._executor.execute(case)
+            rewrite_outcomes.append((observation.rewrite_status, observation.fallback_reason))
             results.append(
                 self._compare(
                     case=case,
@@ -57,6 +63,7 @@ class ChatEvaluator:
             source_contract_rate=self._rate(result.source_match for result in results),
             safety_contract_rate=self._rate(result.safety_match for result in results),
             answer_policy_contract_rate=self._rate(result.answer_policy_match for result in results),
+            draft_fallback_rate=self._draft_fallback_rate(rewrite_outcomes),
             langsmith_trace_coverage=self._rate(result.trace_match for result in results),
             timeout_rate=(sum(result.error_code == "API_TIMEOUT" for result in results) / query_count),
             response_p50_ms=self._percentile(latencies, 0.50),
@@ -244,6 +251,30 @@ class ChatEvaluator:
         return all(ChatEvaluator._entity_key(value) in observed_keys for value in expected)
 
     @staticmethod
+    def _draft_fallback_rate(
+        outcomes: list[tuple[MedicationAnswerRewriteStatus | None, MedicationAnswerFallbackReason | None]],
+    ) -> float:
+        """규칙 기반 초안이 재작성 없이 그대로 나간 비율.
+
+        분모는 답변 생성 단계까지 간 질문만 센다. 인사·범위 밖처럼 결정론적으로
+        끝난 질문(status=None)을 포함하면 케이스 구성만 바꿔도 지표가 희석된다.
+        명확화·환자정보 전용 SKIPPED는 설계된 경로이므로 분자에서 제외한다.
+        """
+
+        attempted = [(status, reason) for status, reason in outcomes if status is not None]
+        if not attempted:
+            return 0.0
+        raw_draft = sum(
+            status is MedicationAnswerRewriteStatus.DRAFT_FALLBACK
+            or (
+                status is MedicationAnswerRewriteStatus.SKIPPED
+                and reason is MedicationAnswerFallbackReason.NO_GROUNDED_SOURCES
+            )
+            for status, reason in attempted
+        )
+        return round(raw_draft / len(attempted), 3)
+
+    @staticmethod
     def _entity_key(value: str) -> str:
         normalized = unicodedata.normalize("NFKC", value).casefold()
         return re.sub(r"\s+", "", normalized)
@@ -286,6 +317,7 @@ def render_chat_evaluation_markdown(
         f"- 출처 계약 충족률: {report.source_contract_rate:.1%}",
         f"- 안전성 계약 충족률: {report.safety_contract_rate:.1%}",
         f"- 답변 정책 계약 충족률: {report.answer_policy_contract_rate:.1%}",
+        f"- 초안 폴백 비율: {report.draft_fallback_rate:.1%}",
         f"- LangSmith Trace ID 생성률: {report.langsmith_trace_coverage:.1%}",
         f"- 타임아웃 비율: {report.timeout_rate:.1%}",
         f"- 응답 시간 P50/P95: {report.response_p50_ms:.1f}ms / {report.response_p95_ms:.1f}ms",
