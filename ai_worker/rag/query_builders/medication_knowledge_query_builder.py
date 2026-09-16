@@ -706,6 +706,10 @@ class MedicationKnowledgeQueryBuilder:
         if not section_types and general_description:
             # 항목을 지정하지 않은 설명 요청은 전반 안내다. 빈 목록으로 두면 검색은 열리지만
             # `missing = requested - covered`가 비어 근거 부재 공시와 보강 검색이 함께 꺼진다.
-            section_types = [KnowledgeSectionType.FUNCTION, KnowledgeSectionType.CAUTION]
-            expansion_terms.extend(["효능", "섭취 시 주의사항"])
+            section_types = [
+                KnowledgeSectionType.FUNCTION,
+                KnowledgeSectionType.CAUTION,
+                KnowledgeSectionType.DAILY_INTAKE,
+            ]
+            expansion_terms.extend(["효능", "섭취 시 주의사항", "복용법"])
         return section_types, list(dict.fromkeys(expansion_terms))

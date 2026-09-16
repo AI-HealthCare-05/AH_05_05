@@ -1837,6 +1837,7 @@ async def test_single_entity_guide_question_ignores_prior_interaction_gate_conte
     assert query_plan.section_types == [
         KnowledgeSectionType.FUNCTION,
         KnowledgeSectionType.CAUTION,
+        KnowledgeSectionType.DAILY_INTAKE,
     ]
     assert query_plan.interaction_pairs == []
 
