@@ -1106,3 +1106,18 @@ def test_assemble_keeps_cautions_even_when_only_efficacy_is_requested() -> None:
 
     assert "발열과 통증 완화" in answer
     assert "중증 간장애 환자는 복용하지 마십시오." in answer
+
+
+def test_clean_guide_value_restores_numeric_separator_lost_at_ingest() -> None:
+    """RDB 원문은 숫자 사이 쉼표가 `|`로 적재돼 있어 조항 구분자와 구별해야 한다.
+
+    복원하지 않으면 용량이 `4, 000mg`으로 깨지고, 답변 검증이 정상 재작성을
+    "초안에 없는 용량"으로 기각해 원문이 그대로 노출된다.
+    """
+
+    cleaned = MedicationAnswerAssembler._clean_guide_value(
+        "아세트아미노펜으로일일최대용량(4|000mg)을초과하여복용하지마십시오.|12세미만은복용하지마십시오"
+    )
+
+    assert "(4,000mg)" in cleaned
+    assert "12세미만은복용하지마십시오" in cleaned

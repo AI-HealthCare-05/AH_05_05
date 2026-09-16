@@ -348,6 +348,9 @@ async def test_generator_keeps_official_warning_verbatim_when_rewrite_changes_a_
     )
 
     assert outcome.result.answer == initial.answer
+    # 초안이 그대로 나갔으므로 지표도 재작성 성공이 아니라 초안 노출로 기록돼야 한다.
+    assert outcome.observation.status is MedicationAnswerRewriteStatus.DRAFT_FALLBACK
+    assert outcome.observation.fallback_reason is MedicationAnswerFallbackReason.OFFICIAL_WARNING_PRESERVED
 
 
 async def test_generator_restores_named_ingredient_heading_omitted_by_llm() -> None:
