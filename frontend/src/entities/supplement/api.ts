@@ -1,4 +1,4 @@
-import { ApiError, http, mockDelay } from '@/shared/api/client';
+import { http, mockDelay } from '@/shared/api/client';
 import { USE_MOCK } from '@/shared/config/env';
 import {
   mockAddSupplement,
@@ -225,15 +225,10 @@ export async function getPublicSupplementRanking(): Promise<SupplementRanking | 
 }
 
 async function requestSupplementRanking(): Promise<SupplementRanking | null> {
-  try {
-    const response = await http.get<SupplementRankingApiResponse>(
-      '/v1/display/med/nutr/rank',
-    );
-    return mapSupplementRanking(response);
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 404) return null;
-    throw error;
-  }
+  const response = await http.get<SupplementRankingApiResponse | null>(
+    '/v1/display/med/nutr/rank',
+  );
+  return response === null ? null : mapSupplementRanking(response);
 }
 
 export async function getSupplementProduct(productId: string): Promise<SupplementProduct> {

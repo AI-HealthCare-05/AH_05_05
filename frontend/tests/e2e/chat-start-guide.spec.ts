@@ -56,6 +56,23 @@ test('H-2 빈 대화에는 시작 제목과 네 개의 자주 묻는 질문, 안
   ).toEqual({ horizontal: true, vertical: true });
 });
 
+for (const width of [320, 375, 390]) {
+  test(`시작 가이드 병아리와 제목은 ${width}px에서 겹치거나 잘리지 않는다`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto('/dev/chat');
+
+    const guide = page.getByRole('region', { name: '챗봇 시작 가이드' });
+    const portrait = guide.locator('img[src="/images/default-profile.png"]').locator('..');
+    const title = guide.getByRole('heading', { name: '이 챗봇에서 확인할 수 있어요' });
+    const [portraitBox, titleBox] = await Promise.all([portrait.boundingBox(), title.boundingBox()]);
+    expect(portraitBox).not.toBeNull();
+    expect(titleBox).not.toBeNull();
+    expect(titleBox!.x).toBeGreaterThanOrEqual(portraitBox!.x + portraitBox!.width);
+    expect(titleBox!.x + titleBox!.width).toBeLessThanOrEqual(width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+}
+
 test('자주 묻는 질문은 입력칸에 머물지 않고 바로 전송되며 시작 내용을 즉시 숨긴다', async ({ page }) => {
   await page.goto('/dev/chat');
 

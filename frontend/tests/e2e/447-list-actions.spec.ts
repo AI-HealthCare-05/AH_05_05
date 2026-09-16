@@ -228,17 +228,8 @@ for (const width of [320, 390]) {
 }
 
 test('복용 중 처방이 없어도 0개 헤더와 처방 추가·선택을 같은 행에 둔다', async ({ page }) => {
-  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
-  await page.addInitScript(() => {
-    sessionStorage.setItem('poke.access-token', 'issue-520-empty-medications-token');
-    sessionStorage.setItem('poke.account-principal', 'issue-520-empty-medications@example.com');
-  });
-  await page.route('**/api/v1/**', (route) =>
-    fulfillJson(route, { code: 'FIXTURE_MISSING', message: 'fixture missing' }, 503),
-  );
-  await page.route(/\/api\/v1\/medications(?:\?.*)?$/, (route) => fulfillJson(route, []));
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/medications');
+  await page.goto('/dev/medications-empty-active');
 
   const activeSection = page.getByRole('region', { name: '복용 중' });
   await expect(activeSection).toBeVisible();
@@ -262,4 +253,17 @@ test('복용 중 처방이 없어도 0개 헤더와 처방 추가·선택을 같
   expect(Math.max(...centers) - Math.min(...centers)).toBeLessThanOrEqual(4);
   expect(geometry[2]!.x).toBeGreaterThan(geometry[1]!.x + geometry[1]!.width - 1);
   expect(geometry[3]!.x).toBeGreaterThan(geometry[2]!.x + geometry[2]!.width - 1);
+});
+
+test('완료된 처방만 있어도 active 빈 상태는 완료 목록을 가리지 않는다', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/dev/medications-completed-only');
+
+  const activeSection = page.getByRole('region', { name: '복용 중' });
+  await expect(activeSection).toBeVisible();
+  await expect(activeSection.getByText('0개', { exact: true })).toBeVisible();
+  await expect(activeSection.getByText('이 기간에 등록한 처방이 없어요', { exact: true })).toHaveCount(0);
+  const completedSection = page.getByRole('region', { name: '완료된 처방' });
+  await expect(completedSection).toBeVisible();
+  await expect(completedSection.getByRole('button', { name: /복용 완료/ })).toBeVisible();
 });

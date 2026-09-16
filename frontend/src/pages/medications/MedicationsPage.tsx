@@ -505,12 +505,21 @@ export function MedicationsPage({
                 {renderListActions('flex shrink-0 items-center gap-2')}
               </div>
               {activeOverviews.length > 0 ? activeOverviews.map(renderEpisodeCard) : (
-                <Card title="이 기간에 등록한 처방이 없어요" className="p-5">
+                <Card
+                  title={overviews.length === 0 ? '이 기간에 등록한 처방이 없어요' : '현재 복용 중인 처방이 없어요'}
+                  className="p-5"
+                >
                   <div className="flex flex-col gap-4">
-                    <p>다른 기간을 선택해 처방 기록을 확인해보세요.</p>
-                    <Button variant="secondary" onClick={() => setFilterOpen(true)}>
-                      기간 재설정하기
-                    </Button>
+                    <p>
+                      {overviews.length === 0
+                        ? '다른 기간을 선택해 처방 기록을 확인해보세요.'
+                        : '완료된 처방은 아래에서 확인할 수 있어요.'}
+                    </p>
+                    {overviews.length === 0 && (
+                      <Button variant="secondary" onClick={() => setFilterOpen(true)}>
+                        기간 재설정하기
+                      </Button>
+                    )}
                   </div>
                 </Card>
               )}
