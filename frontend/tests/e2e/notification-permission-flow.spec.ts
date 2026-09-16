@@ -8,6 +8,33 @@ test.beforeEach(() => {
 
 type StubbedPermission = NotificationPermission | 'unsupported';
 
+async function stubIosDisplayMode(page: Page, standalone: boolean) {
+  await page.addInitScript((isStandalone) => {
+    Object.defineProperty(navigator, 'userAgent', {
+      configurable: true,
+      value:
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1',
+    });
+    Object.defineProperty(navigator, 'standalone', {
+      configurable: true,
+      value: isStandalone,
+    });
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: (query: string) => ({
+        matches: isStandalone && query === '(display-mode: standalone)',
+        media: query,
+        onchange: null,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        dispatchEvent: () => false,
+      }),
+    });
+  }, standalone);
+}
+
 async function stubNotificationPermission(
   page: Page,
   permission: StubbedPermission,
@@ -247,20 +274,140 @@ test('알림 미지원 브라우저에서는 세 토글을 비활성화하고 �
   await expect(page.getByText('이 브라우저에서는 알림을 지원하지 않아요')).toBeVisible();
 });
 
-test('iOS Safari 일반 탭은 알림 미지원으로 처리하고 화면이 깨지지 않는다', async ({ page }) => {
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, 'userAgent', {
-      configurable: true,
-      value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1',
-    });
-    Object.defineProperty(navigator, 'standalone', { configurable: true, value: false });
-  });
+test('iOS 일반 브라우저 탭에서 마이페이지 세 알림 토글은 설치 안내를 열고 권한을 요청하지 않는다', async ({ page }) => {
+  await stubIosDisplayMode(page, false);
   await stubNotificationPermission(page, 'default');
   await page.goto('/dev/my-authenticated');
 
-  await expect(page.getByRole('heading', { name: '마이페이지' })).toBeVisible();
-  await expect(page.getByRole('switch', { name: '복약 알림' })).toBeDisabled();
-  await expect(page.getByText('이 브라우저에서는 알림을 지원하지 않아요')).toBeVisible();
+  const dialog = page.getByRole('dialog', { name: '홈 화면에서 RxVita를 열어주세요' });
+  for (const label of ['복약 알림', '영양제 알림', '일정 알림']) {
+    const toggle = page.getByRole('switch', { name: label });
+    await expect(toggle).toBeEnabled();
+    await toggle.click();
+
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText('브라우저에서 다음 순서로');
+    await expect(dialog).toContainText('브라우저 공유 버튼');
+    await expect(dialog).not.toContainText('Safari');
+    await expect(dialog).toContainText('홈 화면에 추가');
+    await expect(dialog).toContainText('웹 앱으로 열기');
+    await expect(dialog).toContainText('RxVita 아이콘');
+    expect(await page.evaluate(() => Notification.permission)).toBe('default');
+
+    if (label === '복약 알림') {
+      await page.waitForTimeout(250);
+      await page.screenshot({
+        path: '../design-plans/432-ios-webpush/screenshots/mypage-install-alert.png',
+        fullPage: true,
+      });
+    }
+    await dialog.getByRole('button', { name: '확인' }).click();
+    await expect(dialog).toHaveCount(0);
+  }
+});
+
+test('iOS 홈 화면 웹앱에서는 기존 알림 권한 사전 팝업을 연다', async ({ page }) => {
+  await stubIosDisplayMode(page, true);
+  await stubNotificationPermission(page, 'default');
+  await page.goto('/dev/my-authenticated');
+
+  await page.getByRole('switch', { name: '복약 알림' }).click();
+
+  await expect(
+    page.getByRole('dialog', { name: '복약 시간에 알림을 보내드릴까요?' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('dialog', { name: '홈 화면에서 RxVita를 열어주세요' }),
+  ).toHaveCount(0);
+});
+
+test('iOS 일반 브라우저 탭에서 복약 등록 알림 토글은 설치 안내를 연다', async ({ page }) => {
+  await stubIosDisplayMode(page, false);
+  await stubNotificationPermission(page, 'default');
+  await page.goto('/dev/medication-schedule?recordId=12&ocrJobId=102&flow=registration');
+
+  await page.getByRole('button', { name: '확인' }).click();
+  await page.getByRole('button', { name: '아직 안 먹었어요' }).click();
+  await page.getByRole('button', { name: '확인' }).click();
+  await page.getByRole('switch', { name: '복약 알림' }).click();
+
+  await expect(
+    page.getByRole('dialog', { name: '홈 화면에서 RxVita를 열어주세요' }),
+  ).toBeVisible();
+  await page.waitForTimeout(250);
+  await page.screenshot({
+    path: '../design-plans/432-ios-webpush/screenshots/medication-registration-install-alert.png',
+    fullPage: true,
+  });
+  expect(await page.evaluate(() => Notification.permission)).toBe('default');
+});
+
+test('iOS 일반 브라우저 탭에서 복약 시간 저장은 설치 안내를 자동으로 열지 않는다', async ({ page }) => {
+  await stubIosDisplayMode(page, false);
+  await stubNotificationPermission(page, 'default');
+  await page.goto('/dev/medication-schedule');
+
+  await page.getByRole('button', { name: '시작 아침' }).click();
+  await page.getByRole('button', { name: '저장하고 계속' }).click();
+
+  await expect(page).toHaveURL(/\/home$/);
+  await expect(page.getByRole('dialog', { name: '홈 화면에서 RxVita를 열어주세요' })).toHaveCount(0);
+  expect(await page.evaluate(() => Notification.permission)).toBe('default');
+  expect(await page.evaluate(() => localStorage.getItem('rxvita.notify-settings:anonymous'))).toBeNull();
+});
+
+test('PWA manifest와 설치 아이콘을 제공한다', async ({ request }) => {
+  const manifestResponse = await request.get('/manifest.webmanifest');
+  expect(manifestResponse.ok()).toBe(true);
+  const manifest = await manifestResponse.json();
+  expect(manifest).toMatchObject({
+    name: 'RxVita',
+    short_name: 'RxVita',
+    start_url: '/',
+    scope: '/',
+    display: 'standalone',
+  });
+  expect(manifest.icons).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ src: '/icons/icon-192.png', sizes: '192x192' }),
+      expect.objectContaining({ src: '/icons/icon-512.png', sizes: '512x512' }),
+      expect.objectContaining({ src: '/icons/icon-maskable-512.png', purpose: 'maskable' }),
+    ]),
+  );
+
+  for (const path of [
+    '/icons/icon-192.png',
+    '/icons/icon-512.png',
+    '/icons/icon-maskable-192.png',
+    '/icons/icon-maskable-512.png',
+    '/icons/apple-touch-icon.png',
+  ]) {
+    const response = await request.get(path);
+    expect(response.ok()).toBe(true);
+    expect(response.headers()['content-type']).toContain('image/png');
+  }
+});
+
+test('index 문서는 PWA manifest와 iOS 아이콘 메타를 연결한다', async ({ page }) => {
+  await page.goto('/home');
+
+  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute(
+    'href',
+    '/manifest.webmanifest',
+  );
+  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute(
+    'href',
+    '/icons/apple-touch-icon.png',
+  );
+  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute('sizes', '180x180');
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute(
+    'content',
+    '#f7f9f9',
+  );
+  await expect(page.locator('meta[name="background-color"]')).toHaveAttribute(
+    'content',
+    '#f7f9f9',
+  );
 });
 
 test('서비스워커는 push 표시와 알림 클릭 이동을 처리한다', async ({ request }) => {
