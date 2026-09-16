@@ -26,7 +26,8 @@ for (const { width, hospital } of [
     await expect(card).toContainText('1일 남음');
     await expect(card).toContainText('15:40');
     expect((await card.innerText()).split(hospital)).toHaveLength(2);
-    await expect(page.getByRole('region', { name: '이후 일정' }).getByRole('button')).toContainText('이후일정병원 · 22:40');
+    await page.getByRole('button', { name: '이후 일정 펼치기' }).click();
+    await expect(page.getByRole('button', { name: /이후일정병원 · 22:40/ })).toBeVisible();
     expect(await card.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
     await page.screenshot({ path: testInfo.outputPath(`visit-card-${width}.png`), fullPage: true });
     await card.click();

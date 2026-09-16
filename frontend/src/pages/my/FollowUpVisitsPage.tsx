@@ -11,6 +11,7 @@ import {
 } from '@/entities/follow-up-visit';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import { BottomTabbar, Button, Card, ErrorDialog, Header } from '@/shared/ui';
+import { AccordionCard } from '@/shared/ui/AccordionCard';
 import { DeleteFollowUpVisitDialog } from './DeleteFollowUpVisitDialog';
 import { FollowUpVisitSheet } from './FollowUpVisitSheet';
 
@@ -137,21 +138,20 @@ export function FollowUpVisitsPage() {
             </section>
 
             {laterVisits.length > 0 && (
-              <section aria-labelledby="later-visits-title" className="mt-7 flex flex-col">
-                <h2 id="later-visits-title" className="text-xl font-bold text-foreground">
-                  이후 일정
-                </h2>
-                <div className="mt-3 overflow-hidden bg-card">
-                  {laterVisits.map((visit, index) => (
-                    <VisitRow
-                      key={visit.id}
-                      visit={visit}
-                      divided={index > 0}
-                      onClick={() => openEditSheet(visit)}
-                    />
-                  ))}
-                </div>
-              </section>
+              <div className="mt-7">
+                <AccordionCard title="이후 일정" count={laterVisits.length}>
+                  <div className="overflow-hidden rounded-input bg-card">
+                    {laterVisits.map((visit, index) => (
+                      <VisitRow
+                        key={visit.id}
+                        visit={visit}
+                        divided={index > 0}
+                        onClick={() => openEditSheet(visit)}
+                      />
+                    ))}
+                  </div>
+                </AccordionCard>
+              </div>
             )}
 
             {showPast && pastVisits.length > 0 && (
@@ -174,24 +174,25 @@ export function FollowUpVisitsPage() {
             )}
           </div>
         )}
-
-        <div
-          role="region"
-          aria-label="진료일정 작업"
-          className="mt-auto flex w-full flex-col gap-2 pb-4"
-        >
-          <Button aria-label="진료일정 추가" onClick={openCreateSheet}>
-            진료일정 추가
-          </Button>
-          <Button
-            aria-label={showPast ? '예정된 일정만 보기' : '지난 일정 보기'}
-            variant="secondary"
-            onClick={() => setShowPast((current) => !current)}
-          >
-            {showPast ? '예정된 일정만 보기' : '지난 일정 보기'}
-          </Button>
-        </div>
       </main>
+
+      <div
+        role="region"
+        aria-label="진료일정 작업"
+        data-fixed-page-actions
+        className="flex w-full shrink-0 flex-col gap-2 px-page-x pb-4 pt-3"
+      >
+        <Button aria-label="진료일정 추가" onClick={openCreateSheet}>
+          진료일정 추가
+        </Button>
+        <Button
+          aria-label={showPast ? '예정된 일정만 보기' : '지난 일정 보기'}
+          variant="secondary"
+          onClick={() => setShowPast((current) => !current)}
+        >
+          {showPast ? '예정된 일정만 보기' : '지난 일정 보기'}
+        </Button>
+      </div>
 
       <BottomTabbar
         active="my"

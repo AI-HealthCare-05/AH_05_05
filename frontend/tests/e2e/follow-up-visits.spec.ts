@@ -17,6 +17,7 @@ test('진료일정은 기존 미정 상태와 지난 일정 토글을 보여준�
 
   await expect(page.getByRole('heading', { name: '진료일정' })).toBeVisible();
   await expect(page.getByText('시간 미정')).toBeVisible();
+  await page.getByRole('button', { name: '이후 일정 펼치기' }).click();
   await expect(page.getByText('병원 미정')).toBeVisible();
   await expect(page.getByText('병원과 시간을 정해보세요.')).toHaveCount(0);
   await expect(page.getByText('지난 진료')).toHaveCount(0);
@@ -148,6 +149,7 @@ test('빈 병원명과 공백은 저장할 수 없고 진료과만 입력하면 
   await sheet.getByRole('button', { name: '저장' }).click();
 
   const created = page.getByRole('button', { name: /9월 20일.*내과.*시간 미정/ });
+  await page.getByRole('button', { name: '이후 일정 펼치기' }).click();
   await expect(created).toBeVisible();
   await created.click();
   await expect(page.getByRole('dialog', { name: '진료일정 수정' }).getByLabel('병원')).toHaveValue('내과');
@@ -155,6 +157,7 @@ test('빈 병원명과 공백은 저장할 수 없고 진료과만 입력하면 
 
 test('진료일정 수정에서 병원명은 지울 수 없고 시간만 지울 수 있다', async ({ page }) => {
   await page.goto('/dev/my-visits');
+  await page.getByRole('button', { name: '이후 일정 펼치기' }).click();
   await page.getByRole('button', { name: /9월 16일.*늘봄병원.*10:30/ }).click();
 
   const sheet = page.getByRole('dialog', { name: '진료일정 수정' });
@@ -173,6 +176,7 @@ test('진료일정 수정에서 병원명은 지울 수 없고 시간만 지울 
 
 test('병원이 없는 기존 일정은 병원명을 입력해야 수정할 수 있다', async ({ page }) => {
   await page.goto('/dev/my-visits');
+  await page.getByRole('button', { name: '이후 일정 펼치기' }).click();
   await page.getByRole('button', { name: /9월 18일.*병원 미정.*14:30/ }).click();
   const sheet = page.getByRole('dialog', { name: '진료일정 수정' });
   await expect(sheet.getByLabel('병원')).toHaveValue('');
@@ -184,6 +188,7 @@ test('병원이 없는 기존 일정은 병원명을 입력해야 수정할 수 
 
 test('진료일정을 삭제하기 전에 연결된 알림 삭제를 안내한다', async ({ page }) => {
   await page.goto('/dev/my-visits');
+  await page.getByRole('button', { name: '이후 일정 펼치기' }).click();
   const target = page.getByRole('button', { name: /9월 18일.*병원 미정.*14:30/ });
   await target.click();
   await page.getByRole('dialog', { name: '진료일정 수정' }).getByRole('button', { name: '삭제' }).click();
