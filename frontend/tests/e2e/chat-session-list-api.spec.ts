@@ -110,7 +110,7 @@ test('실 API 대화 목록에서 세션을 선택해 저장된 메시지를 연
   await expect(recentConversations.getByRole('button', { name: /영양제 병용 질문/ })).toContainText(
     '성분이 겹치는지 먼저 확인할게요.',
   );
-  await expect(page.getByRole('button', { name: '대화 삭제' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '선택' })).toBeVisible();
 
   await recentConversations.getByRole('button', { name: /아침 복약 상담/ }).click();
 
@@ -170,7 +170,7 @@ test('실 API 대화 목록에서 선택한 세션을 소프트 삭제한다', a
   });
 
   await page.goto('/chat');
-  await page.getByRole('button', { name: '대화 삭제' }).click();
+  await page.getByRole('button', { name: '선택' }).click();
   await page.getByRole('checkbox', { name: /삭제할 복약 상담 선택/ }).check();
   await page.getByRole('button', { name: '1개 삭제' }).click();
   await page.getByRole('button', { name: '삭제', exact: true }).click();
@@ -238,7 +238,7 @@ test('실 API 다중 삭제는 성공·이미 없는 행을 즉시 없애고 실
   });
 
   await page.goto('/chat');
-  await page.getByRole('button', { name: '대화 삭제' }).click();
+  await page.getByRole('button', { name: '선택' }).click();
   await page.getByRole('checkbox', { name: '삭제 성공 대화 선택' }).check();
   await page.getByRole('checkbox', { name: '재시도할 대화 선택' }).check();
   await page.getByRole('checkbox', { name: '이미 없는 대화 선택' }).check();

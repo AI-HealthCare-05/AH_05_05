@@ -52,31 +52,41 @@ export function ChatSessionList({
 }: ChatSessionListProps) {
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
-      <Header
-        title="챗봇"
-        onBack={onBack}
-        right={
-          <button
-            type="button"
-            aria-label={selectionMode ? '삭제 취소' : '대화 삭제'}
-            onClick={onToggleSelectionMode}
-            className="flex min-h-touch items-center justify-center px-2 text-sm font-bold text-foreground"
-          >
-            {selectionMode ? '취소' : '삭제'}
-          </button>
-        }
-      />
+      <Header title="챗봇" onBack={onBack} />
 
       <main className="flex flex-1 flex-col gap-4 overflow-y-auto px-page-x py-4">
-        {!selectionMode && (
-          <Button size="compact" aria-label="새 채팅" onClick={onNewChat}>
-            <Plus aria-hidden className="mr-1 size-4" />
-            새 상담
+        <div
+          role="group"
+          aria-label="최근 대화 작업"
+          className="flex min-w-0 items-center justify-between gap-2"
+        >
+          <h2 className="min-w-0 flex-1 text-xl font-bold text-foreground">최근 대화</h2>
+          {!selectionMode && (
+            <Button
+              size="compact"
+              fullWidth={false}
+              variant="secondary"
+              aria-label="새 상담"
+              className="px-3"
+              onClick={onNewChat}
+            >
+              <Plus aria-hidden className="mr-1 size-4" />
+              새 상담
+            </Button>
+          )}
+          <Button
+            size="compact"
+            fullWidth={false}
+            variant="secondary"
+            className="px-3"
+            onClick={onToggleSelectionMode}
+          >
+            {selectionMode ? '취소' : '선택'}
           </Button>
+        </div>
+        {selectionMode && (
+          <p className="text-sm text-muted-foreground">삭제할 대화를 선택하세요</p>
         )}
-        <h2 className="text-xl font-bold text-foreground">
-          {selectionMode ? '삭제할 대화를 선택하세요' : '최근 대화'}
-        </h2>
         <div className="flex shrink-0 flex-col overflow-hidden rounded-card border border-border bg-card shadow-card">
           {sessions.map((session) => {
             const content = (

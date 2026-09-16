@@ -155,7 +155,7 @@ test('대화 삭제 선택 화면은 Figma 제목과 확인 흐름을 사용한�
   await openAnsweredChat(page);
   await page.reload();
 
-  await page.getByRole('button', { name: '대화 삭제' }).click();
+  await page.getByRole('button', { name: '선택' }).click();
   await expect(page.getByRole('heading', { name: '삭제할 대화를 선택하세요' })).toBeVisible();
   const question = '지금 먹는 약을 같이 먹어도 되나요?';
   await page.getByRole('checkbox', { name: `${question} 선택` }).check();

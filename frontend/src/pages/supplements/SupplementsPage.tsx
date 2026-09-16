@@ -498,14 +498,16 @@ export function SupplementsPage({
             {supplements.length > 0 && (
               <>
                 <section className="flex flex-col gap-3" aria-labelledby="nutrient-total-title">
-                  <h2 id="nutrient-total-title" className="text-xl font-bold text-foreground">
-                    성분 합계
-                  </h2>
+                  <div>
+                    <h2 id="nutrient-total-title" className="text-xl font-bold text-foreground">
+                      성분 합계
+                    </h2>
+                    <NutrientStandardLabel profile={profile} />
+                  </div>
                   <NutrientTotals totals={totals} showStandards={hasStandardProfile} />
                 </section>
 
                 <div className="flex flex-col gap-1 text-sm text-muted-foreground">
-                  <p>{standardSourceLabel(profile)}</p>
                   <p>검색된 영양제의 성분만 합산된 결과예요.</p>
                   <p>직접 입력한 영양제는 성분 합산에 포함되지 않아요.</p>
                   <p>음식과 의약품을 통한 섭취량은 포함되지 않아요.</p>
@@ -592,13 +594,24 @@ export function SupplementsPage({
 }
 
 
-function standardSourceLabel(profile: NutrientStandardProfile | null): string {
+function NutrientStandardLabel({ profile }: { profile: NutrientStandardProfile | null }) {
   if (!profile?.birthDate || !profile.gender) {
-    return '2025 한국인 영양소 섭취기준';
+    return (
+      <p className="mt-1 text-sm text-muted-foreground">
+        합계 기준: 2025 한국인 영양소 섭취기준
+      </p>
+    );
   }
   const age = calculateFullAge(profile.birthDate);
   const gender = profile.gender === 'female' ? '여성' : '남성';
-  return `2025 한국인 영양소 섭취기준 · 만 ${age}세 ${gender}`;
+  return (
+    <p className="mt-1 flex flex-wrap gap-x-1 text-sm text-muted-foreground">
+      <span>합계 기준: 2025 한국인 영양소 섭취기준 ·</span>
+      <strong className="font-bold text-foreground">만 {age}세</strong>
+      <span>·</span>
+      <strong className="font-bold text-foreground">{gender}</strong>
+    </p>
+  );
 }
 
 function formatDoseAmount(amount: number): string {

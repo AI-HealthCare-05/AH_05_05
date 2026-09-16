@@ -44,7 +44,7 @@ export function Input({
           {label}
         </label>
       )}
-      <div className="relative">
+      <div className="relative min-w-0 max-w-full overflow-hidden">
         <input
           ref={inputRef}
           id={inputId}
