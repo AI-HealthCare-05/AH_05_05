@@ -17,6 +17,8 @@ from ai_worker.schemas.chat_evaluation import (
 from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_chat import (
+    MedicationAnswerFallbackReason,
+    MedicationAnswerRewriteStatus,
     MedicationChatRoute,
     MedicationChatSourceKind,
 )
@@ -328,3 +330,49 @@ def test_manifest_allows_no_source_greeting_without_an_entity() -> None:
     )
 
     assert manifest.cases[0].expected.normalized_entities == []
+
+
+async def test_draft_fallback_rate_counts_only_rejected_rewrites() -> None:
+    """초안이 재작성 없이 나간 경우만 센다. 설계된 SKIPPED는 실패가 아니다."""
+
+    outcomes = [
+        (MedicationAnswerRewriteStatus.REWRITTEN, None),
+        (MedicationAnswerRewriteStatus.DRAFT_FALLBACK, MedicationAnswerFallbackReason.UNSUPPORTED_EVIDENCE_SECTION),
+        (MedicationAnswerRewriteStatus.SKIPPED, MedicationAnswerFallbackReason.CLARIFICATION_REQUIRED),
+        (MedicationAnswerRewriteStatus.SKIPPED, MedicationAnswerFallbackReason.NO_GROUNDED_SOURCES),
+        # 결정론적으로 끝나 답변 생성까지 가지 않은 질문은 분모에서 빠진다.
+        (None, None),
+    ]
+    cases = [
+        build_case(
+            f"case-{index}",
+            route=MedicationChatRoute.INTERACTION,
+            entities=["칼슘"],
+            sources=[MedicationChatSourceKind.PUBLIC_KNOWLEDGE],
+        )
+        for index in range(len(outcomes))
+    ]
+    executor = SequenceExecutor(
+        [
+            ChatEvaluationObservation(
+                query_id=f"case-{index}",
+                route=MedicationChatRoute.INTERACTION,
+                normalized_entities=["칼슘"],
+                section_types=[KnowledgeSectionType.INTERACTION],
+                source_kinds=[MedicationChatSourceKind.PUBLIC_KNOWLEDGE],
+                safety_status=SafetyStatus.SAFE,
+                response_time_ms=100.0,
+                langsmith_trace_id=f"trace-{index}",
+                answer="근거 기반 답변",
+                rewrite_status=status,
+                fallback_reason=reason,
+            )
+            for index, (status, reason) in enumerate(outcomes)
+        ]
+    )
+
+    report = await ChatEvaluator(executor=executor).evaluate(
+        ChatEvaluationManifest(dataset_version="chat-test-v1", cases=cases)
+    )
+
+    assert report.draft_fallback_rate == pytest.approx(0.5)

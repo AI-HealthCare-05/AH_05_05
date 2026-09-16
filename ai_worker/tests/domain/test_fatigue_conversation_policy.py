@@ -9,7 +9,9 @@ def test_routes_general_fatigue_to_question_first_guidance_without_product_recom
 
     assert result is not None
     assert result.disposition == FatigueConversationDisposition.FOLLOW_UP
-    assert "현재 복용 중인 약과 영양제" in result.answer
+    assert all(topic in result.answer for topic in ("수면", "식사", "음주", "생활 변화"))
+    assert "현재 복용 중인 약과 영양제" not in result.answer
+    assert "피로는 수면" not in result.answer
     assert "추천" not in result.answer
     assert "복용량" not in result.answer
     assert "진단" not in result.answer

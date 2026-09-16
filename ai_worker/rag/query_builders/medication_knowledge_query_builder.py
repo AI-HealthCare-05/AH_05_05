@@ -3,6 +3,7 @@ import unicodedata
 from itertools import combinations
 
 from ai_worker.domain.interaction_question_detector import (
+    is_general_description_question,
     is_interaction_question,
     requires_resolved_pair_for_interaction,
 )
@@ -39,8 +40,7 @@ from ai_worker.schemas.medication_search import (
     MedicationQueryResolutionStatus,
 )
 
-_FUNCTION_INTENT_PATTERN = re.compile(r"어디(?:에)?\s*(?:좋|쓰)|(?:뭐|무엇)(?:야|예요|인가요)")
-_GENERAL_EXPLANATION_INTENT_PATTERN = re.compile(r"대해\s*(?:알려|설명)")
+_FUNCTION_INTENT_PATTERN = re.compile(r"어디(?:에)?\s*(?:좋|쓰)")
 _DAILY_INTAKE_INTENT_PATTERN = re.compile(
     r"(?:하루|1일).{0,12}?(?:최대|몇\s*(?:정|캡슐|포|회|mg|밀리그램))|"
     r"최대.{0,12}?(?:용량|복용량|몇\s*(?:정|캡슐|포|회|mg|밀리그램))",
@@ -680,10 +680,10 @@ class MedicationKnowledgeQueryBuilder:
             supplement_function_goal
             or any(keyword in question for keyword in ("효능", "효과", "기능", "역할", "왜 먹"))
             or _FUNCTION_INTENT_PATTERN.search(question)
-            or _GENERAL_EXPLANATION_INTENT_PATTERN.search(question)
         ):
             section_types.append(KnowledgeSectionType.FUNCTION)
             expansion_terms.extend(["건강기능식품", "기능성", "효능", "섭취 목적"])
+        general_description = is_general_description_question(question)
         if any(
             keyword in question
             for keyword in (
@@ -703,4 +703,13 @@ class MedicationKnowledgeQueryBuilder:
         if any(keyword in question for keyword in ("주의", "부작용", "조심", "위험")):
             section_types.append(KnowledgeSectionType.CAUTION)
             expansion_terms.extend(["섭취 시 주의사항", "부작용"])
+        if not section_types and general_description:
+            # 항목을 지정하지 않은 설명 요청은 전반 안내다. 빈 목록으로 두면 검색은 열리지만
+            # `missing = requested - covered`가 비어 근거 부재 공시와 보강 검색이 함께 꺼진다.
+            section_types = [
+                KnowledgeSectionType.FUNCTION,
+                KnowledgeSectionType.CAUTION,
+                KnowledgeSectionType.DAILY_INTAKE,
+            ]
+            expansion_terms.extend(["효능", "섭취 시 주의사항", "복용법"])
         return section_types, list(dict.fromkeys(expansion_terms))

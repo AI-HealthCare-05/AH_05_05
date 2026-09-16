@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_chat import (
+    MedicationAnswerFallbackReason,
+    MedicationAnswerRewriteStatus,
     MedicationChatRoute,
     MedicationChatSourceKind,
 )
@@ -146,6 +148,8 @@ class ChatEvaluationObservation(BaseModel):
     interpretation_reason_codes: list[str] = Field(default_factory=list)
     answer: str = ""
     error_code: str | None = None
+    rewrite_status: MedicationAnswerRewriteStatus | None = None
+    fallback_reason: MedicationAnswerFallbackReason | None = None
 
 
 class ChatEvaluationCaseResult(BaseModel):
@@ -199,6 +203,8 @@ class ChatEvaluationReport(BaseModel):
     source_contract_rate: float = Field(ge=0.0, le=1.0)
     safety_contract_rate: float = Field(ge=0.0, le=1.0)
     answer_policy_contract_rate: float = Field(default=1.0, ge=0.0, le=1.0)
+    # LLM 재작성이 근거 검증에 걸려 규칙 기반 초안이 그대로 나간 비율.
+    draft_fallback_rate: float = Field(default=0.0, ge=0.0, le=1.0)
     langsmith_trace_coverage: float = Field(ge=0.0, le=1.0)
     timeout_rate: float = Field(ge=0.0, le=1.0)
     response_p50_ms: float = Field(ge=0.0)

@@ -144,6 +144,7 @@ class MedicationChatReasonCode(StrEnum):
     AMBIGUOUS_MEDICATION_NAME = "AMBIGUOUS_MEDICATION_NAME"
     INGREDIENT_FAMILY_DETAIL_REQUIRED = "INGREDIENT_FAMILY_DETAIL_REQUIRED"
     FATIGUE_FOLLOW_UP_REQUIRED = "FATIGUE_FOLLOW_UP_REQUIRED"
+    GENERAL_HEALTH_FOLLOW_UP = "GENERAL_HEALTH_FOLLOW_UP"
     FATIGUE_URGENT_ASSISTANCE = "FATIGUE_URGENT_ASSISTANCE"
     CONVERSATION_GREETING = "CONVERSATION_GREETING"
     CONVERSATION_CASUAL = "CONVERSATION_CASUAL"
@@ -437,6 +438,10 @@ class MedicationChatResult(BaseModel):
         exclude=True,
     )
     search_observation: MedicationSearchExecutionObservation | None = Field(
+        default=None,
+        exclude=True,
+    )
+    answer_observation: "MedicationAnswerGenerationObservation | None" = Field(
         default=None,
         exclude=True,
     )

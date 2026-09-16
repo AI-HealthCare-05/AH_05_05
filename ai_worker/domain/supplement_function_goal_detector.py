@@ -12,6 +12,9 @@ _NATURAL_SUPPLEMENT_FUNCTION_GOAL_PATTERN = re.compile(
     r"(?:뭘|무엇|어떤\s*(?:것|성분|영양제)?).{0,12}(?:먹|섭취)",
     flags=re.IGNORECASE,
 )
+_COLLOQUIAL_SUPPLEMENT_GOAL_PATTERN = re.compile(
+    r"(?:숙면|수면|잠\s*잘\s*자|눈|관절|장|피부|혈행).{0,16}(?:좋은|위한).{0,8}(?:영양제|건강기능식품)"
+)
 
 
 def is_supplement_function_goal_question(question: str) -> bool:
@@ -21,4 +24,5 @@ def is_supplement_function_goal_question(question: str) -> bool:
     return bool(
         _FORMAL_SUPPLEMENT_FUNCTION_GOAL_PATTERN.search(normalized)
         or _NATURAL_SUPPLEMENT_FUNCTION_GOAL_PATTERN.search(normalized)
+        or _COLLOQUIAL_SUPPLEMENT_GOAL_PATTERN.search(normalized)
     )
