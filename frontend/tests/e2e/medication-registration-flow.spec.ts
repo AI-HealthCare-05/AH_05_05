@@ -1436,6 +1436,127 @@ test('실제 첫 복용 선택은 일정 저장 뒤 해당 날짜·시간대의 
   });
 });
 
+test('dose 허용 범위 밖 첫 복용일은 일정 저장 전에 막고 365일 전 경계는 허용한다', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-03T12:00:00+09:00'));
+  await authenticate(page);
+  const trace = await interceptDocumentRegistration(page);
+  const doseWrites: CapturedRequest[] = [];
+  await page.route('**/api/v1/medications/doses', async (route) => {
+    if (route.request().method() === 'POST') {
+      doseWrites.push(capture(route));
+      await fulfillJson(route, {
+        date: '2025-09-03',
+        slot: 'evening',
+        taken: true,
+        recordId: 314,
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto('/medication-schedule?recordId=314&ocrJobId=b_mock_9f21&flow=registration');
+  await page.getByRole('button', { name: '확인', exact: true }).click();
+  await page.getByLabel('복용 시작 날짜').fill('2025-09-02');
+  await page.getByRole('button', { name: '시작 저녁약' }).click();
+
+  await expect(page.getByRole('alert')).toContainText(
+    '첫 복용 날짜는 오늘 기준 최근 365일 이내로 골라주세요.',
+  );
+  await expect(page.getByRole('button', { name: '확인', exact: true })).toBeDisabled();
+  await expect.poll(() => trace.scheduleRequests.filter((request) => request.method === 'PUT')).toHaveLength(0);
+
+  await page.getByLabel('복용 시작 날짜').fill('2025-09-03');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '확인', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: '확인', exact: true }).click();
+  await page.getByRole('button', { name: '등록 완료', exact: true }).click();
+
+  await expect(page.getByRole('heading', { name: '약 등록을 완료했어요' })).toBeVisible();
+  expect(trace.scheduleRequests.filter((request) => request.method === 'PUT')).toHaveLength(1);
+  expect(doseWrites).toHaveLength(1);
+  expect(JSON.parse(doseWrites[0].body)).toEqual({
+    date: '2025-09-03',
+    slot: 'evening',
+    taken: true,
+    recordId: 314,
+  });
+});
+
+test('첫 복용 기록 저장 뒤 최종 not_taken 선택은 기존 기록을 되돌린다', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-03T12:00:00+09:00'));
+  await authenticate(page);
+  const trace = await interceptDocumentRegistration(page);
+  const doseWrites: CapturedRequest[] = [];
+  await page.route('**/api/v1/medications/doses', async (route) => {
+    if (route.request().method() === 'POST') {
+      doseWrites.push(capture(route));
+      const payload = route.request().postDataJSON() as Record<string, unknown>;
+      await fulfillJson(route, payload);
+      return;
+    }
+    await route.continue();
+  });
+
+  let settingsAttempts = 0;
+  await page.unroute('**/api/v1/me/settings');
+  await page.route('**/api/v1/me/settings', async (route) => {
+    if (route.request().method() === 'GET') {
+      await fulfillJson(route, {
+        notifyMedication: false,
+        notifySupplement: false,
+        notifySchedule: false,
+        notifyConsentedAt: null,
+        morningMedicationTime: '08:00:00',
+        lunchMedicationTime: '13:00:00',
+        eveningMedicationTime: '19:00:00',
+        bedtimeMedicationTime: '22:00:00',
+      });
+      return;
+    }
+    if (route.request().method() === 'PATCH') {
+      settingsAttempts += 1;
+      if (settingsAttempts === 1) {
+        await fulfillJson(route, { code: 'SETTINGS_SAVE_FAILED', message: '알림 설정을 저장하지 못했어요.' }, 503);
+        return;
+      }
+      await fulfillJson(route, {
+        notifyMedication: false,
+        notifySupplement: false,
+        notifySchedule: false,
+        notifyConsentedAt: new Date().toISOString(),
+        morningMedicationTime: '08:00:00',
+        lunchMedicationTime: '13:00:00',
+        eveningMedicationTime: '19:00:00',
+        bedtimeMedicationTime: '22:00:00',
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto('/medication-schedule?recordId=314&ocrJobId=b_mock_9f21&flow=registration');
+  await page.getByRole('button', { name: '확인', exact: true }).click();
+  await page.getByRole('button', { name: '시작 아침약' }).click();
+  await page.getByRole('button', { name: '확인', exact: true }).click();
+  await page.getByRole('button', { name: '등록 완료', exact: true }).click();
+
+  const saveError = page.getByRole('alert');
+  await expect(saveError).toContainText('알림 설정을 저장하지 못했어요.');
+  await page.getByRole('button', { name: '뒤로 가기', exact: true }).click();
+  await page.getByRole('button', { name: '아직 안 먹었어요' }).click();
+  await page.getByRole('button', { name: '확인', exact: true }).click();
+  await page.getByRole('button', { name: '등록 완료', exact: true }).click();
+
+  await expect(page.getByRole('heading', { name: '약 등록을 완료했어요' })).toBeVisible();
+  expect(settingsAttempts).toBe(2);
+  expect(trace.scheduleRequests.filter((request) => request.method === 'PUT')).toHaveLength(1);
+  expect(doseWrites.map((request) => JSON.parse(request.body))).toEqual([
+    { date: '2026-09-03', slot: 'morning', taken: true, recordId: 314 },
+    { date: '2026-09-03', slot: 'morning', taken: false, recordId: 314 },
+  ]);
+});
+
 test('복용 기록만 실패하면 일정은 다시 저장하지 않고 복용 기록만 재시도한다', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-09-03T12:00:00+09:00'));
   await authenticate(page);
