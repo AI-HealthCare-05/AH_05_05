@@ -63,10 +63,6 @@ const REGISTERED_PRODUCT = {
   name: '튼튼 철분 캡슐',
 };
 
-test.beforeEach(() => {
-  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
-});
-
 async function authenticate(page: Page) {
   await page.addInitScript(() => {
     window.sessionStorage.setItem('poke.access-token', 'e2e-ranking-token');
@@ -123,6 +119,7 @@ async function routeCommon(
 }
 
 test('등록 여부를 확인하는 중에도 랭킹 제품 정보는 열 수 있다', async ({ page }) => {
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
   await authenticate(page);
   let releaseSupplements = () => {};
   const supplementGate = new Promise<void>((resolve) => {
@@ -141,6 +138,7 @@ test('등록 여부를 확인하는 중에도 랭킹 제품 정보는 열 수 �
 });
 
 test('홈은 서버 제목과 고정 부제만 표시하고 등록 여부를 제품 ID로 판정한다', async ({ page }) => {
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
   await authenticate(page);
   await routeCommon(page);
   await page.goto('/dev/home-empty');
@@ -161,6 +159,7 @@ test('홈은 서버 제목과 고정 부제만 표시하고 등록 여부를 제
 });
 
 test('홈 랭킹 전체 보기는 둘러보기 탭으로 바로 이동한다', async ({ page }) => {
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
   await authenticate(page);
   await routeCommon(page);
   await page.goto('/dev/home-empty');
@@ -204,6 +203,7 @@ test('비로그인 홈은 개인 복약 조회 없이 제목·CTA와 공개 랭�
 });
 
 test('등록 목록 조회가 실패해도 랭킹은 배지 없이 표시한다', async ({ page }) => {
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
   await authenticate(page);
   await routeCommon(page, { supplementStatus: 500 });
   await page.goto('/dev/home-empty');
@@ -214,21 +214,17 @@ test('등록 목록 조회가 실패해도 랭킹은 배지 없이 표시한다'
   await expect(page.getByRole('tabpanel', { name: '오늘의 복약' })).toBeVisible();
 });
 
-test('랭킹 404와 빈 items는 카드만 숨기고 오늘의 복약은 유지한다', async ({ page }) => {
-  await authenticate(page);
+test('랭킹 null과 빈 items는 카드만 숨기고 오늘의 복약은 유지한다', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   await routeCommon(page);
   await page.unroute('**/api/v1/display/med/nutr/rank');
   await page.route('**/api/v1/display/med/nutr/rank', async (route) => {
-    await fulfillJson(
-      route,
-      { code: 'SUPPLEMENT_RANK_DISPLAY_NOT_FOUND', message: '현재 전시가 없습니다.' },
-      404,
-    );
+    await fulfillJson(route, null);
   });
-  await page.goto('/dev/home-empty');
+  await page.goto('/home');
 
   await expect(page.getByRole('region', { name: '영양제 랭킹' })).toHaveCount(0);
-  await expect(page.getByRole('tabpanel', { name: '오늘의 복약' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '오늘의 복약' })).toBeVisible();
 
   await page.unroute('**/api/v1/display/med/nutr/rank');
   await page.route('**/api/v1/display/med/nutr/rank', async (route) => {
@@ -237,10 +233,49 @@ test('랭킹 404와 빈 items는 카드만 숨기고 오늘의 복약은 유지�
   await page.reload();
 
   await expect(page.getByRole('region', { name: '영양제 랭킹' })).toHaveCount(0);
-  await expect(page.getByRole('tabpanel', { name: '오늘의 복약' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '오늘의 복약' })).toBeVisible();
+});
+
+test('현재 랭킹이 없으면 2xx 빈 결과로 카드와 favicon 오류를 만들지 않는다', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('https://fonts.googleapis.com/**', (route) =>
+    route.fulfill({ status: 200, contentType: 'text/css', body: '' }),
+  );
+  await routeCommon(page);
+  await page.unroute('**/api/v1/display/med/nutr/rank');
+  await page.route('**/api/v1/display/med/nutr/rank', async (route) => {
+    await fulfillJson(route, null);
+  });
+  const rankingStatuses: number[] = [];
+  const consoleErrors: string[] = [];
+  const pageErrors: string[] = [];
+  const failedRequests: string[] = [];
+  page.on('response', (response) => {
+    const pathname = new URL(response.url()).pathname;
+    if (pathname === '/api/v1/display/med/nutr/rank') rankingStatuses.push(response.status());
+  });
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(`${message.text()} @ ${message.location().url}`);
+  });
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  page.on('requestfailed', (request) => {
+    failedRequests.push(`${request.url()} ${request.failure()?.errorText ?? ''}`.trim());
+  });
+
+  await page.goto('/home');
+  await expect(page.getByRole('region', { name: '영양제 랭킹' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: '오늘의 복약' })).toBeVisible();
+  const faviconResponse = await page.request.get(new URL('/favicon.ico', page.url()).toString());
+  expect(faviconResponse.status()).toBe(200);
+  expect(rankingStatuses.length).toBeGreaterThan(0);
+  expect(rankingStatuses.every((status) => status >= 200 && status < 300)).toBe(true);
+  expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
+  expect(pageErrors, pageErrors.join('\n')).toEqual([]);
+  expect(failedRequests, failedRequests.join('\n')).toEqual([]);
 });
 
 test('미등록 랭킹 행은 제품 성분과 후기를 열고 뒤로 가면 홈으로 돌아온다', async ({ page }) => {
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
   test.setTimeout(20_000);
   await authenticate(page);
   await routeCommon(page);
@@ -294,6 +329,7 @@ test('비로그인 랭킹 제품 선택은 보호 API를 조회하지 않고 로
 });
 
 test('등록된 랭킹 제품 정보는 추가 화면을 거치지 않고 조회한다', async ({ page }) => {
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
   test.setTimeout(20_000);
   await authenticate(page);
   await routeCommon(page);

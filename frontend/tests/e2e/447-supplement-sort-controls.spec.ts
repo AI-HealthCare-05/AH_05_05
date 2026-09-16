@@ -161,6 +161,28 @@ test.beforeEach(async ({ page }) => {
   await page.route(/^https:\/\/(?!127\.0\.0\.1:45547).*/, (route) => route.abort());
 });
 
+test('항목별 기억한 정렬 방향을 실제 검색 요청과 결과에 적용한다', async ({ page }) => {
+  test.setTimeout(30_000);
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
+  const requests = await prepareProductionBrowse(page);
+  await page.goto('/dev/supplements?tab=browse');
+  await page.getByPlaceholder('제품명 또는 성분 검색').fill('비타민');
+  const sorts = page.getByRole('group', { name: '검색 결과 정렬' });
+  await expectRequestAndFixture(page, requests, 'name', 'asc');
+  await sortButton(sorts, '이름순').click();
+  await expectRequestAndFixture(page, requests, 'name', 'desc');
+  for (const sort of ['registered', 'rating', 'reviews'] as const) {
+    await sortButton(sorts, SORT_LABELS[sort]).click();
+    await expectRequestAndFixture(page, requests, sort, 'desc');
+    await sortButton(sorts, SORT_LABELS[sort]).click();
+    await expectRequestAndFixture(page, requests, sort, 'asc');
+  }
+  for (const [sort, direction] of [['name', 'desc'], ['registered', 'asc'], ['rating', 'asc'], ['reviews', 'asc']] as const) {
+    await sortButton(sorts, SORT_LABELS[sort]).click();
+    await expectRequestAndFixture(page, requests, sort, direction);
+  }
+});
+
 for (const width of [320, 390, 1280]) {
   test(`영양제 정렬은 한 줄에서 홈과 같은 연속 탭 표면을 사용한다 (${width}px)`, async ({ page }) => {
     test.skip(IS_REAL_API, MOCK_ONLY_REASON);

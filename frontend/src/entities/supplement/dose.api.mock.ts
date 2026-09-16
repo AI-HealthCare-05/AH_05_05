@@ -1,4 +1,5 @@
 import { ApiError, restoreAccountPrincipal } from '@/shared/api/client';
+import { isDoseDateInRange } from '@/shared/lib/koreaDate';
 import { SLOT_ORDER } from '@/shared/model/mealSlot';
 import { mockOwnedSupplement, mockSupplements } from './api.mock';
 import type { SupplementDoseRecord } from './types';
@@ -15,10 +16,7 @@ function readRecords(): SupplementDoseRecord[] {
   return memory.get(scope()) ?? [];
 }
 function validateDate(date: string) {
-  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
-  const age = (Date.parse(today) - Date.parse(date)) / 86_400_000;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isInteger(age) || age < 0 || age > 365
-    || new Date(date).toISOString().slice(0, 10) !== date) {
+  if (!isDoseDateInRange(date)) {
     throw new ApiError(422, 'INVALID_SUPPLEMENT_DOSE_DATE', '복용 날짜를 확인해주세요.');
   }
 }

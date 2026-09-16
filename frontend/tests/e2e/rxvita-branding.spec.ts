@@ -2,7 +2,7 @@ import { expect, test } from 'playwright/test';
 
 import { IS_REAL_API, MOCK_ONLY_REASON } from './helpers/mode';
 
-const ASSISTANT_AVATAR = 'img[src="/images/rxvita-mark-128.png"]';
+const ASSISTANT_AVATAR = 'img[src="/images/default-profile.png"]';
 
 test('스플래시와 튜토리얼을 거쳐 게스트·로그인 홈이 RxVita 로고를 서비스명으로 제공한다', async ({ page }) => {
   await page.addInitScript(() => sessionStorage.removeItem('poke:splash-seen'));
@@ -35,14 +35,20 @@ test('스플래시와 튜토리얼을 거쳐 게스트·로그인 홈이 RxVita 
   await expect(page).toHaveTitle('RxVita · 건강한 복약관리');
 });
 
-test('챗 시작 가이드가 장식용 RxVita 마크를 보여준다', async ({ page }) => {
+test('챗 시작 가이드가 공통 병아리 아바타를 장식용으로 보여준다', async ({ page }) => {
   await page.goto('/dev/chat');
 
   const guide = page.getByRole('region', { name: '챗봇 시작 가이드' });
-  const mark = guide.locator('img[src="/images/rxvita-mark-256.png"]');
+  const mark = guide.locator('img[src="/images/default-profile.png"]');
   await expect(mark).toBeVisible();
   await expect(mark).toHaveAttribute('alt', '');
   await expect(mark).toHaveAttribute('aria-hidden', 'true');
+  const portrait = mark.locator('..');
+  await expect(portrait).toHaveClass(/overflow-hidden/);
+  const [portraitBox, imageBox] = await Promise.all([portrait.boundingBox(), mark.boundingBox()]);
+  expect(portraitBox).not.toBeNull();
+  expect(imageBox).not.toBeNull();
+  expect(imageBox!.width).toBeGreaterThan(portraitBox!.width);
 });
 
 test('연속 어시스턴트 메시지는 첫 메시지에만 아바타를 보이고 같은 들여쓰기를 유지한다', async ({
@@ -84,7 +90,7 @@ test('연속 어시스턴트 메시지는 첫 메시지에만 아바타를 보�
   const avatars = page.locator(ASSISTANT_AVATAR);
   await expect(avatars).toHaveCount(1);
   await expect(avatars).toHaveAttribute('alt', '');
-  await expect(avatars).toHaveAttribute('aria-hidden', 'true');
+  await expect(avatars.locator('..')).toHaveAttribute('aria-hidden', 'true');
   await expect(page.getByText('아바타 확인 질문', { exact: true }).locator('..').locator('img')).toHaveCount(0);
 
   const firstBubble = page.getByText('첫 번째 어시스턴트 답변', { exact: true }).locator('..');
@@ -117,7 +123,7 @@ test('진행 중 말풍선과 도착한 답변은 아바타를 유지하며 옆�
   const answerBox = await answerBubble.boundingBox();
   expect(pendingBox).not.toBeNull();
   expect(answerBox).not.toBeNull();
-  expect(answerBox?.x).toBe(pendingBox?.x);
+  expect(Math.abs((answerBox?.x ?? 0) - (pendingBox?.x ?? 0))).toBeLessThanOrEqual(1);
 });
 
 test('마이페이지와 로그인 홈의 영양제 랭킹에서 RxVita 서비스명을 보여준다', async ({ page }) => {

@@ -75,7 +75,7 @@ class TestCurrentSupplementRankDisplayAPI(TestCase):
             }
         ]
 
-    async def test_returns_404_when_displays_are_disabled_or_outside_the_current_period(self) -> None:
+    async def test_returns_empty_when_displays_are_disabled_or_outside_the_current_period(self) -> None:
         now = datetime.now(config.TIMEZONE)
         await DisplaySupplementNutrientRank.create(
             title="종료된 전시",
@@ -94,5 +94,5 @@ class TestCurrentSupplementRankDisplayAPI(TestCase):
             headers = await authentication_headers(client, "no-display-rank@example.com", "01020000012")
             response = await client.get(CURRENT_DISPLAY_URL, headers=headers)
 
-        assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert response.json()["code"] == "SUPPLEMENT_RANK_DISPLAY_NOT_FOUND"
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() is None
