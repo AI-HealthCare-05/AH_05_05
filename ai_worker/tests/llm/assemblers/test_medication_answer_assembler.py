@@ -1010,3 +1010,51 @@ def test_assemble_uses_one_generic_notice_when_every_multi_entity_pair_is_unveri
         "현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 "
         "못했습니다. 확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다."
     )
+
+
+def test_assemble_limits_public_chunks_to_requested_sections() -> None:
+    """질문이 주의사항만 요청하면 검색된 효능 청크는 초안에 싣지 않는다."""
+
+    def build_chunk(suffix: str, content: str, section_type: KnowledgeSectionType) -> RetrievedKnowledgeChunk:
+        return RetrievedKnowledgeChunk(
+            point_id=f"tylenol-{suffix}",
+            chunk_id=suffix * 64,
+            content=content,
+            embedding_text=content,
+            token_count=20,
+            similarity_score=0.8,
+            metadata=KnowledgeChunkMetadata(
+                source_id="drug-encyclopedia",
+                document_id=f"tylenol-{suffix}",
+                title="타이레놀",
+                provider="공공자료 제공기관",
+                access_scope=KnowledgeAccessScope.PUBLIC,
+                document_type=KnowledgeDocumentType.REGULATORY_DRUG_LABEL,
+                dataset_version="knowledge-full-v1",
+                ingredient_names=["아세트아미노펜"],
+                section_type=section_type,
+                page_start=1,
+                page_end=1,
+                chunk_index=0,
+                content_hash=suffix * 64,
+            ),
+        )
+
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=[],
+        chunks=[
+            build_chunk("e", "감기로 인한 발열과 통증 완화에 사용합니다.", KnowledgeSectionType.FUNCTION),
+            build_chunk("f", "음주 중에는 복용하지 마십시오.", KnowledgeSectionType.CAUTION),
+        ],
+        interaction_question=False,
+        response_subject="타이레놀",
+        evidence_coverage=MedicationEvidenceCoverage(
+            requested_section_types=[KnowledgeSectionType.CAUTION],
+            covered_section_types=[KnowledgeSectionType.CAUTION],
+        ),
+    )
+
+    assert "음주 중에는 복용하지 마십시오." in answer
+    assert "발열과 통증 완화" not in answer

@@ -11,3 +11,11 @@ def test_systemic_allergic_reaction_is_caught_without_llm() -> None:
 
 def test_normal_greeting_is_not_treated_as_health_urgency() -> None:
     assert UrgentHealthSignalPolicy().evaluate("안녕하세요") is False
+
+
+def test_speech_difficulty_is_caught_without_llm() -> None:
+    assert UrgentHealthSignalPolicy().evaluate("갑자기 말이 안 나오고 발음이 어눌해요") is True
+
+
+def test_idiomatic_speech_expression_is_not_treated_as_health_urgency() -> None:
+    assert UrgentHealthSignalPolicy().evaluate("할 말을 못 했어. 말도 안 돼") is False

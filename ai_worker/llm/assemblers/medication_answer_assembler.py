@@ -105,6 +105,7 @@ class MedicationAnswerAssembler:
                 response_subject=response_subject,
                 adverse_reaction_question=adverse_reaction_question,
                 functional_goal_title=functional_goal_title,
+                evidence_coverage=evidence_coverage,
             )
             sections.append(public_section)
         ingredient_family_section = self._ingredient_family_section(
@@ -207,6 +208,7 @@ class MedicationAnswerAssembler:
         response_subject: str | None,
         adverse_reaction_question: bool,
         functional_goal_title: str | None,
+        evidence_coverage: MedicationEvidenceCoverage | None = None,
     ) -> str:
         public_lines = [f"- {chunk.content}" for chunk in chunks[:4]]
         if interaction_question:
@@ -247,11 +249,19 @@ class MedicationAnswerAssembler:
             KnowledgeSectionType.DAILY_INTAKE: "✅ **복용법**",
             KnowledgeSectionType.CAUTION: ("🚨 **이상반응**" if adverse_reaction_question else "⚠️ **주의사항**"),
         }
+        covered = MedicationAnswerAssembler._covered_sections(evidence_coverage)
         for section_type in (
             KnowledgeSectionType.FUNCTION,
             KnowledgeSectionType.DAILY_INTAKE,
             KnowledgeSectionType.CAUTION,
         ):
+            # 질문이 항목을 지정했으면 그 항목의 청크만 초안에 싣는다.
+            if not MedicationAnswerAssembler._section_is_allowed(
+                section_type,
+                coverage=evidence_coverage,
+                covered=covered,
+            ):
+                continue
             section_lines = [
                 f"- {chunk.content}" for chunk in chunks[:4] if chunk.metadata.section_type is section_type
             ]
