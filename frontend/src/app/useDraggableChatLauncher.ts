@@ -94,7 +94,11 @@ function getLauncherBounds(element: HTMLButtonElement): LauncherBounds {
   );
   const nonTabBottom = viewportBottom
     - (Number.isFinite(safeAreaBottom) ? Math.max(0, safeAreaBottom) : 0);
-  const visibleBottom = navIsVisible ? Math.min(viewportBottom, navRect.top) : nonTabBottom;
+  const actionRect = document.querySelector<HTMLElement>('[data-fixed-page-actions]')?.getBoundingClientRect();
+  const navBottom = navIsVisible ? Math.min(viewportBottom, navRect.top) : nonTabBottom;
+  const visibleBottom = actionRect && actionRect.height > 0 && actionRect.bottom > viewportTop
+    ? Math.min(navBottom, actionRect.top)
+    : navBottom;
   const tailBottom = Number.parseFloat(getComputedStyle(element, '::after').bottom);
   const tailOverflow = Number.isFinite(tailBottom) ? Math.max(0, -tailBottom) : 0;
   const minLeft = viewportLeft + VIEWPORT_INSET;
@@ -150,8 +154,15 @@ export function useDraggableChatLauncher(pathname: string, onActivate: () => voi
   const applyPreferredPosition = useCallback(() => {
     const launcher = launcherRef.current;
     const preferred = preferredRef.current;
-    if (!launcher || !preferred) return;
-    setPosition(positionForPreference(preferred, launcher));
+    if (!launcher) return;
+    if (preferred) {
+      setPosition(positionForPreference(preferred, launcher));
+    } else if (document.querySelector('[data-fixed-page-actions]')) {
+      const bounds = getLauncherBounds(launcher);
+      setPosition({ left: Math.min(bounds.maxLeft, Math.max(bounds.minLeft, launcher.getBoundingClientRect().left)), top: bounds.maxTop });
+    } else {
+      setPosition(null);
+    }
   }, []);
 
   const schedulePreferredClamp = useCallback(() => {
@@ -205,6 +216,8 @@ export function useDraggableChatLauncher(pathname: string, onActivate: () => voi
     const nav = document.querySelector<HTMLElement>("nav[aria-label='주요 화면']");
     if (launcher) observer?.observe(launcher);
     if (nav) observer?.observe(nav);
+    const actions = document.querySelector<HTMLElement>('[data-fixed-page-actions]');
+    if (actions) observer?.observe(actions);
     window.addEventListener('resize', handleBoundsChange);
     window.addEventListener('orientationchange', handleBoundsChange);
     viewport?.addEventListener('resize', handleBoundsChange);

@@ -117,6 +117,9 @@ const ENDED_MEDICATION_OVERVIEW: MedicationOverview = {
   daysRemaining: 0,
   isFinished: true,
 };
+const COMPLETED_ONLY_MEDICATION_OVERVIEWS: MedicationOverview[] = [
+  { ...ENDED_MEDICATION_OVERVIEW, alias: '완료된 처방' },
+];
 const ONE_MEDICATION_OVERVIEW: MedicationOverview = {
   ...ACTIVE_MEDICATION_OVERVIEW,
   endDate: '2026-08-28',
@@ -146,7 +149,10 @@ const CROSS_YEAR_MEDICATION_OVERVIEW: MedicationOverview = {
 };
 
 const loadEmptyMedicationOverview = async () => EMPTY_MEDICATION_OVERVIEW;
+const loadEmptyMedicationOverviews = async (): Promise<MedicationOverview[]> => [];
+const loadNoMedicationHistory = async () => false;
 const loadEndedMedicationOverview = async () => ENDED_MEDICATION_OVERVIEW;
+const loadCompletedOnlyMedicationOverviews = async () => COMPLETED_ONLY_MEDICATION_OVERVIEWS;
 const loadActiveMedicationOverview = async () => ACTIVE_MEDICATION_OVERVIEW;
 const loadOneMedicationOverview = async () => ONE_MEDICATION_OVERVIEW;
 const loadFourteenDayMedicationOverview = async () => FOURTEEN_DAY_MEDICATION_OVERVIEW;
@@ -301,6 +307,14 @@ export function AppRouter() {
           }
         />
         <Route path="/dev/medications" element={<MedicationsPage />} />
+        <Route
+          path="/dev/medications-empty-active"
+          element={<MedicationsPage overviewsLoader={loadEmptyMedicationOverviews} prescriptionExistsLoader={loadNoMedicationHistory} feature252 />}
+        />
+        <Route
+          path="/dev/medications-completed-only"
+          element={<MedicationsPage overviewsLoader={loadCompletedOnlyMedicationOverviews} feature252 />}
+        />
         <Route
           path="/dev/medications-many"
           element={<MedicationsPage overviewsLoader={loadManyMedicationOverviews} />}

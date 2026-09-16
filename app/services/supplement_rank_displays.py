@@ -64,6 +64,11 @@ class SupplementRankDisplayService:
             raise SupplementRankDisplayNotFoundError()
         return self._to_response(display)
 
+    async def public_current(self) -> SupplementRankDisplayResponse | None:
+        """Return the public display, using an empty response when none is active."""
+        display = await self.repository.get_current(datetime.now(config.TIMEZONE))
+        return self._to_response(display) if display is not None else None
+
     async def create(
         self,
         data: SupplementRankDisplayWriteRequest,

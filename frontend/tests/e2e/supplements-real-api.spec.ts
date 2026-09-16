@@ -209,6 +209,66 @@ async function openSupplementFixture(
   await page.goto('/supplements');
 }
 
+test.describe('모바일 영양제 수정 취소', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test('바깥 터치는 PATCH 없이 복용 정보 초안을 버리고 저장 버튼만 서버 변경을 요청한다', async ({ page }) => {
+    test.setTimeout(30_000);
+    await authenticate(page);
+    const patches: Record<string, unknown>[] = [];
+    const registration = registrationFor(IRON_PRODUCT, 9001, '1.000');
+    await page.route('**/api/v1/med/user-suppl-nutr**', async route => {
+      if (route.request().method() === 'PATCH') {
+        const body = route.request().postDataJSON();
+        patches.push(body);
+        Object.assign(registration, {
+          dose_amount: String(body.dose_amount),
+          slots: body.slots.map((slot: string) => ({ slot, time: '08:00:00' })),
+        });
+        await fulfillJson(route, registration);
+        return;
+      }
+      await fulfillJson(route, { items: [registration], total: 1, offset: 0, limit: 100, nutrient_standard: null });
+    });
+    await page.route('**/api/v1/users/me', route => fulfillJson(route, {
+      name: '테스트 사용자', maskedName: '테***자', birthDate: '2000-01-01', gender: 'MALE',
+    }));
+    await page.goto('/supplements');
+    const card = page.getByRole('region', { name: '먹고 있는 영양제' }).getByRole('button', { name: /튼튼 철분 캡슐/ });
+    const sheet = page.getByRole('dialog', { name: '튼튼 철분 캡슐' });
+    const editor = page.getByRole('dialog', { name: '복용 정보 수정', exact: true });
+    for (const closeBy of ['outside', 'close'] as const) {
+      await card.click();
+      await sheet.getByRole('button', { name: '복용 정보 수정', exact: true }).click();
+      await editor.getByRole('button', { name: '1회 섭취량 늘리기' }).click();
+      await editor.getByRole('group', { name: '복용 시간' }).getByRole('button', { name: '저녁' }).click();
+      if (closeBy === 'outside') await page.touchscreen.tap(5, 5);
+      else await editor.getByRole('button', { name: '닫기', exact: true }).click();
+      await expect(editor).toBeHidden();
+      await expect(sheet).toBeVisible();
+      await sheet.getByRole('button', { name: '닫기', exact: true }).click();
+      await expect(card).toContainText('하루 1회 · 1회 1캡슐');
+      expect(patches).toHaveLength(0);
+    }
+    await page.reload();
+    await card.click();
+    await sheet.getByRole('button', { name: '복용 정보 수정', exact: true }).click();
+    await expect(editor.getByText('1 캡슐', { exact: true })).toBeVisible();
+    await expect(editor.getByRole('group', { name: '복용 시간' }).getByRole('button', { name: '저녁' })).toHaveAttribute('aria-pressed', 'false');
+    await editor.getByRole('button', { name: '1회 섭취량 늘리기' }).click();
+    await editor.getByRole('group', { name: '복용 시간' }).getByRole('button', { name: '저녁' }).click();
+    await editor.getByRole('button', { name: '저장', exact: true }).click();
+    await expect(editor).toBeHidden();
+    await expect(sheet.getByRole('button', { name: /제품 상세정보/ })).toContainText('2캡슐');
+    await sheet.getByRole('button', { name: '복용 정보 수정', exact: true }).click();
+    await expect(editor.getByText('2 캡슐', { exact: true })).toBeVisible();
+    await editor.getByRole('button', { name: '닫기', exact: true }).click();
+    await sheet.getByRole('button', { name: '닫기', exact: true }).click();
+    expect(patches).toEqual([{ dose_amount: 2, slots: ['MORNING', 'EVENING'] }]);
+    await expect(card).toContainText('하루 2회 · 1회 2캡슐');
+  });
+});
+
 test('목록 응답의 별점과 메모를 편집 시트에 채우고 저장값을 PATCH로 보낸다', async ({ page }) => {
   await authenticate(page);
   const patchBodies: Record<string, unknown>[] = [];
@@ -473,14 +533,10 @@ test('추가와 복용 중단 뒤에도 성분 합계를 섭취기준 등급 순
   ]);
 
   const list = page.getByRole('region', { name: '먹고 있는 영양제' });
-  await list.getByRole('button', { name: new RegExp(EXCEEDED_VITAMIN_A_PRODUCT.name) }).click();
-  await page.getByRole('dialog', { name: EXCEEDED_VITAMIN_A_PRODUCT.name })
-    .getByRole('button', { name: '복용 중단하기' })
-    .click();
-  await page
-    .getByRole('dialog', { name: `${EXCEEDED_VITAMIN_A_PRODUCT.name} 복용을 중단할까요?` })
-    .getByRole('button', { name: '중단하기' })
-    .click();
+  await page.route('**/api/v1/user/custom-challenge-participations', route => fulfillJson(route, { items: [], totalCount: 0 }));
+  await page.getByRole('button', { name: '선택', exact: true }).click();
+  await list.getByRole('checkbox', { name: `${EXCEEDED_VITAMIN_A_PRODUCT.name} 선택`, exact: true }).check();
+  await page.getByRole('button', { name: '삭제 1개', exact: true }).click();
 
   await expect(totals.getByRole('article')).toHaveCount(3);
   await expect(totals.getByRole('article').getByRole('heading').allTextContents()).resolves.toEqual([
