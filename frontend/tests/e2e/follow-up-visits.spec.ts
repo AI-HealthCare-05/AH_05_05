@@ -1,3 +1,5 @@
+import { mkdirSync } from 'node:fs';
+import path from 'node:path';
 import { expect, test } from 'playwright/test';
 
 import { IS_REAL_API, MOCK_ONLY_REASON } from './helpers/mode';
@@ -25,6 +27,49 @@ test('진료일정은 기존 미정 상태와 지난 일정 토글을 보여준�
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
   expect(overflow).toBeLessThanOrEqual(0);
+});
+
+test('진료일정 하단 작업 영역은 두 버튼을 같은 폭으로 탭바 위에 배치한다', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/dev/my-visits');
+
+  await expect(page.getByText('다가오는 일정', { exact: true })).toBeVisible();
+  const actions = page.getByRole('region', { name: '진료일정 작업' });
+  await expect(actions).toBeVisible();
+  const add = actions.getByRole('button', { name: '진료일정 추가', exact: true });
+  const past = actions.getByRole('button', { name: '지난 일정 보기', exact: true });
+  await expect(add).toHaveAttribute('data-variant', 'primary');
+  await expect(past).toHaveAttribute('data-variant', 'secondary');
+
+  const geometry = await page.evaluate(() => {
+    const action = document.querySelector<HTMLElement>("[aria-label='진료일정 작업']")!;
+    const addButton = action.querySelector<HTMLButtonElement>("button[aria-label='진료일정 추가']")!;
+    const pastButton = action.querySelector<HTMLButtonElement>("button[aria-label='지난 일정 보기']")!;
+    const tabbar = document.querySelector<HTMLElement>("nav[aria-label='주요 화면']")!;
+    const actionBox = action.getBoundingClientRect();
+    const addBox = addButton.getBoundingClientRect();
+    const pastBox = pastButton.getBoundingClientRect();
+    const tabbarBox = tabbar.getBoundingClientRect();
+    return {
+      actionBottomBeforeTabbar: actionBox.bottom <= tabbarBox.top,
+      equalWidth: Math.abs(addBox.width - pastBox.width) < 1,
+      fitsViewport: actionBox.left >= 0 && actionBox.right <= window.innerWidth,
+    };
+  });
+  expect(geometry).toEqual({
+    actionBottomBeforeTabbar: true,
+    equalWidth: true,
+    fitsViewport: true,
+  });
+
+  const directory = process.env.UI520_SCREENSHOT_DIR;
+  if (directory) {
+    mkdirSync(directory, { recursive: true });
+    await page.screenshot({
+      path: path.join(directory, 'follow-up-visits-390.png'),
+      fullPage: true,
+    });
+  }
 });
 
 test('한국 시간 기준 오늘은 진료일로 저장할 수 없고 내일부터 선택한다', async ({ page }) => {

@@ -6,9 +6,10 @@ const GUIDE_ITEMS = [
 ] as const;
 
 const FREQUENT_QUESTIONS = [
-  '같이 먹어도 될까요?',
-  '언제 먹는 게 좋나요?',
-  '주의할 증상이 있나요?',
+  '복약 메모 알려줘',
+  '진료 일정 알려줘',
+  '내가 먹는 영양제',
+  '복용 중인 약',
 ] as const;
 
 interface ChatStartGuideProps {

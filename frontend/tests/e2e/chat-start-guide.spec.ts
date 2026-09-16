@@ -7,12 +7,13 @@ test.beforeEach(() => {
 });
 
 const FAQS = [
-  '같이 먹어도 될까요?',
-  '언제 먹는 게 좋나요?',
-  '주의할 증상이 있나요?',
+  '복약 메모 알려줘',
+  '진료 일정 알려줘',
+  '내가 먹는 영양제',
+  '복용 중인 약',
 ] as const;
 
-test('H-2 빈 대화에는 시작 제목과 세 개의 자주 묻는 질문, 안전 안내를 보여준다', async ({ page }) => {
+test('H-2 빈 대화에는 시작 제목과 네 개의 자주 묻는 질문, 안전 안내를 보여준다', async ({ page }) => {
   await page.goto('/dev/chat');
 
   await expect(page.getByRole('heading', { name: '무엇이 궁금하세요?' })).toBeVisible();
@@ -36,7 +37,7 @@ test('H-2 빈 대화에는 시작 제목과 세 개의 자주 묻는 질문, 안
   const faq = page.getByRole('region', { name: '자주 묻는 질문' });
   await expect(faq.getByRole('heading', { name: '자주 묻는 질문' })).toBeVisible();
   const buttons = faq.getByRole('button');
-  await expect(buttons).toHaveCount(3);
+  await expect(buttons).toHaveCount(4);
   for (const [index, question] of FAQS.entries()) {
     await expect(buttons.nth(index)).toHaveText(question);
   }

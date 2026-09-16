@@ -19,6 +19,7 @@ import type { OcrRegistrationDraft } from '@/entities/document';
 import {
   getMedicationSchedule,
   saveMedicationSchedule,
+  saveDoseTaken,
   type MealSlot,
   type MealTimes,
   type MedicationSchedule,
@@ -76,6 +77,7 @@ interface MedicationSchedulePageProps {
   scheduleOverride?: MedicationSchedule;
   defaultRecordId?: number;
   scheduleSaver?: typeof saveMedicationSchedule;
+  doseRecordSaver?: typeof saveDoseTaken;
   notifySettingsLoader?: () => Promise<NotifySettings>;
   notifySettingsUpdater?: (payload: UpdateNotifySettingsPayload) => Promise<NotifySettings>;
   permissionReader?: () => PushPermission;
@@ -160,6 +162,7 @@ export function MedicationSchedulePage({
   scheduleOverride,
   defaultRecordId,
   scheduleSaver = saveMedicationSchedule,
+  doseRecordSaver = saveDoseTaken,
   notifySettingsLoader = getNotifySettings,
   notifySettingsUpdater = updateNotifySettings,
   permissionReader = getPushPermission,
@@ -546,6 +549,7 @@ export function MedicationSchedulePage({
         recordId={recordId}
         schedule={schedule}
         scheduleSaver={scheduleSaver}
+        doseRecordSaver={doseRecordSaver}
         notifySettingsLoader={notifySettingsLoader}
         notifySettingsUpdater={notifySettingsUpdater}
         permissionReader={permissionReader}
@@ -796,6 +800,7 @@ interface MedicationRegistrationWizardProps {
   recordId: number | null;
   schedule: MedicationSchedule;
   scheduleSaver: typeof saveMedicationSchedule;
+  doseRecordSaver: typeof saveDoseTaken;
   notifySettingsLoader: () => Promise<NotifySettings>;
   notifySettingsUpdater: (payload: UpdateNotifySettingsPayload) => Promise<NotifySettings>;
   permissionReader: () => PushPermission;
@@ -817,6 +822,7 @@ function MedicationRegistrationWizard({
   recordId,
   schedule,
   scheduleSaver,
+  doseRecordSaver,
   notifySettingsLoader,
   notifySettingsUpdater,
   permissionReader,
@@ -849,6 +855,8 @@ function MedicationRegistrationWizard({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [completed, setCompleted] = useState(false);
+  const savedScheduleKeyRef = useRef<string | null>(null);
+  const savedDoseKeyRef = useRef<string | null>(null);
 
   const scheduledMeds = schedule.medications.filter((medication) => medication.timesPerDay !== null);
   const usedSlots = new Set<MealSlot>(scheduledMeds.flatMap((medication) => slots[medication.medicationId] ?? []));
@@ -1038,15 +1046,28 @@ function MedicationRegistrationWizard({
     setSaving(true);
     setSaveError(null);
     const selectedNotifyMedication = notifyMedication;
+    const schedulePayload = {
+      start: { date: startDate, slot: scheduleStartSlot },
+      mealTimes,
+      medications: scheduledMeds.map((medication) => ({
+        medicationId: medication.medicationId,
+        slots: slots[medication.medicationId] ?? [],
+      })),
+    };
+    const scheduleKey = JSON.stringify({ recordId, payload: schedulePayload });
+    const dosePayload = startSlot && startSlot !== 'not_taken'
+      ? { date: startDate, slot: startSlot, taken: true, recordId }
+      : null;
+    const doseKey = dosePayload ? JSON.stringify(dosePayload) : null;
     try {
-      await scheduleSaver(recordId, {
-        start: { date: startDate, slot: scheduleStartSlot },
-        mealTimes,
-        medications: scheduledMeds.map((medication) => ({
-          medicationId: medication.medicationId,
-          slots: slots[medication.medicationId] ?? [],
-        })),
-      });
+      if (savedScheduleKeyRef.current !== scheduleKey) {
+        await scheduleSaver(recordId, schedulePayload);
+        savedScheduleKeyRef.current = scheduleKey;
+      }
+      if (dosePayload && doseKey !== savedDoseKeyRef.current) {
+        await doseRecordSaver(dosePayload);
+        savedDoseKeyRef.current = doseKey;
+      }
       if (selectedNotifyMedication) {
         const permission = permissionReader();
         if (permission !== 'granted') {
@@ -1345,7 +1366,19 @@ function MedicationRegistrationWizard({
             <Card tone="info" className="p-4">
               저장하면 복약 일정과 알람 설정이 함께 끝나요.
             </Card>
-            {saveError && <p role="alert" className="text-sm text-danger-strong">{saveError}</p>}
+            {saveError && (
+              <div role="alert" className="flex flex-col gap-2 text-sm text-danger-strong">
+                <p>{saveError}</p>
+                <Button
+                  variant="secondary"
+                  size="compact"
+                  disabled={saving}
+                  onClick={() => void completeRegistration()}
+                >
+                  다시 시도
+                </Button>
+              </div>
+            )}
             <div className="mt-auto pb-4">
               <Button
                 disabled={saving || permissionBusy}

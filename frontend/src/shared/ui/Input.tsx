@@ -17,6 +17,8 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   /** 입력창 우측에 배치할 버튼 등의 액션 */
   trailingAction?: ReactNode;
   inputRef?: Ref<HTMLInputElement>;
+  /** 입력 요소 자체에만 적용할 레이아웃 보정 클래스입니다. */
+  inputClassName?: string;
   className?: string;
 }
 
@@ -26,6 +28,7 @@ export function Input({
   hint,
   trailingAction,
   inputRef,
+  inputClassName,
   className,
   id,
   ...rest
@@ -49,12 +52,14 @@ export function Input({
           aria-describedby={describedBy}
           className={cn(
             'rx-input h-control w-full rounded-input border bg-card px-3.5 text-[length:var(--text-control)] text-foreground',
+            'min-w-0 max-w-full',
             'placeholder:text-tertiary-foreground',
             'focus:outline-none focus:ring-2 focus:ring-ring',
             // type="date"의 달력 아이콘. 기본 크기가 작아 NFR-ACC-001 기준에 맞게 키웁니다.
             '[&::-webkit-calendar-picker-indicator]:size-6 [&::-webkit-calendar-picker-indicator]:cursor-pointer',
             trailingAction && 'pr-12',
             error ? 'border-danger' : 'border-input',
+            inputClassName,
           )}
           {...rest}
         />

@@ -175,16 +175,22 @@ export function FollowUpVisitsPage() {
           </div>
         )}
 
-        <Button className="mt-auto" onClick={openCreateSheet}>
-          진료일정 추가
-        </Button>
-        <button
-          type="button"
-          className="mt-2 min-h-touch self-center px-4 text-sm font-bold text-primary-strong"
-          onClick={() => setShowPast((current) => !current)}
+        <div
+          role="region"
+          aria-label="진료일정 작업"
+          className="mt-auto flex w-full flex-col gap-2 pb-4"
         >
-          {showPast ? '예정된 일정만 보기' : '지난 일정 보기'}
-        </button>
+          <Button aria-label="진료일정 추가" onClick={openCreateSheet}>
+            진료일정 추가
+          </Button>
+          <Button
+            aria-label={showPast ? '예정된 일정만 보기' : '지난 일정 보기'}
+            variant="secondary"
+            onClick={() => setShowPast((current) => !current)}
+          >
+            {showPast ? '예정된 일정만 보기' : '지난 일정 보기'}
+          </Button>
+        </div>
       </main>
 
       <BottomTabbar
