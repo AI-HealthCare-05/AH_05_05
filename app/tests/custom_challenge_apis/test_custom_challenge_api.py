@@ -30,7 +30,7 @@ from app.dtos.user_supplement_nutrients import (
 )
 from app.main import app
 from app.models.care import CareEpisode
-from app.models.challenges import CustomChallengeTemplate
+from app.models.challenges import Badge, CustomChallengeTemplate
 from app.models.common_codes import CommonCode, CommonCodeGroup
 from app.models.custom_challenges import (
     CustomChallengeOccurrence,
@@ -792,3 +792,38 @@ async def test_routes_require_auth_and_serialize_camel_case(
     assert joined.json()["templateId"] == medication_template.id
     assert "targetCount" in joined.json()
     assert listed.json()["items"][0]["targetCount"] == detail.json()["targetCount"]
+
+
+@pytest.mark.parametrize("challenge_kind", [CustomChallengeType.MEDICATION, CustomChallengeType.SUPPLEMENT])
+async def test_recommendations_route_serializes_configured_reward_badge_in_camel_case(
+    service: CustomChallengeService,
+    monkeypatch: pytest.MonkeyPatch,
+    challenge_kind: CustomChallengeType,
+) -> None:
+    monkeypatch.setattr(
+        importlib.import_module("app.apis.v1.challenge_router"), "CustomChallengeService", lambda: service
+    )
+    user = await _user()
+    medication_template, supplement_template = await _templates()
+    template = medication_template if challenge_kind is CustomChallengeType.MEDICATION else supplement_template
+    badge = await Badge.create(name=f"HTTP {challenge_kind.value} 응답 배지", image_path="media/badges/http.webp")
+    template.reward_badge = badge
+    await template.save(update_fields=["reward_badge_id"])
+    if challenge_kind is CustomChallengeType.MEDICATION:
+        await _medication_episode(user)
+    else:
+        await _supplement(user, name="HTTP 영양제")
+    app.dependency_overrides[get_request_user] = lambda: user
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/user/custom-challenge-recommendations")
+
+    assert response.status_code == 200, response.text
+    item = next(item for item in response.json()["items"] if item["templateId"] == template.id)
+    assert item["rewardBadge"] == {
+        "id": badge.id,
+        "name": badge.name,
+        "description": None,
+        "imagePath": badge.image_path,
+    }
+    assert "reward_badge" not in item
