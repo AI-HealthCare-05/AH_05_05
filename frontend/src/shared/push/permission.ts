@@ -1,4 +1,4 @@
-export type PushPermission = NotificationPermission | 'unsupported';
+export type PushPermission = NotificationPermission | 'ios-install-required' | 'unsupported';
 
 function isIosDevice(): boolean {
   return (
@@ -18,11 +18,11 @@ function isStandaloneDisplay(): boolean {
 export function getPushPermission(): PushPermission {
   if (
     !('Notification' in window) ||
-    !('serviceWorker' in navigator) ||
-    (isIosDevice() && !isStandaloneDisplay())
+    !('serviceWorker' in navigator)
   ) {
     return 'unsupported';
   }
+  if (isIosDevice() && !isStandaloneDisplay()) return 'ios-install-required';
   return window.Notification.permission;
 }
 
