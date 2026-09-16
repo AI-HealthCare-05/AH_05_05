@@ -5593,14 +5593,15 @@ def test_single_drug_contraindication_does_not_use_interaction_route() -> None:
 
 
 @pytest.mark.parametrize(
-    "question, expects_overview",
+    "question",
     [
-        ("와파린이랑 같이 먹으면 안되는거 알려줘", True),
-        ("와파린이랑 타이레놀 같이 먹어도 돼?", False),
+        "와파린이랑 같이 먹으면 안되는거 알려줘",
+        "와파린 상호작용 알려줘",
+        "와파린 병용금기 알려줘",
     ],
 )
-async def test_interaction_overview_downgrade_follows_question_shape(question: str, expects_overview: bool) -> None:
-    """상대가 해소되지 않아도 지정 조합 질문을 대상 탐색으로 바꾸지 않는다."""
+async def test_single_target_interaction_questions_keep_three_way_overview(question: str) -> None:
+    """상대를 지정하지 않은 상호작용 질문은 표현이 달라도 약·영양제·음식 탐색을 유지한다."""
 
     class Resolver:
         async def resolve(self, *, question, additional_entities=None):
@@ -5625,4 +5626,5 @@ async def test_interaction_overview_downgrade_follows_question_shape(question: s
     await build_use_case(question_resolver=Resolver(), retriever=retriever).execute(build_request(question))
 
     query_plan = retriever.received_kwargs["execution_plan"].query_plan
-    assert query_plan.interaction_overview is expects_overview
+    assert query_plan.interaction_overview is True
+    assert len(query_plan.interaction_types) == 3

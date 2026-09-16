@@ -3496,12 +3496,11 @@ class AnswerMedicationQuestionUseCase:
             and cls._can_answer_from_active_context(question=request.question, context=context)
             and all(cls._normalize_entity_name(entity.canonical_name) in active_names for entity in plan.entities)
         )
-        # 탐색으로 강등할지는 질문 형태가 정한다. 이 조건이 빠지면
-        # `A와 B 같이 먹어도 돼?`에서 상대가 해소되지 않았을 때도 pair를 비우고
-        # `A와 같이 먹으면 안 되는 것`과 같은 답이 나간다.
+        # `_INTERACTION_OVERVIEW_PATTERN`을 여기에 추가하면 `와파린 상호작용 알려줘`,
+        # `병용금기 알려줘` 같은 표준 탐색 표현이 패턴에 없어 3방향 검색을 잃는다.
+        # 상대가 해소된 지정 조합은 entities가 둘이 되어 이미 강등되지 않는다.
         named_overview = (
-            asks_for_neighbors
-            and len(plan.entities) == 1
+            len(plan.entities) == 1
             and plan.entities[0].kind is InteractionEntityKind.DRUG
             and not cls._PATIENT_CONTEXT_CUE_PATTERN.search(request.question)
         )
