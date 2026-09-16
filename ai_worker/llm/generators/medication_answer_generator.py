@@ -253,19 +253,26 @@ class OpenAIMedicationAnswerGenerator:
                 "약·영양제 챗봇 답변 생성에 실패했습니다.",
                 reason_code=MedicationAnswerFallbackReason.CLIENT_ERROR.value,
             ) from error
-        if self._must_preserve_official_warning(
+        # 공식 경고문을 지키려고 초안을 되돌린 경우도 초안이 그대로 나간 것이다.
+        # 상태를 재작성 성공으로 남기면 초안 노출률이 실제보다 낮게 집계된다.
+        preserved_official_warning = self._must_preserve_official_warning(
             context=context,
             result=result,
             generated_answer=generated_answer,
-        ):
+        )
+        if preserved_official_warning:
             generated_answer = result.answer
         generated_hash = self._answer_hash(generated_answer)
-        fallback_reason = self._grounding_failure_reason(
-            draft_answer=result.answer,
-            generated_answer=generated_answer,
-            declared_section_types=payload.section_types,
-            covered_section_types=covered_section_types,
-            allow_uncovered_adverse_case_report=compacted_adverse_case_report,
+        fallback_reason = (
+            MedicationAnswerFallbackReason.OFFICIAL_WARNING_PRESERVED
+            if preserved_official_warning
+            else self._grounding_failure_reason(
+                draft_answer=result.answer,
+                generated_answer=generated_answer,
+                declared_section_types=payload.section_types,
+                covered_section_types=covered_section_types,
+                allow_uncovered_adverse_case_report=compacted_adverse_case_report,
+            )
         )
         if fallback_reason is not None:
             fallback_answer = self._compact_unrepaired_adverse_case_report(

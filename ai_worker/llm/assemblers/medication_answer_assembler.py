@@ -28,7 +28,10 @@ class MedicationAnswerAssembler:
         "자료 없음",
         "정보 없음",
     }
-    _GUIDE_PARENTHETICAL_GLOSS = re.compile(r"\s*\([^()]*\)")
+    # 숫자로 시작하는 괄호는 용량 표기이므로 남긴다. `(4,000mg)`을 지우면 답변에서 수치가 사라진다.
+    _GUIDE_PARENTHETICAL_GLOSS = re.compile(r"\s*\((?!\d)[^()]*\)")
+    # 적재 과정에서 천 단위 쉼표가 `|`로 바뀐 값이 있다. 구분자로 쪼개기 전에 되돌린다.
+    _GUIDE_THOUSAND_SEPARATOR = re.compile(r"(?<=\d)\|(?=\d)")
     _GUIDE_RDB_SPACING = (
         ("감기로인한", "감기로 인한 "),
         ("발열및", "발열 및 "),
@@ -632,7 +635,8 @@ class MedicationAnswerAssembler:
     def _clean_guide_value(cls, value: str) -> str:
         """RDB의 구분 기호와 짧은 괄호 풀이를 읽기 쉬운 문장으로 정리한다."""
 
-        parts = [part.strip() for part in value.split("|") if part.strip()]
+        restored = cls._GUIDE_THOUSAND_SEPARATOR.sub(",", value)
+        parts = [part.strip() for part in restored.split("|") if part.strip()]
         cleaned_parts = []
         for part in parts:
             cleaned = cls._GUIDE_PARENTHETICAL_GLOSS.sub("", part)
