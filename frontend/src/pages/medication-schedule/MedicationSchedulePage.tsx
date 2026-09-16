@@ -30,6 +30,7 @@ import {
   type MedicationSchedule,
   type MedicationStartPoint,
   type SaveDoseTakenPayload,
+  type SaveMedicationSchedulePayload,
   type ScheduleMedication,
 } from '@/entities/medication';
 import {
@@ -156,6 +157,14 @@ function formatStartPoint(date: string, slot: MealSlot): string {
   const [, month, day] = date.split('-');
   if (!month || !day) return label;
   return `${Number(month)}월 ${Number(day)}일 ${label}`;
+}
+
+function sameScheduleContents(
+  left: SaveMedicationSchedulePayload,
+  right: SaveMedicationSchedulePayload,
+): boolean {
+  return JSON.stringify({ mealTimes: left.mealTimes, medications: left.medications }) ===
+    JSON.stringify({ mealTimes: right.mealTimes, medications: right.medications });
 }
 
 function parseRecordId(value: string | null): number | null {
@@ -867,6 +876,8 @@ function MedicationRegistrationWizard({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [completed, setCompleted] = useState(false);
   const savedScheduleKeyRef = useRef<string | null>(null);
+  const savedSchedulePayloadRef = useRef<SaveMedicationSchedulePayload | null>(null);
+  const notTakenScheduleHandledRef = useRef(false);
   /** 마지막으로 성공 저장한 실제 첫 복용 기록. 최종 선택이 바뀌면 같은 기록을 보정합니다. */
   const savedDoseRef = useRef<Pick<SaveDoseTakenPayload, 'date' | 'slot' | 'recordId'> | null>(null);
 
@@ -1073,13 +1084,22 @@ function MedicationRegistrationWizard({
       })),
     };
     const scheduleKey = JSON.stringify({ recordId, payload: schedulePayload });
+    const canSkipScheduleForNotTaken =
+      startSlot === 'not_taken' &&
+      savedSchedulePayloadRef.current !== null &&
+      sameScheduleContents(savedSchedulePayloadRef.current, schedulePayload) &&
+      (savedDoseRef.current !== null || notTakenScheduleHandledRef.current);
     const dosePayload: SaveDoseTakenPayload | null = startSlot && startSlot !== 'not_taken'
       ? { date: startDate, slot: startSlot, taken: true, recordId }
       : null;
     try {
-      if (savedScheduleKeyRef.current !== scheduleKey) {
+      if (savedScheduleKeyRef.current !== scheduleKey && !canSkipScheduleForNotTaken) {
         await scheduleSaver(recordId, schedulePayload);
         savedScheduleKeyRef.current = scheduleKey;
+        savedSchedulePayloadRef.current = schedulePayload;
+        notTakenScheduleHandledRef.current = startSlot === 'not_taken';
+      } else if (canSkipScheduleForNotTaken) {
+        notTakenScheduleHandledRef.current = true;
       }
       if (
         savedDoseRef.current &&
