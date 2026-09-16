@@ -683,9 +683,7 @@ class MedicationKnowledgeQueryBuilder:
         ):
             section_types.append(KnowledgeSectionType.FUNCTION)
             expansion_terms.extend(["건강기능식품", "기능성", "효능", "섭취 목적"])
-        elif is_general_description_question(question):
-            # 전반 설명 요청은 섹션을 좁히지 않되 검색어 확장은 유지한다.
-            expansion_terms.extend(["건강기능식품", "기능성", "효능", "섭취 목적"])
+        general_description = is_general_description_question(question)
         if any(
             keyword in question
             for keyword in (
@@ -705,4 +703,9 @@ class MedicationKnowledgeQueryBuilder:
         if any(keyword in question for keyword in ("주의", "부작용", "조심", "위험")):
             section_types.append(KnowledgeSectionType.CAUTION)
             expansion_terms.extend(["섭취 시 주의사항", "부작용"])
+        if not section_types and general_description:
+            # 항목을 지정하지 않은 설명 요청은 전반 안내다. 빈 목록으로 두면 검색은 열리지만
+            # `missing = requested - covered`가 비어 근거 부재 공시와 보강 검색이 함께 꺼진다.
+            section_types = [KnowledgeSectionType.FUNCTION, KnowledgeSectionType.CAUTION]
+            expansion_terms.extend(["효능", "섭취 시 주의사항"])
         return section_types, list(dict.fromkeys(expansion_terms))

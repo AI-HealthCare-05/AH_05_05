@@ -64,7 +64,9 @@ def requires_resolved_pair_for_interaction(question: str) -> bool:
     return _TYPOED_COADMINISTRATION_PATTERN.search(normalized) is not None
 
 
-_GENERAL_DESCRIPTION_PATTERN = re.compile(r"대해\s*(?:알려|설명)|(?:뭐|무엇)(?:야|예요|인가요)")
+_GENERAL_DESCRIPTION_PATTERN = re.compile(
+    r"대해\s*(?:알려|설명)|(?:뭐|무엇)(?:야|예요|인가요)|알려\s*(?:줘|주세요)|설명해\s*(?:줘|주세요)"
+)
 
 
 def is_general_description_question(question: str) -> bool:

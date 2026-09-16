@@ -1834,7 +1834,10 @@ async def test_single_entity_guide_question_ignores_prior_interaction_gate_conte
     assert retriever.received_kwargs is not None
     query_plan = retriever.received_kwargs["execution_plan"].query_plan
     assert query_plan.entity_names == ["마그네슘"]
-    assert query_plan.section_types == []
+    assert query_plan.section_types == [
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.CAUTION,
+    ]
     assert query_plan.interaction_pairs == []
 
 
