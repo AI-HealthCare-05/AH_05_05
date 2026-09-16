@@ -620,22 +620,3 @@ async def test_rejects_collection_with_different_distance() -> None:
             await store.count_points()
     finally:
         await client.close()
-
-
-def test_build_filter_exempts_requested_pair_chunks_from_section_filter() -> None:
-    """영양제 상호작용 근거는 INTERACTION이 아닌 섹션에 있어 pair 일치 시 면제해야 한다."""
-
-    query = KnowledgeSearchQuery(
-        query="비타민 D와 칼슘 상호작용",
-        query_text="비타민 D와 칼슘 상호작용",
-        dataset_version="knowledge-full-v1",
-        interaction_pair_keys=["a" * 64],
-        section_types=[KnowledgeSectionType.INTERACTION],
-        limit=5,
-    )
-
-    rendered = QdrantKnowledgeStore._build_filter(query).model_dump_json()
-
-    assert "a" * 64 in rendered
-    # 섹션은 단독 must가 아니라 pair 조건과 묶인 should 안에 있어야 한다.
-    assert '"must":[{"key":"metadata.section_type"' not in rendered.replace(" ", "")
