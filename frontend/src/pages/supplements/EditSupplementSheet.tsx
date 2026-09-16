@@ -19,7 +19,6 @@ interface EditSupplementSheetProps {
   maskedName: string;
   onOpenChange: (open: boolean) => void;
   onSave: (supplementId: number, payload: UpdateSupplementPayload) => Promise<void>;
-  onStop: (supplementId: number) => Promise<boolean | void>;
   onProductInfo?: (productId: string) => void;
 }
 
@@ -29,7 +28,6 @@ export function EditSupplementSheet({
   maskedName,
   onOpenChange,
   onSave,
-  onStop,
   onProductInfo,
 }: EditSupplementSheetProps) {
   const [doseAmount, setDoseAmount] = useState(1);
@@ -39,7 +37,7 @@ export function EditSupplementSheet({
   const [note, setNote] = useState('');
   const [reviewBody, setReviewBody] = useState('');
   const [saving, setSaving] = useState(false);
-  const [stopping, setStopping] = useState(false);
+  const [doseEditOpen, setDoseEditOpen] = useState(false);
   const [ratingEditOpen, setRatingEditOpen] = useState(false);
   const [ratingDraft, setRatingDraft] = useState<number | null>(null);
   const [ratingSaving, setRatingSaving] = useState(false);
@@ -54,7 +52,7 @@ export function EditSupplementSheet({
     setNote(supplement.note ?? '');
     setReviewBody(supplement.reviewBody ?? '');
     setSaving(false);
-    setStopping(false);
+    setDoseEditOpen(false);
     setRatingEditOpen(false);
     setRatingDraft(supplement.score);
     setRatingSaving(false);
@@ -69,7 +67,7 @@ export function EditSupplementSheet({
         doseAmount,
         slots,
       });
-      onOpenChange(false);
+      setDoseEditOpen(false);
     } catch {
       // 저장 실패는 부모 화면의 ErrorDialog가 표시합니다.
     } finally {
@@ -77,21 +75,8 @@ export function EditSupplementSheet({
     }
   }
 
-  async function stop() {
-    if (!supplement || stopping) return;
-    setStopping(true);
-    try {
-      if (await onStop(supplement.supplementId) === false) return;
-      onOpenChange(false);
-    } catch {
-      // 저장 실패는 부모 화면의 ErrorDialog가 표시합니다.
-    } finally {
-      setStopping(false);
-    }
-  }
-
   async function saveRating() {
-    if (!supplement || ratingSaving || slots.length === 0) return;
+    if (!supplement || ratingSaving) return;
     setRatingSaving(true);
     try {
       await onSave(supplement.supplementId, {
@@ -127,7 +112,7 @@ export function EditSupplementSheet({
 
   return (
     <>
-      <Dialog open={open} onOpenChange={(nextOpen) => { if (!stopping) onOpenChange(nextOpen); }}>
+      <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
           variant="sheet"
           aria-label={supplement?.name ?? '영양제'}
@@ -144,18 +129,40 @@ export function EditSupplementSheet({
 
           {supplement && (
             <>
-              <section
-                aria-label="내 영양제 요약"
-                className="rounded-card border border-border bg-card p-4 shadow-card"
-              >
-                <div className="min-w-0">
-                  <h2 className="[overflow-wrap:anywhere] text-xl font-bold text-foreground">{supplement.name}</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {formatDose(supplement.doseAmount, supplement.doseUnit)} ·{' '}
-                    {supplement.slots.map((slot) => mealSlotLabel(slot, 'short')).join(' · ')}
-                  </p>
-                </div>
+              <section aria-label="내 영양제 요약">
+                <button
+                  type="button"
+                  aria-label={`${supplement.name} 제품 상세정보`}
+                  disabled={!supplement.productId || !onProductInfo}
+                  onClick={() => { if (supplement.productId) onProductInfo?.(supplement.productId); }}
+                  className="flex w-full items-center justify-between gap-3 rounded-card border border-border bg-card p-4 text-left shadow-card"
+                >
+                  <div className="min-w-0">
+                    <h2 className="[overflow-wrap:anywhere] text-xl font-bold text-foreground">{supplement.name}</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {formatDose(supplement.doseAmount, supplement.doseUnit)} ·{' '}
+                      {supplement.slots.map((slot) => mealSlotLabel(slot, 'short')).join(' · ')}
+                    </p>
+                  </div>
+                  {supplement.productId && onProductInfo && (
+                    <DrawnChevron direction="right" className="size-5 shrink-0 text-muted-foreground" />
+                  )}
+                </button>
               </section>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setDoseAmount(supplement.doseAmount);
+                  setDoseStep(doseStepFor(supplement.doseAmount));
+                  setSlots([...supplement.slots]);
+                  setDoseEditOpen(true);
+                }}
+                className="flex min-h-touch w-full items-center justify-between gap-3 rounded-card border border-border bg-card p-4 text-left font-bold text-foreground shadow-card"
+              >
+                <span>복용 정보 수정</span>
+                <DrawnChevron direction="right" className="size-5 shrink-0 text-muted-foreground" />
+              </button>
 
               <section className="flex flex-col gap-3" aria-labelledby="my-supplement-record-title">
                 <h2 id="my-supplement-record-title" className="text-xl font-bold text-foreground">
@@ -204,44 +211,34 @@ export function EditSupplementSheet({
                     {reviewBody.trim() || '작성한 후기가 없어요.'}
                   </p>
                 </div>
-                {supplement.productId && onProductInfo && (
-                  <button
-                    type="button"
-                    className="flex min-h-touch items-center justify-between rounded-card border border-border bg-card px-4 text-left text-sm font-bold text-primary-strong shadow-card"
-                    onClick={() => onProductInfo(supplement.productId!)}
-                  >
-                    <span>제품 정보 보기</span>
-                    <DrawnChevron direction="right" className="size-5 text-muted-foreground" />
-                  </button>
-                )}
               </section>
-
-              <div className="border-t border-border pt-4">
-                <h2 className="mb-3 text-lg font-bold text-foreground">복용 정보 수정</h2>
-              </div>
             </>
           )}
 
-          <DoseSlotFields
-            doseAmount={doseAmount}
-            doseUnit={supplement?.doseUnit ?? '정'}
-            doseStep={doseStep}
-            slots={slots}
-            onDoseAmountChange={setDoseAmount}
-            onSlotsChange={setSlots}
-          />
+        </DialogContent>
+      </Dialog>
 
-          <Button disabled={slots.length === 0 || saving} onClick={() => void save()}>
-            {saving ? '저장 중...' : '저장'}
-          </Button>
-          <button
-            type="button"
-            className="min-h-touch text-sm font-bold text-danger-strong"
-            disabled={stopping}
-            onClick={() => void stop()}
-          >
-            복용 중단하기
-          </button>
+      <Dialog open={open && doseEditOpen} onOpenChange={(nextOpen) => { if (!saving) setDoseEditOpen(nextOpen); }}>
+        <DialogContent variant="sheet" className="max-h-[92dvh] overflow-y-auto pb-6">
+          <DialogHeader>
+            <DialogTitle>복용 정보 수정</DialogTitle>
+            <DialogDescription className="[overflow-wrap:anywhere]">{supplement?.name}</DialogDescription>
+          </DialogHeader>
+          <fieldset disabled={saving}>
+            <DoseSlotFields
+              doseAmount={doseAmount}
+              doseUnit={supplement?.doseUnit ?? '정'}
+              doseStep={doseStep}
+              slots={slots}
+              onDoseAmountChange={setDoseAmount}
+              onSlotsChange={setSlots}
+            />
+          </fieldset>
+          <DialogFooter>
+            <Button disabled={slots.length === 0 || saving} onClick={() => void save()}>
+              {saving ? '저장 중...' : '저장'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

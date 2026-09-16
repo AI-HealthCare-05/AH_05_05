@@ -86,8 +86,8 @@ test('기본 영양제 상세는 기록 조회와 등록 버튼만 표시하고 
   await expect(detail.getByRole('button', { name: /^별 [1-5]점$/ })).toHaveCount(0);
   await expect(detail.getByRole('group', { name: '내 메모' }).getByRole('button', { name: '등록하기' })).toBeVisible();
   await expect(detail.getByRole('group', { name: '내 후기' }).getByRole('button', { name: '등록하기' })).toBeVisible();
-  await expect(detail.getByRole('heading', { name: '복용 정보 수정' })).toBeVisible();
-  await expect(detail.getByRole('button', { name: '복용 중단하기' })).toBeVisible();
+  await expect(detail.getByRole('button', { name: '복용 정보 수정', exact: true })).toBeVisible();
+  await expect(detail.getByRole('button', { name: '복용 중단하기' })).toHaveCount(0);
 });
 
 test('메모와 후기 CTA는 해당 입력만 열고 저장과 삭제 시 다른 기록을 보존한다', async ({ page }) => {
@@ -194,12 +194,11 @@ test('긴 영양제 이름은 목록과 상세 및 중첩 팝업에서 전체가
     await expectNoHorizontalOverflow(rating);
     await rating.getByRole('button', { name: '닫기' }).click();
 
-    await detail.getByRole('button', { name: '복용 중단하기' }).click();
-    const stop = page.getByRole('dialog', { name: new RegExp(`${longName} 복용을 중단할까요`) });
-    await expectNameContained(stop.getByRole('heading'), stop);
-    await expectNameContained(stop.getByText(new RegExp(`^${longName} ·`)), stop);
-    await expectNoHorizontalOverflow(stop);
-    await stop.getByRole('button', { name: '취소' }).click();
+    await detail.getByRole('button', { name: '복용 정보 수정', exact: true }).click();
+    const doseEditor = page.getByRole('dialog', { name: '복용 정보 수정', exact: true });
+    await expectNameContained(doseEditor.getByText(longName, { exact: true }), doseEditor);
+    await expectNoHorizontalOverflow(doseEditor);
+    await doseEditor.getByRole('button', { name: '닫기', exact: true }).click();
     await detail.getByRole('button', { name: '닫기' }).click();
 
     const list = page.getByRole('region', { name: '먹고 있는 영양제' });

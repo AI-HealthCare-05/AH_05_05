@@ -152,11 +152,11 @@ for (const viewport of [
   });
 }
 
-test('제품 정보 버튼은 기록 카드와 같은 둥근 모서리를 유지하며 상세로 이동한다', async ({ page }) => {
+test('영양제 요약 카드는 기록 카드와 같은 둥근 모서리를 유지하며 상세로 이동한다', async ({ page }) => {
   await page.goto('/dev/supplements');
   await page.getByRole('region', { name: '먹고 있는 영양제' }).getByRole('button', { name: /오메가3/ }).click();
   const record = page.getByRole('region', { name: '내 기록' });
-  const productInfo = record.getByRole('button', { name: '제품 정보 보기' });
+  const productInfo = page.getByRole('button', { name: '오메가3 제품 상세정보' });
   const recordCard = record.getByRole('group', { name: '내 메모' });
   const [buttonRadius, cardRadius] = await Promise.all([
     productInfo.evaluate((element) => getComputedStyle(element).borderRadius),
