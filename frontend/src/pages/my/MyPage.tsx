@@ -17,6 +17,7 @@ import {
   ErrorDialog,
   Header,
   NotifyBlockedDialog,
+  NotifyInstallDialog,
   NotifyPermissionDialog,
   Switch,
   type TabKey,
@@ -125,6 +126,7 @@ export function MyPage({
   const [pendingToggle, setPendingToggle] = useState<NotifySettingKey | null>(null);
   const [permissionDialogOpen, setPermissionDialogOpen] = useState(false);
   const [blockedDialogOpen, setBlockedDialogOpen] = useState(false);
+  const [installDialogOpen, setInstallDialogOpen] = useState(false);
   const [notificationBusy, setNotificationBusy] = useState(false);
   const [pendingSettingKeys, setPendingSettingKeys] = useState<NotifySettingKey[]>([]);
   const [timeSheetOpen, setTimeSheetOpen] = useState(false);
@@ -314,6 +316,10 @@ export function MyPage({
     }
     if (permission === 'denied') {
       setBlockedDialogOpen(true);
+      return;
+    }
+    if (permission === 'ios-install-required') {
+      setInstallDialogOpen(true);
       return;
     }
     if (permission === 'default') {
@@ -653,6 +659,10 @@ export function MyPage({
       <NotifyBlockedDialog
         open={blockedDialogOpen}
         onConfirm={() => setBlockedDialogOpen(false)}
+      />
+      <NotifyInstallDialog
+        open={installDialogOpen}
+        onConfirm={() => setInstallDialogOpen(false)}
       />
       <ErrorDialog
         open={notifyActionError !== null}

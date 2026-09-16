@@ -26,6 +26,9 @@ export type { NotifyPermissionDialogProps } from './NotifyPermissionDialog';
 export { NotifyBlockedDialog } from './NotifyBlockedDialog';
 export type { NotifyBlockedDialogProps } from './NotifyBlockedDialog';
 
+export { NotifyInstallDialog } from './NotifyInstallDialog';
+export type { NotifyInstallDialogProps } from './NotifyInstallDialog';
+
 export { RxVitaFeatureCarousel } from './RxVitaFeatureCarousel';
 
 export { ImageViewer } from './ImageViewer';

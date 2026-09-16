@@ -16,6 +16,35 @@ from app.services.medication_ocr_v3.pipeline.privacy_artifact import build_priva
 VERSIONS = ("v3.4.1", "v3.4.2", "v3.4.3")
 
 
+@pytest.mark.parametrize("outside_text", [True, False])
+@pytest.mark.parametrize("document_count", [0, 1])
+def test_small_internal_box_is_not_the_document_when_content_surrounds_it(monkeypatch, outside_text, document_count):
+    rgb = np.full((600, 900, 3), 248, dtype=np.uint8)
+    cv2.rectangle(rgb, (350, 500), (500, 560), (100, 70, 180), 3)
+    cv2.putText(rgb, "DAILY", (365, 527), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (30, 30, 30), 1)
+    if outside_text:
+        for y in range(70, 450, 40):
+            cv2.putText(
+                rgb,
+                "MEDICINE 10mg   1 tablet  3 times  7 days",
+                (60, y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (30, 30, 30),
+                2,
+            )
+    detection = subject.DocumentDetection(
+        (Point(350, 500), Point(500, 500), Point(500, 560), Point(350, 560)), document_count, 0.86, False
+    )
+    monkeypatch.setattr(subject, "_detect_document", lambda *args: detection)
+    result = preprocess_image(_png(rgb), "image/png")
+    recover = outside_text and document_count == 0
+    assert ("document_too_small" in result.reasons) is not recover
+    if recover:
+        assert result.quality_state is QualityState.PROCESSED
+        assert "conservative_full_frame" in result.operations
+
+
 @pytest.mark.parametrize(
     ("outer_confidence", "outer_boundary", "inner_coverage", "inner_confidence", "inner_boundary", "expect_inner"),
     [
