@@ -2186,6 +2186,18 @@ def preprocess_image(
     skew = 0.0
     if document.polygon is not None:
         coverage, skew = _quad_geometry(document.polygon, width, height)
+    # A small printed box is not a trustworthy page boundary when substantial
+    # content lies outside it. Keep the full image instead of rejecting it as
+    # a distant document. Explicit user geometry and other quality gates remain.
+    if (
+        document_quad_override is None
+        and document.polygon is not None
+        and coverage < 0.075
+        and document.likely_document_count == 0
+        and _has_meaningful_content_outside_quad(rgb, document.polygon)
+    ):
+        document = replace(document, polygon=None, confidence=0.0)
+        coverage, skew = 0.0, 0.0
     candidate: _BuiltCandidate | None = None
     operations: list[str] = ["exif_orientation_normalized"]
     if manual_rotation:
