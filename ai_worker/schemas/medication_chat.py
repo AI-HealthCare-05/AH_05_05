@@ -441,6 +441,10 @@ class MedicationChatResult(BaseModel):
         default=None,
         exclude=True,
     )
+    answer_observation: "MedicationAnswerGenerationObservation | None" = Field(
+        default=None,
+        exclude=True,
+    )
     evidence_coverage: MedicationEvidenceCoverage | None = Field(
         default=None,
         exclude=True,

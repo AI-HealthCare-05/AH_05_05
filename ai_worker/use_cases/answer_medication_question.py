@@ -972,7 +972,8 @@ class AnswerMedicationQuestionUseCase:
                     "answer": compact_chat_content(
                         generated.answer,
                         marker=ANSWER_COMPACTION_MARKER,
-                    )
+                    ),
+                    "answer_observation": outcome.observation,
                 }
             )
             generated = self._apply_risk_policy(
@@ -4276,7 +4277,8 @@ class AnswerMedicationQuestionUseCase:
                     "answer": compact_chat_content(
                         outcome.result.answer,
                         marker=ANSWER_COMPACTION_MARKER,
-                    )
+                    ),
+                    "answer_observation": outcome.observation,
                 }
             )
             llm_span.end(

@@ -14,6 +14,7 @@ from ai_worker.schemas.chat_evaluation import (
     ChatEvaluationObservation,
     ChatEvaluationReport,
 )
+from ai_worker.schemas.medication_chat import MedicationAnswerRewriteStatus
 
 
 class ChatEvaluationExecutor(Protocol):
@@ -32,8 +33,10 @@ class ChatEvaluator:
         manifest: ChatEvaluationManifest,
     ) -> ChatEvaluationReport:
         results: list[ChatEvaluationCaseResult] = []
+        rewrite_statuses: list[MedicationAnswerRewriteStatus | None] = []
         for case in manifest.cases:
             observation = await self._executor.execute(case)
+            rewrite_statuses.append(observation.rewrite_status)
             results.append(
                 self._compare(
                     case=case,
@@ -57,6 +60,9 @@ class ChatEvaluator:
             source_contract_rate=self._rate(result.source_match for result in results),
             safety_contract_rate=self._rate(result.safety_match for result in results),
             answer_policy_contract_rate=self._rate(result.answer_policy_match for result in results),
+            draft_fallback_rate=self._rate(
+                status is MedicationAnswerRewriteStatus.DRAFT_FALLBACK for status in rewrite_statuses
+            ),
             langsmith_trace_coverage=self._rate(result.trace_match for result in results),
             timeout_rate=(sum(result.error_code == "API_TIMEOUT" for result in results) / query_count),
             response_p50_ms=self._percentile(latencies, 0.50),
@@ -286,6 +292,7 @@ def render_chat_evaluation_markdown(
         f"- 출처 계약 충족률: {report.source_contract_rate:.1%}",
         f"- 안전성 계약 충족률: {report.safety_contract_rate:.1%}",
         f"- 답변 정책 계약 충족률: {report.answer_policy_contract_rate:.1%}",
+        f"- 초안 폴백 비율: {report.draft_fallback_rate:.1%}",
         f"- LangSmith Trace ID 생성률: {report.langsmith_trace_coverage:.1%}",
         f"- 타임아웃 비율: {report.timeout_rate:.1%}",
         f"- 응답 시간 P50/P95: {report.response_p50_ms:.1f}ms / {report.response_p95_ms:.1f}ms",

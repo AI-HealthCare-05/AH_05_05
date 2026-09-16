@@ -17,6 +17,7 @@ from ai_worker.schemas.chat_evaluation import (
 from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_chat import (
+    MedicationAnswerRewriteStatus,
     MedicationChatRoute,
     MedicationChatSourceKind,
 )
@@ -328,3 +329,45 @@ def test_manifest_allows_no_source_greeting_without_an_entity() -> None:
     )
 
     assert manifest.cases[0].expected.normalized_entities == []
+
+
+async def test_draft_fallback_rate_counts_only_rejected_rewrites() -> None:
+    """SKIPPED는 명확화·환자정보 전용처럼 설계된 경로이므로 실패로 세지 않는다."""
+
+    statuses = [
+        MedicationAnswerRewriteStatus.REWRITTEN,
+        MedicationAnswerRewriteStatus.DRAFT_FALLBACK,
+        MedicationAnswerRewriteStatus.SKIPPED,
+    ]
+    cases = [
+        build_case(
+            f"case-{index}",
+            route=MedicationChatRoute.INTERACTION,
+            entities=["칼슘"],
+            sources=[MedicationChatSourceKind.PUBLIC_KNOWLEDGE],
+        )
+        for index in range(len(statuses))
+    ]
+    executor = SequenceExecutor(
+        [
+            ChatEvaluationObservation(
+                query_id=f"case-{index}",
+                route=MedicationChatRoute.INTERACTION,
+                normalized_entities=["칼슘"],
+                section_types=[KnowledgeSectionType.INTERACTION],
+                source_kinds=[MedicationChatSourceKind.PUBLIC_KNOWLEDGE],
+                safety_status=SafetyStatus.SAFE,
+                response_time_ms=100.0,
+                langsmith_trace_id=f"trace-{index}",
+                answer="근거 기반 답변",
+                rewrite_status=status,
+            )
+            for index, status in enumerate(statuses)
+        ]
+    )
+
+    report = await ChatEvaluator(executor=executor).evaluate(
+        ChatEvaluationManifest(dataset_version="chat-test-v1", cases=cases)
+    )
+
+    assert report.draft_fallback_rate == pytest.approx(1 / 3)
