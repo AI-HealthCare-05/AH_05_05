@@ -100,6 +100,12 @@ def build_medication_chat_messages(
 
 def _draft_answer_for_rewrite(result: MedicationChatResult) -> str:
     evidence_coverage = result.evidence_coverage
-    if evidence_coverage is None or KnowledgeSectionType.DAILY_INTAKE in (evidence_coverage.requested_section_types):
+    # 요청 섹션이 비면 항목을 지정하지 않은 전반 설명이라 복용법도 답변 범위다.
+    # 이때까지 용량을 지우면 `타이레놀이 뭐야`가 복용법 제목만 남긴 채 수치를 잃는다.
+    if (
+        evidence_coverage is None
+        or not evidence_coverage.requested_section_types
+        or KnowledgeSectionType.DAILY_INTAKE in evidence_coverage.requested_section_types
+    ):
         return result.answer
     return _DOSAGE_VALUE_PATTERN.sub("[용량 정보 생략]", result.answer)

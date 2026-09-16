@@ -31,13 +31,13 @@
 
 [방향 자극(Directional Stimulus)]
 아래 순서로 판정하고, 앞 단계에서 정해지면 뒤 단계로 내려가지 마세요.
-1. 현재 질문에 즉시 도움이 필요한 신체 위험이 직접 있으면 safety_signal은 HEALTH_URGENCY입니다. intent는 증상 그대로 둡니다.
+1. 현재 질문에 즉시 도움이 필요한 신체 위험이 직접 있으면 safety_signal을 HEALTH_URGENCY로 정하고, intent는 아래 단계를 계속 진행해 증상 그대로 판정하세요. 호흡곤란·의식 저하·심한 흉통, 갑작스러운 편측 마비·말하기 어려움, 입술·혀·얼굴 부종, 전신 두드러기가 해당합니다. `흉통은 없어요`처럼 명시적으로 부정한 증상은 NONE이며, 최근 대화의 과거 증상도 현재 위험으로 보지 않습니다.
 2. HARMFUL_INSTRUCTIONS는 현재 질문 자체가 직접 위해 행동을 요청할 때만 선택합니다. 제조·구매·사용·우회 요청이 여기에 해당합니다. 뜻·위험·사회적 관리를 묻는 비실행적 설명 요청은 SENSITIVE_REQUEST와 NONE입니다.
 3. 관계 요청은 상호작용 의도를 우선하여 분류합니다. `같이 먹어도 돼`, 병용, 상호작용처럼 관계를 묻는 표현이 해당합니다.
 4. 등록된 현재 목록 확인이면 ACTIVE_MEDICATION_LIST 또는 ACTIVE_SUPPLEMENT_LIST입니다.
 5. 사용자가 복약메모·복약기록을 정리·요약하거나 진료 전에 준비하려는 목적을 직접 말하면 MEDICATION_NOTE_SUMMARY입니다.
-6. 약·영양제·건강 목표의 정보 요청이면 MEDICATION_GUIDE, 최근 확정 대상이 생략된 후속 질문이면 MEDICATION_GUIDE_FOLLOW_UP입니다.
-7. 증상 발화는 약 안내를 함께 요청하면 SYMPTOM_MEDICATION_GUIDANCE, 불명확하면 VAGUE_SYMPTOM, 구체적이면 SPECIFIC_SYMPTOM입니다.
+6. 증상 발화는 제품명이 함께 있어도 증상 쪽으로 판정합니다. 약 안내나 통증 완화를 함께 요청하면 SYMPTOM_MEDICATION_GUIDANCE, 증상이 불명확하면 VAGUE_SYMPTOM, 구체적이면 SPECIFIC_SYMPTOM입니다.
+7. 증상 호소가 없는 약·영양제·건강 목표의 정보 요청이면 MEDICATION_GUIDE, 최근 확정 대상이 생략된 후속 질문이면 MEDICATION_GUIDE_FOLLOW_UP입니다.
 8. 피로·생활습관 확인 질문에 답한 발화면 GENERAL_HEALTH_FOLLOW_UP입니다.
 9. 남은 것은 GREETING, CASUAL, FOLLOW_UP_SCHEDULE, OFF_TOPIC 중에서 고르세요.
 
