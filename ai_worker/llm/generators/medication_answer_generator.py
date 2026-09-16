@@ -48,8 +48,10 @@ class OpenAIMedicationAnswerGenerator:
             MedicationChatSourceKind.PUBLIC_KNOWLEDGE,
         }
     )
+    # 단위 집합은 프롬프트의 용량 가림 패턴과 같아야 한다. 여기에만 없는 단위가 있으면
+    # 그 단위의 환각 용량(예: `5,000IU` → `10,000IU`)을 검증이 놓친다.
     _DOSAGE_TOKEN_PATTERN = re.compile(
-        r"\d+(?:[.,]\d+)?\s*(?:mg|mcg|μg|㎍|g|mL|ml|정|캡슐|포|회|일|시간|%)",
+        r"\d+(?:[.,]\d+)?\s*(?:mg|mcg|μg|㎍|g|mL|ml|IU|mEq|밀리그램|그램|밀리리터|국제단위|정|캡슐|포|회|일|시간|%)",
         re.IGNORECASE,
     )
     _SAFETY_ASSERTION_PATTERN = re.compile(
@@ -559,13 +561,21 @@ class OpenAIMedicationAnswerGenerator:
             draft_answer
         ):
             return MedicationAnswerFallbackReason.UNSUPPORTED_SAFETY_ASSERTION
-        draft_dosages = {token.casefold().replace(" ", "") for token in cls._DOSAGE_TOKEN_PATTERN.findall(draft_answer)}
-        generated_dosages = {
-            token.casefold().replace(" ", "") for token in cls._DOSAGE_TOKEN_PATTERN.findall(generated_answer)
-        }
+        draft_dosages = cls._dosage_tokens(draft_answer)
+        generated_dosages = cls._dosage_tokens(generated_answer)
         if not generated_dosages.issubset(draft_dosages):
             return MedicationAnswerFallbackReason.GENERATED_DOSAGE_NOT_IN_DRAFT
         return None
+
+    @classmethod
+    def _dosage_tokens(cls, text: str) -> set[str]:
+        """공백을 없앤 뒤 용량을 추출한다.
+
+        추출 후에 공백을 지우면 `4, 000mg`처럼 띄어 쓰인 수치를 정규식이 통째로
+        놓쳐 초안과 생성문의 토큰이 어긋난다. 정규화가 먼저 와야 한다.
+        """
+
+        return {token.casefold() for token in cls._DOSAGE_TOKEN_PATTERN.findall(re.sub(r"\s+", "", text))}
 
     @classmethod
     def _omits_interaction_overview(cls, *, draft_answer: str, generated_answer: str) -> bool:
