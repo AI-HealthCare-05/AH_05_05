@@ -77,6 +77,15 @@ class MedicationService:
         self._mutation_time_provider = mutation_time_provider or (lambda: datetime.now(config.TIMEZONE))
         self._lifecycle = lifecycle or CustomChallengeLifecycleService()
 
+    async def has_prescriptions(self, user: User) -> bool:
+        return await CareEpisode.filter(
+            user_id=user.id,
+            status=CareEpisodeStatus.ACTIVE,
+            source_ocr_job_id__isnull=False,
+            medication_start_date__isnull=False,
+            medications__id__isnull=False,
+        ).exists()
+
     async def list_overviews(
         self,
         user: User,

@@ -49,7 +49,8 @@ export function SupplementsBrowseView({
   const [ranking, setRanking] = useState<Awaited<ReturnType<typeof getSupplementRanking>>>(null);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SupplementSortKey>('name');
-  const [direction, setDirection] = useState<SupplementSortDirection>('asc');
+  const [directions, setDirections] = useState(DEFAULT_SORT_DIRECTIONS);
+  const direction = directions[sort];
   const [results, setResults] = useState<SupplementSearchPage | null>(null);
   const [resultsSearchKey, setResultsSearchKey] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
@@ -240,10 +241,10 @@ export function SupplementsBrowseView({
             onChange={(nextSort) => {
               const nextDirection = sort === nextSort
                 ? direction === 'asc' ? 'desc' : 'asc'
-                : DEFAULT_SORT_DIRECTIONS[nextSort];
+                : directions[nextSort];
               invalidateSearchRequests(searchRequestKey(query, nextSort, nextDirection));
               setSort(nextSort);
-              setDirection(nextDirection);
+              setDirections((current) => ({ ...current, [nextSort]: nextDirection }));
             }}
           />
         </div>

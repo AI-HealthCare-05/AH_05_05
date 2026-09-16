@@ -1,6 +1,7 @@
 export {
   cancelMedication,
   getMedicationOverviews,
+  hasMedicationPrescriptions,
   getDoseRecords,
   getMedicationSchedule,
   prepareMedicationStateForNewAccount,

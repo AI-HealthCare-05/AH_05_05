@@ -131,11 +131,24 @@ test('자료가 없어 판정할 수 없는 성분에는 상태와 그래프를 
   await expect(selenium.locator('[data-nutrient-range]')).toHaveCount(0);
 });
 
-test('375px, 390px와 1280px에서 성분 합계가 가로로 넘치지 않는다', async ({ page }, testInfo) => {
-  for (const width of [375, 390, 1280]) {
+test('모바일과 데스크톱에서 성분 판정 문구가 카드 안에 온전히 표시된다', async ({ page }, testInfo) => {
+  for (const width of [320, 375, 390, 430, 768, 1280]) {
     await page.setViewportSize({ width, height: width === 375 ? 812 : 900 });
     await page.goto('/dev/supplements');
     await expect(page.getByRole('region', { name: '성분 합계' })).toBeVisible();
+    for (const status of await page.locator('[data-nutrient-status]').all()) {
+      const bounds = await status.evaluate(element => {
+        const text = element.getBoundingClientRect();
+        const header = element.closest('[data-testid="nutrient-total-header"]')!.getBoundingClientRect();
+        const summary = element.parentElement!.querySelector('[data-testid="nutrient-total-summary"]')!.getBoundingClientRect();
+        return {
+          inside: text.left >= header.left - 1 && text.right <= header.right + 1,
+          separate: text.top >= summary.bottom - 1 || text.left >= summary.right - 1,
+        };
+      });
+      expect(bounds.inside, `${width}px status must remain inside header`).toBe(true);
+      expect(bounds.separate, `${width}px status must not overlap summary`).toBe(true);
+    }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({
       path: testInfo.outputPath(`nutrient-totals-${width}px.png`),

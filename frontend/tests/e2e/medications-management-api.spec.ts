@@ -395,7 +395,7 @@ test('전체 목록을 한 번 호출해 모두 표시하고 삭제 결과를 �
   let overviewRequests = 0;
   await page.route('**/api/v1/medications', async (route) => {
     overviewRequests += 1;
-    await fulfillJson(route, manyOverviews());
+    await fulfillJson(route, [overview(12, false, 3), ...manyOverviews(40)]);
   });
   await page.route('**/api/v1/medications/*', (route) => route.fulfill({ status: 204 }));
 
@@ -413,6 +413,29 @@ test('전체 목록을 한 번 호출해 모두 표시하고 삭제 결과를 �
   await expect(cards).toHaveCount(40);
   expect(overviewRequests).toBe(1);
 });
+
+for (const historyRemains of [false, true]) {
+  test(`마지막 표시 처방 삭제 후 전체 이력 ${historyRemains ? '유지' : '없음'}을 재확인한다`, async ({ page }) => {
+    let deleted = false;
+    await page.route('**/api/v1/medications', route =>
+      fulfillJson(route, deleted ? [] : [overview(12, false, 3)]));
+    await page.route('**/api/v1/medications/exists', route => fulfillJson(route, historyRemains));
+    await page.route('**/api/v1/medications/12', async route => {
+      deleted = true;
+      await route.fulfill({ status: 204 });
+    });
+    await page.goto('/medications');
+    await page.getByRole('button', { name: '선택', exact: true }).click();
+    await page.getByRole('checkbox').check();
+    await page.getByRole('button', { name: '삭제 1개', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: '삭제하기' }).click();
+    await expect(page.getByRole('heading', {
+      name: historyRemains ? '현재 먹고 있는 약이 없어요' : '복용약을 등록하고 관리하기',
+    })).toBeVisible();
+    await expect(page.getByRole('button', { name: '복용약 등록하기' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '선택', exact: true })).toHaveCount(0);
+  });
+}
 
 test('긴 별칭과 약 이름은 요약·선택·편집·완료 상세에서 전체가 보인다', async ({ page }) => {
   test.setTimeout(120_000);

@@ -287,6 +287,7 @@ export function SupplementsPage({
   ) {
     try {
       const updated = await updateSupplement(supplementId, payload);
+      setEditingSupplement((current) => current?.supplementId === supplementId ? updated : current);
       setSupplements((current) =>
         (current ?? []).map((supplement) =>
           supplement.supplementId === supplementId ? updated : supplement,
@@ -549,11 +550,6 @@ export function SupplementsPage({
           if (!open) setEditingSupplement(null);
         }}
         onSave={editSupplement}
-        onStop={async (supplementId) => {
-          if (!(await confirmSupplementRemoval([supplementId], editingSupplement?.name ?? '영양제'))) return false;
-          await stopActiveSupplement(supplementId);
-          return true;
-        }}
         onProductInfo={(productId) =>
           navigate(
             `${location.pathname.startsWith('/dev/') ? '/dev/supplements/product/' : '/supplements/product/'}${encodeURIComponent(productId)}`,

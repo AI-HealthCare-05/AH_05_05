@@ -387,7 +387,7 @@ test('챌린지 연결 조회가 실패하면 삭제하지 않고 재시도할 �
   await expect(page.getByRole('button', { name: '삭제 1개', exact: true })).toBeEnabled();
 });
 
-test('편집 화면의 복용 중단도 챌린지 경고 취소 시 영양제를 유지한다', async ({ page }) => {
+test('편집 화면에는 중단 버튼이 없고 목록 삭제의 챌린지 경고 취소 시 영양제를 유지한다', async ({ page }) => {
   let deleteCount = 0;
   await prepareSupplements(page, async route => {
     deleteCount += 1;
@@ -398,16 +398,20 @@ test('편집 화면의 복용 중단도 챌린지 경고 취소 시 영양제를
   }));
   await page.goto('/supplements');
   await page.getByRole('button', { name: /^아침 비타민/ }).click();
-  await page.getByRole('button', { name: '복용 중단하기', exact: true }).click();
-  const warning = page.getByRole('dialog', { name: '아침 비타민 복용을 중단할까요?' });
+  await expect(page.getByRole('button', { name: '복용 중단하기', exact: true })).toHaveCount(0);
+  await page.getByRole('dialog').getByRole('button', { name: '닫기', exact: true }).click();
+  await page.getByRole('button', { name: '선택', exact: true }).click();
+  await page.getByRole('checkbox').first().check();
+  await page.getByRole('button', { name: '삭제 1개', exact: true }).click();
+  const warning = page.getByRole('dialog', { name: '영양제를 삭제할까요?' });
   await expect(warning).toBeVisible();
-  await expect(warning).toContainText('복용을 중단하면 참여 중인 챌린지가 종료돼요.');
+  await expect(warning).toContainText('삭제하면 참여 중인 챌린지가 종료돼요.');
   await expect(page.locator('[role="dialog"][data-variant="dialog"]')).toHaveCount(1);
   await warning.getByRole('button', { name: '취소', exact: true }).click();
-  await expect(page.getByRole('button', { name: '복용 중단하기', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: '삭제 1개', exact: true })).toBeEnabled();
   expect(deleteCount).toBe(0);
-  await page.getByRole('button', { name: '복용 중단하기', exact: true }).click();
-  await warning.getByRole('button', { name: '중단하기', exact: true }).click();
+  await page.getByRole('button', { name: '삭제 1개', exact: true }).click();
+  await warning.getByRole('button', { name: '삭제 1개', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^아침 비타민/ })).toHaveCount(0);
   expect(deleteCount).toBe(1);

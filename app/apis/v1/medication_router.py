@@ -41,6 +41,14 @@ async def get_medications(
     return await service.list_overviews(user, from_date, to_date)
 
 
+@medication_router.get("/exists", response_model=bool, summary="기간과 무관한 등록 처방 존재 여부")
+async def has_medications(
+    user: Annotated[User, Depends(get_request_user)],
+    service: Annotated[MedicationService, Depends(get_medication_service)],
+) -> bool:
+    return await service.has_prescriptions(user)
+
+
 @medication_resource_router.patch(
     "/episodes/{record_id}/alias",
     response_model=dict[str, str | None],
