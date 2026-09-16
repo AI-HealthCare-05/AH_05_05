@@ -150,6 +150,7 @@ const CROSS_YEAR_MEDICATION_OVERVIEW: MedicationOverview = {
 
 const loadEmptyMedicationOverview = async () => EMPTY_MEDICATION_OVERVIEW;
 const loadEmptyMedicationOverviews = async (): Promise<MedicationOverview[]> => [];
+const loadNoMedicationHistory = async () => false;
 const loadEndedMedicationOverview = async () => ENDED_MEDICATION_OVERVIEW;
 const loadCompletedOnlyMedicationOverviews = async () => COMPLETED_ONLY_MEDICATION_OVERVIEWS;
 const loadActiveMedicationOverview = async () => ACTIVE_MEDICATION_OVERVIEW;
@@ -308,7 +309,7 @@ export function AppRouter() {
         <Route path="/dev/medications" element={<MedicationsPage />} />
         <Route
           path="/dev/medications-empty-active"
-          element={<MedicationsPage overviewsLoader={loadEmptyMedicationOverviews} feature252 />}
+          element={<MedicationsPage overviewsLoader={loadEmptyMedicationOverviews} prescriptionExistsLoader={loadNoMedicationHistory} feature252 />}
         />
         <Route
           path="/dev/medications-completed-only"

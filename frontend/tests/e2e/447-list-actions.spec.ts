@@ -227,42 +227,31 @@ for (const width of [320, 390]) {
   });
 }
 
-test('복용 중 처방이 없어도 0개 헤더와 처방 추가·선택을 같은 행에 둔다', async ({ page }) => {
+test('처방이 없으면 0개 헤더와 목록 작업 대신 등록 안내를 표시한다', async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem('poke.access-token', 'issue-520-empty-token');
+    sessionStorage.setItem('poke.account-principal', 'issue-520-empty@example.com');
+  });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/dev/medications-empty-active');
 
-  const activeSection = page.getByRole('region', { name: '복용 중' });
-  await expect(activeSection).toBeVisible();
-  const heading = activeSection.getByRole('heading', { name: '복용 중', exact: true });
-  const count = activeSection.getByText('0개', { exact: true });
-  const add = activeSection.getByRole('button', { name: '처방 추가', exact: true });
-  const select = activeSection.getByRole('button', { name: '선택', exact: true });
-  await expect(heading).toBeVisible();
-  await expect(count).toBeVisible();
-  await expect(add).toBeVisible();
-  await expect(select).toBeVisible();
-
-  const geometry = await Promise.all([
-    heading.boundingBox(),
-    count.boundingBox(),
-    add.boundingBox(),
-    select.boundingBox(),
-  ]);
-  expect(geometry.every((box) => box !== null)).toBe(true);
-  const centers = geometry.map((box) => box!.y + box!.height / 2);
-  expect(Math.max(...centers) - Math.min(...centers)).toBeLessThanOrEqual(4);
-  expect(geometry[2]!.x).toBeGreaterThan(geometry[1]!.x + geometry[1]!.width - 1);
-  expect(geometry[3]!.x).toBeGreaterThan(geometry[2]!.x + geometry[2]!.width - 1);
+  await expect(page.getByRole('heading', { name: '복용약을 등록하고 관리하기' })).toBeVisible();
+  await expect(page.getByRole('region', { name: '복용 중' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '처방 추가', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '선택', exact: true })).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('medications-first-registration.png') });
+  await page.getByRole('button', { name: '복용약 등록하기', exact: true }).click();
+  await expect(page).toHaveURL('/document-upload');
 });
 
 test('완료된 처방만 있어도 active 빈 상태는 완료 목록을 가리지 않는다', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/dev/medications-completed-only');
 
-  const activeSection = page.getByRole('region', { name: '복용 중' });
-  await expect(activeSection).toBeVisible();
-  await expect(activeSection.getByText('0개', { exact: true })).toBeVisible();
-  await expect(activeSection.getByText('이 기간에 등록한 처방이 없어요', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: '현재 먹고 있는 약이 없어요' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '복용약 등록하기', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '처방 추가', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '선택', exact: true })).toHaveCount(0);
   const completedSection = page.getByRole('region', { name: '완료된 처방' });
   await expect(completedSection).toBeVisible();
   await expect(completedSection.getByRole('button', { name: /복용 완료/ })).toBeVisible();
