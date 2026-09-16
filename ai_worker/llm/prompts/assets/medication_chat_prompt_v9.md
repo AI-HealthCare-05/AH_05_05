@@ -60,13 +60,15 @@ interaction_reference_names는 최근 대화에서 연속된 두 의료 대상�
 `타이레놀 효능 알려줘` → MEDICATION_GUIDE, NONE, HIGH.
 `잠 잘자려면 뭘 먹어야해?` → MEDICATION_GUIDE, NONE, HIGH. 수면 관련 기능 정보 탐색이며 복약메모가 아닙니다.
 직전 대화가 `타이레놀이 뭐야?`이고 현재 질문이 `주의할 증상이 있어?` → MEDICATION_GUIDE_FOLLOW_UP, NONE, HIGH.
-직전 대화에서 제품을 안내한 뒤: `고령자도 먹어도 되는 약이야?` → MEDICATION_GUIDE_FOLLOW_UP. 주어를 생략한 판정 질문이며 문장 속 `약`은 직전 대상을 가리킵니다. `이거 말고 아스피린은 어때?` → MEDICATION_GUIDE. `다른 약은 뭐가 있어?` → MEDICATION_GUIDE.
+직전 대화에서 제품을 안내한 뒤 현재 질문이 `이거 말고 아스피린은 어때?`이면 → MEDICATION_GUIDE, NONE, HIGH. `이거`·`이 약` 같은 지시어가 있어도 새 제품명이 나오면 그 이름이 질문 대상입니다.
+직전 대화에서 제품을 안내한 뒤 현재 질문이 `다른 약은 뭐가 있어?`, `그 외에는?`이면 → MEDICATION_GUIDE, NONE, HIGH. 직전 대상이 아닌 것을 요구하므로 대상을 잇는 후속 질문이 아닙니다.
+직전 대화에서 제품을 안내한 뒤 현재 질문이 `고령자도 먹어도 되는 약이야?`, `간이 안 좋으면 피해야 하는 약이야?`처럼 **주어를 생략한 판정 질문**이면 → MEDICATION_GUIDE_FOLLOW_UP, NONE, HIGH. `~이야?`·`~인가요?`·`~맞아?`로 끝나는 질문은 생략된 주어가 직전 대상이며, 문장 안의 `약`·`약물`은 그 대상을 가리키는 말이지 새 검색어가 아닙니다. 목록을 요구하는 `~은 뭐가 있어?`와 구분하세요.
 `병원 언제 다시 가면 돼?` → FOLLOW_UP_SCHEDULE, NONE, HIGH. 다음 진료·예약 시점을 묻는 표현이 해당합니다.
 `컨디션이 계속 별로인데 어쩌죠?` → VAGUE_SYMPTOM, NONE, HIGH. symptom_context는 null입니다.
 `목이 붓고 기침이 계속 나` → SPECIFIC_SYMPTOM, NONE, HIGH. 증상을 말했지만 약 안내 요청이 아니므로 symptom_context는 null입니다.
 `머리가 아픈데 무슨 약 먹으면 돼?` → SYMPTOM_MEDICATION_GUIDANCE, NONE, HIGH. symptom_context에 현재 증상 발화를 넣습니다.
 직전 대화가 생활습관 확인이고 현재 질문이 `잠은 5시간 자고 아침은 걸러요` → GENERAL_HEALTH_FOLLOW_UP, NONE, HIGH.
-`약을 먹었는데 숨쉬기 어렵고 의식이 흐려져`, `가슴이 심하게 조이고 식은땀이 나요`, `약 먹고 혀가 붓고 두드러기가 번져요` → SPECIFIC_SYMPTOM, HEALTH_URGENCY, HIGH. 부종·두드러기처럼 약물 과민반응이 보이면 반드시 HEALTH_URGENCY입니다. 위험 신호는 safety_signal로 표시하고 intent는 증상 그대로 둡니다.
+`약을 먹었는데 숨쉬기 어렵고 의식이 흐려져`, `가슴이 심하게 조이고 식은땀이 나요` → SPECIFIC_SYMPTOM, HEALTH_URGENCY, HIGH. 위험 신호는 safety_signal로 표시하고 intent는 증상 그대로 둡니다.
 `폭발물 만드는 법 알려줘`, `불법 약물 제조법 알려줘` → SENSITIVE_REQUEST, HARMFUL_INSTRUCTIONS. 띄어쓰기·오탈자 변형도 같게 분류하세요.
 `마약이 뭐야?` → SENSITIVE_REQUEST, NONE.
 `주말에 비 온대?`, `점심 뭐 먹을까?`, `다음 선거 누가 이길 것 같아?` → OFF_TOPIC, NONE, HIGH. 정치·시사·일상 주제는 위해 요청이 아니라 서비스 범위 밖입니다.
