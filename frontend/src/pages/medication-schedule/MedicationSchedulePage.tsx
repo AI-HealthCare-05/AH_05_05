@@ -8,6 +8,7 @@ import {
   ErrorDialog,
   Header,
   Input,
+  NotifyInstallDialog,
   NotifyPermissionDialog,
   RegistrationProgress,
   Switch,
@@ -215,6 +216,7 @@ export function MedicationSchedulePage({
     retry: () => void;
   } | null>(null);
   const [permissionDialogOpen, setPermissionDialogOpen] = useState(false);
+  const [installDialogOpen, setInstallDialogOpen] = useState(false);
   const [permissionBusy, setPermissionBusy] = useState(false);
   const [savedMealTimes, setSavedMealTimes] = useState<MealTimes | null>(null);
   const [timeOrderError, setTimeOrderError] = useState(false);
@@ -383,7 +385,8 @@ export function MedicationSchedulePage({
   }
 
   async function continueAfterScheduleSave(times: MealTimes) {
-    if (permissionReader() === 'unsupported') {
+    const permission = permissionReader();
+    if (permission === 'unsupported' || permission === 'ios-install-required') {
       finishScheduleFlow();
       return;
     }
@@ -786,6 +789,10 @@ export function MedicationSchedulePage({
         onAccept={() => void handlePermissionAccept()}
         onDismiss={() => void handlePermissionDismiss()}
       />
+      <NotifyInstallDialog
+        open={installDialogOpen}
+        onConfirm={() => setInstallDialogOpen(false)}
+      />
 
       <ErrorDialog
         open={notifyError !== null}
@@ -865,6 +872,7 @@ function MedicationRegistrationWizard({
   const [notifyMedication, setNotifyMedication] = useState(false);
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [permissionDialogOpen, setPermissionDialogOpen] = useState(false);
+  const [installDialogOpen, setInstallDialogOpen] = useState(false);
   const [permissionBusy, setPermissionBusy] = useState(false);
   const [alarmSettingsError, setAlarmSettingsError] = useState<string | null>(null);
   const [editingAlarmSlot, setEditingAlarmSlot] = useState<MealSlot | null>(null);
@@ -1004,6 +1012,14 @@ function MedicationRegistrationWizard({
       notificationReadyRef.current = false;
       setNotifyMedication(false);
       setNotificationError('이 브라우저에서는 복약 알림을 사용할 수 없어요.');
+      return;
+    }
+    if (permission === 'ios-install-required') {
+      notificationReadyRef.current = false;
+      setNotifyMedication(false);
+      setNotificationError(null);
+      setPermissionDialogOpen(false);
+      setInstallDialogOpen(true);
       return;
     }
 
@@ -1471,6 +1487,10 @@ function MedicationRegistrationWizard({
         busy={permissionBusy}
         onAccept={() => void handleRegistrationPermissionAccept()}
         onDismiss={handleRegistrationPermissionDismiss}
+      />
+      <NotifyInstallDialog
+        open={installDialogOpen}
+        onConfirm={() => setInstallDialogOpen(false)}
       />
     </div>
   );
