@@ -39,8 +39,11 @@ from ai_worker.schemas.medication_search import (
     MedicationQueryResolutionStatus,
 )
 
-_FUNCTION_INTENT_PATTERN = re.compile(r"어디(?:에)?\s*(?:좋|쓰)|(?:뭐|무엇)(?:야|예요|인가요)")
-_GENERAL_EXPLANATION_INTENT_PATTERN = re.compile(r"대해\s*(?:알려|설명)")
+_FUNCTION_INTENT_PATTERN = re.compile(r"어디(?:에)?\s*(?:좋|쓰)")
+# `뭐야`·`대해 알려줘`는 항목을 지정하지 않은 전반 설명 요청이다.
+# 요청 섹션으로 잡으면 FUNCTION 하나로 좁아져 주의사항·복용법이 답변에서 빠지므로,
+# 섹션은 열어 두고 검색어 확장에만 사용한다.
+_GENERAL_EXPLANATION_INTENT_PATTERN = re.compile(r"대해\s*(?:알려|설명)|(?:뭐|무엇)(?:야|예요|인가요)")
 _DAILY_INTAKE_INTENT_PATTERN = re.compile(
     r"(?:하루|1일).{0,12}?(?:최대|몇\s*(?:정|캡슐|포|회|mg|밀리그램))|"
     r"최대.{0,12}?(?:용량|복용량|몇\s*(?:정|캡슐|포|회|mg|밀리그램))",
@@ -680,9 +683,10 @@ class MedicationKnowledgeQueryBuilder:
             supplement_function_goal
             or any(keyword in question for keyword in ("효능", "효과", "기능", "역할", "왜 먹"))
             or _FUNCTION_INTENT_PATTERN.search(question)
-            or _GENERAL_EXPLANATION_INTENT_PATTERN.search(question)
         ):
             section_types.append(KnowledgeSectionType.FUNCTION)
+            expansion_terms.extend(["건강기능식품", "기능성", "효능", "섭취 목적"])
+        elif _GENERAL_EXPLANATION_INTENT_PATTERN.search(question):
             expansion_terms.extend(["건강기능식품", "기능성", "효능", "섭취 목적"])
         if any(
             keyword in question

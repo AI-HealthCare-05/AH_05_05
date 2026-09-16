@@ -53,6 +53,7 @@ from ai_worker.domain.fatigue_conversation_policy import (
 )
 from ai_worker.domain.follow_up_schedule_answer import FollowUpScheduleAnswerAssembler
 from ai_worker.domain.interaction_question_detector import (
+    is_general_description_question,
     is_interaction_question,
 )
 from ai_worker.domain.interfaces import (
@@ -2511,6 +2512,8 @@ class AnswerMedicationQuestionUseCase:
     ) -> bool:
         if is_interaction_question(question):
             return False
+        if is_general_description_question(question):
+            return True
         query_plan = MedicationKnowledgeQueryBuilder(
             catalog_entities=resolution.entities,
         ).build(question)
