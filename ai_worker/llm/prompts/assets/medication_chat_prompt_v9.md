@@ -37,7 +37,7 @@
 4. 등록된 현재 목록 확인이면 ACTIVE_MEDICATION_LIST 또는 ACTIVE_SUPPLEMENT_LIST입니다.
 5. 사용자가 복약메모·복약기록을 정리·요약하거나 진료 전에 준비하려는 목적을 직접 말하면 MEDICATION_NOTE_SUMMARY입니다.
 6. 증상 발화는 제품명이 함께 있어도 증상 쪽으로 판정합니다. 약 안내나 통증 완화를 함께 요청하면 SYMPTOM_MEDICATION_GUIDANCE, 증상이 불명확하면 VAGUE_SYMPTOM, 구체적이면 SPECIFIC_SYMPTOM입니다.
-7. 증상 호소가 없는 약·영양제·건강 목표의 정보 요청이면 MEDICATION_GUIDE, 최근 확정 대상이 생략된 후속 질문이면 MEDICATION_GUIDE_FOLLOW_UP입니다.
+7. 증상 호소가 없는 약·영양제·건강 목표의 정보 요청이면 MEDICATION_GUIDE입니다. 다만 현재 질문에 제품명·성분명이 하나도 없고 최근 대화에서 대상이 확정됐다면 MEDICATION_GUIDE_FOLLOW_UP입니다. 항목만 묻거나 조건만 묻는 질문이 여기에 해당하며, `약`·`약물`·`성분` 같은 일반 명사는 대상을 지정한 것으로 보지 않습니다.
 8. 피로·생활습관 확인 질문에 답한 발화면 GENERAL_HEALTH_FOLLOW_UP입니다.
 9. 남은 것은 GREETING, CASUAL, FOLLOW_UP_SCHEDULE, OFF_TOPIC 중에서 고르세요.
 
@@ -60,6 +60,7 @@ interaction_reference_names는 최근 대화에서 연속된 두 의료 대상�
 `타이레놀 효능 알려줘` → MEDICATION_GUIDE, NONE, HIGH.
 `잠 잘자려면 뭘 먹어야해?` → MEDICATION_GUIDE, NONE, HIGH. 수면 관련 기능 정보 탐색이며 복약메모가 아닙니다.
 직전 대화가 `타이레놀이 뭐야?`이고 현재 질문이 `주의할 증상이 있어?` → MEDICATION_GUIDE_FOLLOW_UP, NONE, HIGH. 새 제품명이 명시되면 현재 이름을 우선합니다.
+직전 대화에서 제품을 안내한 뒤 현재 질문이 `고령자도 먹어도 되는 약이야?`, `간이 안 좋으면 피해야 하는 약이야?`처럼 **주어를 생략한 판정 질문**이면 → MEDICATION_GUIDE_FOLLOW_UP, NONE, HIGH. `~이야?`·`~인가요?`·`~맞아?`로 끝나는 질문은 생략된 주어가 직전 대상이며, 문장 안의 `약`·`약물`은 그 대상을 가리키는 말이지 새 검색어가 아닙니다. 목록을 요구하는 `~은 뭐가 있어?`와 구분하세요.
 `병원 언제 다시 가면 돼?` → FOLLOW_UP_SCHEDULE, NONE, HIGH. 다음 진료·예약 시점을 묻는 표현이 해당합니다.
 `컨디션이 계속 별로인데 어쩌죠?` → VAGUE_SYMPTOM, NONE, HIGH. symptom_context는 null입니다.
 `목이 붓고 기침이 계속 나` → SPECIFIC_SYMPTOM, NONE, HIGH. 증상을 말했지만 약 안내 요청이 아니므로 symptom_context는 null입니다.
