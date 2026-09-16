@@ -240,6 +240,35 @@ test('랭킹 404와 빈 items는 카드만 숨기고 오늘의 복약은 유지�
   await expect(page.getByRole('tabpanel', { name: '오늘의 복약' })).toBeVisible();
 });
 
+test('현재 랭킹이 없으면 404를 빈 결과로 유지하고 favicon 404를 만들지 않는다', async ({ page }) => {
+  await authenticate(page);
+  await routeCommon(page);
+  await page.unroute('**/api/v1/display/med/nutr/rank');
+  await page.route('**/api/v1/display/med/nutr/rank', async (route) => {
+    await fulfillJson(
+      route,
+      { code: 'SUPPLEMENT_RANK_DISPLAY_NOT_FOUND', message: '현재 전시가 없습니다.' },
+      404,
+    );
+  });
+  const rankingStatuses: number[] = [];
+  const faviconStatuses: number[] = [];
+  page.on('response', (response) => {
+    const pathname = new URL(response.url()).pathname;
+    if (pathname === '/api/v1/display/med/nutr/rank') rankingStatuses.push(response.status());
+    if (pathname === '/favicon.ico') faviconStatuses.push(response.status());
+  });
+
+  await page.goto('/dev/home-empty');
+  await expect(page.getByRole('region', { name: '영양제 랭킹' })).toHaveCount(0);
+  await expect(page.getByRole('tabpanel', { name: '오늘의 복약' })).toBeVisible();
+  const faviconResponse = await page.request.get(new URL('/favicon.ico', page.url()).toString());
+  expect(faviconResponse.status()).toBe(200);
+  expect(rankingStatuses.length).toBeGreaterThan(0);
+  expect(rankingStatuses.every((status) => status === 404)).toBe(true);
+  expect(faviconStatuses).toEqual([]);
+});
+
 test('미등록 랭킹 행은 제품 성분과 후기를 열고 뒤로 가면 홈으로 돌아온다', async ({ page }) => {
   test.setTimeout(20_000);
   await authenticate(page);

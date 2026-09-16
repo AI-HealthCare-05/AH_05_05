@@ -427,7 +427,7 @@ export function MedicationsPage({
     );
   }
 
-  const hasLoadedFeatureEpisodes = feature252 && !loadError && overviews && overviews.length > 0;
+  const hasLoadedFeatureEpisodes = feature252 && !loadError && overviews !== null;
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
@@ -483,7 +483,7 @@ export function MedicationsPage({
           <LoadingState label="복용약 불러오는 중">
             처방 기록을 불러오고 있어요.
           </LoadingState>
-        ) : overviews.length === 0 ? (
+        ) : overviews.length === 0 && !feature252 ? (
           <Card title="이 기간에 등록한 처방이 없어요" className="p-5 motion-safe:animate-[rx-overlay-in_200ms_ease-out]">
             <div className="flex flex-col gap-4">
               <p>다른 기간을 선택해 처방 기록을 확인해보세요.</p>
@@ -504,7 +504,16 @@ export function MedicationsPage({
                 </div>
                 {renderListActions('flex shrink-0 items-center gap-2')}
               </div>
-              {activeOverviews.map(renderEpisodeCard)}
+              {activeOverviews.length > 0 ? activeOverviews.map(renderEpisodeCard) : (
+                <Card title="이 기간에 등록한 처방이 없어요" className="p-5">
+                  <div className="flex flex-col gap-4">
+                    <p>다른 기간을 선택해 처방 기록을 확인해보세요.</p>
+                    <Button variant="secondary" onClick={() => setFilterOpen(true)}>
+                      기간 재설정하기
+                    </Button>
+                  </div>
+                </Card>
+              )}
             </section>
             {finishedOverviews.length > 0 && (
               <section className="flex flex-col gap-3 motion-safe:animate-[rx-overlay-in_200ms_ease-out]" aria-labelledby="finished-episode-list-title">

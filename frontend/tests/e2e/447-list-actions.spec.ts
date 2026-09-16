@@ -226,3 +226,40 @@ for (const width of [320, 390]) {
     await expect(episode).toContainText('혈압 관리 처방');
   });
 }
+
+test('복용 중 처방이 없어도 0개 헤더와 처방 추가·선택을 같은 행에 둔다', async ({ page }) => {
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
+  await page.addInitScript(() => {
+    sessionStorage.setItem('poke.access-token', 'issue-520-empty-medications-token');
+    sessionStorage.setItem('poke.account-principal', 'issue-520-empty-medications@example.com');
+  });
+  await page.route('**/api/v1/**', (route) =>
+    fulfillJson(route, { code: 'FIXTURE_MISSING', message: 'fixture missing' }, 503),
+  );
+  await page.route(/\/api\/v1\/medications(?:\?.*)?$/, (route) => fulfillJson(route, []));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/medications');
+
+  const activeSection = page.getByRole('region', { name: '복용 중' });
+  await expect(activeSection).toBeVisible();
+  const heading = activeSection.getByRole('heading', { name: '복용 중', exact: true });
+  const count = activeSection.getByText('0개', { exact: true });
+  const add = activeSection.getByRole('button', { name: '처방 추가', exact: true });
+  const select = activeSection.getByRole('button', { name: '선택', exact: true });
+  await expect(heading).toBeVisible();
+  await expect(count).toBeVisible();
+  await expect(add).toBeVisible();
+  await expect(select).toBeVisible();
+
+  const geometry = await Promise.all([
+    heading.boundingBox(),
+    count.boundingBox(),
+    add.boundingBox(),
+    select.boundingBox(),
+  ]);
+  expect(geometry.every((box) => box !== null)).toBe(true);
+  const centers = geometry.map((box) => box!.y + box!.height / 2);
+  expect(Math.max(...centers) - Math.min(...centers)).toBeLessThanOrEqual(4);
+  expect(geometry[2]!.x).toBeGreaterThan(geometry[1]!.x + geometry[1]!.width - 1);
+  expect(geometry[3]!.x).toBeGreaterThan(geometry[2]!.x + geometry[2]!.width - 1);
+});
