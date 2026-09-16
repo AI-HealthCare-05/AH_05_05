@@ -232,6 +232,29 @@ def test_assemble_groups_product_guide_into_only_requested_sections() -> None:
     assert "✅ **복용법**" not in answer
 
 
+def test_assemble_splits_caution_by_sentence_but_keeps_subject_list_intact() -> None:
+    """주의사항은 문장 단위로 나누되 `|` 주어 목록은 서술어와 함께 한 줄로 둔다."""
+
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=build_guide(
+            pre_use_warning="간장애환자는복용하지마십시오.발진이나타나면복용을중단하십시오.",
+            precautions="과민증|소화성궤양|심한혈액이상환자는의사와상의하십시오.",
+        ),
+        rules=[],
+        chunks=[],
+        interaction_question=False,
+        evidence_coverage=MedicationEvidenceCoverage(
+            requested_section_types=[KnowledgeSectionType.CAUTION],
+            covered_section_types=[KnowledgeSectionType.CAUTION],
+        ),
+    )
+
+    assert "- 간장애환자는복용하지마십시오." in answer
+    assert "- 발진이나타나면복용을중단하십시오." in answer
+    assert "- 과민증, 소화성궤양, 심한혈액이상환자는의사와상의하십시오." in answer
+
+
 def test_assemble_product_guide_returns_only_requested_caution_section() -> None:
     """주의사항 질문은 이상반응·복용법을 함께 노출하지 않는다."""
 
