@@ -77,7 +77,7 @@ def test_v8_answer_generation_preserves_functional_goal_ingredient_lists() -> No
 @pytest.mark.parametrize(
     ("stage_name", "uses_directional_stimulus"),
     [
-        ("CONVERSATION_GATE", False),
+        ("CONVERSATION_GATE", True),
         ("DIRECTIONAL_QUERY", True),
         ("EVIDENCE_REASONING", True),
         ("ANSWER_GENERATION", False),
