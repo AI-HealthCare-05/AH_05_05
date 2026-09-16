@@ -15,7 +15,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatRoute,
 )
 
-MEDICATION_CHAT_PROMPT_VERSION = "medication-chat-prompt-v8"
+MEDICATION_CHAT_PROMPT_VERSION = "medication-chat-prompt-v9"
 
 _DOSAGE_VALUE_PATTERN = re.compile(
     r"\d+(?:\s*[|,./~–-]\s*\d+)*\s*"
@@ -61,6 +61,7 @@ def build_medication_chat_messages(
         "show_active_medication_section": show_active_medication_section,
         "active_supplement_names": [item.name for item in context.supplements],
         "draft_answer": _draft_answer_for_rewrite(result),
+        "official_warning_texts": result.official_warning_texts,
         "source_titles": [source.title for source in result.sources],
         "route": result.route.value,
         "general_supplement_guidance_allowed": (

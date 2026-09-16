@@ -13,7 +13,7 @@ from ai_worker.llm.prompts.prompt_assets import (
 from ai_worker.schemas.chat import ChatHistoryMessage
 from ai_worker.schemas.conversation_gate import ConversationClassification
 
-CONVERSATION_GATE_PROMPT_VERSION = "conversation-gate-prompt-v7"
+CONVERSATION_GATE_PROMPT_VERSION = "conversation-gate-prompt-v9"
 
 
 class ConversationGateInput(BaseModel):

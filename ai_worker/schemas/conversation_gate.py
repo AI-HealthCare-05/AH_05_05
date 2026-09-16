@@ -10,6 +10,7 @@ from ai_worker.schemas.medication_search import MedicationQuestionConfidence
 class ConversationIntent(StrEnum):
     GREETING = "GREETING"
     CASUAL = "CASUAL"
+    GENERAL_HEALTH_FOLLOW_UP = "GENERAL_HEALTH_FOLLOW_UP"
     VAGUE_SYMPTOM = "VAGUE_SYMPTOM"
     SPECIFIC_SYMPTOM = "SPECIFIC_SYMPTOM"
     MEDICATION_GUIDE = "MEDICATION_GUIDE"

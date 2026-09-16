@@ -44,7 +44,7 @@ async def test_vague_symptom_asks_follow_up_without_medication_claim() -> None:
     assert "언제부터" in answer
     assert "추천" not in answer
     assert "복용" not in answer
-    assert CONVERSATION_RESPONSE_PROMPT_VERSION == "conversation-response-prompt-v7"
+    assert CONVERSATION_RESPONSE_PROMPT_VERSION == "conversation-response-prompt-v9"
     assert "역할(Role)" in client.messages[0].content
     assert "예시(Example)" in client.messages[0].content
 

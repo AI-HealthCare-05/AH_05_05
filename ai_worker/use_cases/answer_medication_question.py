@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import logging
@@ -225,6 +226,7 @@ class AnswerMedicationQuestionUseCase:
         {
             ConversationIntent.GREETING,
             ConversationIntent.CASUAL,
+            ConversationIntent.GENERAL_HEALTH_FOLLOW_UP,
             ConversationIntent.VAGUE_SYMPTOM,
             ConversationIntent.SPECIFIC_SYMPTOM,
             ConversationIntent.MEDICATION_GUIDE,
@@ -242,7 +244,7 @@ class AnswerMedicationQuestionUseCase:
         (re.compile(r"피부\s*보습"), "피부 보습"),
         (re.compile(r"장\s*건강"), "장 건강"),
         (re.compile(r"혈행"), "혈행 개선"),
-        (re.compile(r"눈\s*건강"), "눈 건강"),
+        (re.compile(r"눈\s*건강|눈에\s*좋은"), "눈 건강"),
         (re.compile(r"관절\s*건강"), "관절 건강"),
         (re.compile(r"숙면|수면|잠\s*잘"), "숙면"),
     )
@@ -728,6 +730,24 @@ class AnswerMedicationQuestionUseCase:
         answer_chunks = coverage_retry.answer_chunks
         rag_unavailable = coverage_retry.rag_unavailable
         evidence_coverage = coverage_retry.evidence_coverage
+        if self._is_supplement_function_goal_question(request.question) and not rag_unavailable:
+            cautions = await self._supplement_goal_cautions(
+                execution_plan=execution_plan, answer_chunks=answer_chunks, retrieved_chunks=chunks
+            )
+            if cautions:
+                answer_chunks = self._unique_chunks([*answer_chunks, *cautions])
+                coverage_plan = query_plan.model_copy(
+                    update={
+                        "section_types": list(dict.fromkeys([*query_plan.section_types, KnowledgeSectionType.CAUTION]))
+                    }
+                )
+                evidence_coverage = MedicationEvidenceCoverageEvaluator().evaluate(
+                    query_plan=coverage_plan,
+                    guide_lookup=guide_lookup,
+                    rules=rules,
+                    chunks=answer_chunks,
+                    approved_therapeutic_class_names=approved_therapeutic_class_names,
+                )
         evidence = MedicationEvidenceBundle(
             query_plan=query_plan,
             execution_plan=execution_plan,
@@ -873,6 +893,11 @@ class AnswerMedicationQuestionUseCase:
                     ),
                     functional_goal_title=self._functional_supplement_goal_title(
                         request.question,
+                    ),
+                    functional_goal_details=(
+                        self._is_supplement_function_goal_question(request.question)
+                        and bool(re.search(r"영양제|건강기능식품|기능.*정보", request.question))
+                        and not bool(re.search(r"(?:성분|원료)(?:명)?\s*만", request.question))
                     ),
                     form_caution_guides=guide_lookup.form_caution_guides,
                 ),
@@ -1507,6 +1532,21 @@ class AnswerMedicationQuestionUseCase:
                     "urgent": urgent,
                 }
             )
+        if not urgent:
+            response = await self._conversation_allow_result(
+                request=request,
+                context=context,
+                classification=ConversationClassification(
+                    intent=ConversationIntent.GENERAL_HEALTH_FOLLOW_UP,
+                    safety_signal=ConversationSafetySignal.NONE,
+                    confidence=MedicationQuestionConfidence.HIGH,
+                ),
+                lifestyle_check_required=True,
+            )
+            if response is not None:
+                return response.model_copy(
+                    update={"safety_reason_codes": [MedicationChatReasonCode.FATIGUE_FOLLOW_UP_REQUIRED.value]}
+                )
         return MedicationChatResult(
             request_id=request.request_id,
             answer=decision.answer,
@@ -2146,6 +2186,36 @@ class AnswerMedicationQuestionUseCase:
         request: MedicationChatRequest,
         context: ActiveIntakeContext,
     ) -> MedicationChatResult | None:
+        # Continue the immediately preceding questionnaire before product resolution.
+        # Current danger still takes the deterministic urgent path below.
+        last_assistant = next(
+            (message for message in reversed(request.history[-4:]) if message.role is ChatRole.ASSISTANT),
+            None,
+        )
+        if (
+            last_assistant is not None
+            and any(
+                marker in last_assistant.content
+                for marker in (
+                    FatigueConversationPolicy.FOLLOW_UP_MARKER,
+                    FatigueConversationPolicy.LIFESTYLE_SECTION,
+                    "🌿 **일반 건강정보**",
+                )
+            )
+            and not self._urgent_health_signal_policy.evaluate(request.question)
+        ):
+            classification = await self._classify_conversation(request=request)
+            if classification is not None and (
+                classification.intent is ConversationIntent.GENERAL_HEALTH_FOLLOW_UP
+                or classification.safety_signal is not ConversationSafetySignal.NONE
+            ):
+                result = await self._conversation_classification_result(
+                    request=request,
+                    context=context,
+                    classification=classification,
+                )
+                if result is not None:
+                    return result
         if result := await self._fatigue_triage_result(request=request, context=context):
             return result
         if self._urgent_health_signal_policy.evaluate(request.question):
@@ -2815,11 +2885,16 @@ class AnswerMedicationQuestionUseCase:
         request: MedicationChatRequest,
         context: ActiveIntakeContext,
         classification: ConversationClassification,
+        lifestyle_check_required: bool = False,
     ) -> MedicationChatResult | None:
         if self._conversation_response_generator is None:
             return None
 
         route_and_reason = {
+            ConversationIntent.GENERAL_HEALTH_FOLLOW_UP: (
+                MedicationChatRoute.GENERAL_GUIDANCE,
+                MedicationChatReasonCode.GENERAL_HEALTH_FOLLOW_UP,
+            ),
             ConversationIntent.VAGUE_SYMPTOM: (
                 MedicationChatRoute.CLARIFICATION,
                 MedicationChatReasonCode.SYMPTOM_FOLLOW_UP_REQUIRED,
@@ -2849,6 +2924,8 @@ class AnswerMedicationQuestionUseCase:
             question=request.question,
             intent=classification.intent,
             follow_up_fields=classification.follow_up_fields,
+            recent_history=request.history,
+            lifestyle_check_required=lifestyle_check_required,
         )
         started_at = time.perf_counter()
         async with self._tracer.span("conversation.respond") as response_span:
@@ -4346,6 +4423,88 @@ class AnswerMedicationQuestionUseCase:
         return guide_lookup.model_copy(
             update={"form_caution_guides": form_caution_guides},
         )
+
+    async def _supplement_goal_cautions(
+        self,
+        *,
+        execution_plan: MedicationSearchExecutionPlan,
+        answer_chunks: list[RetrievedKnowledgeChunk],
+        retrieved_chunks: list[RetrievedKnowledgeChunk],
+    ) -> list[RetrievedKnowledgeChunk]:
+        """검색으로 확인된 원료의 주의사항만 추가 조회한다. 환자 목록은 검색에 섞지 않는다."""
+        names = list(
+            dict.fromkeys(
+                name
+                for chunk in answer_chunks
+                if chunk.metadata.section_type is KnowledgeSectionType.FUNCTION
+                for name in chunk.metadata.ingredient_names
+            )
+        )[:3]
+        if not names:
+            return []
+        allowed = {self._normalize_entity_name(name) for name in names}
+
+        def matching_cautions(candidates: list[RetrievedKnowledgeChunk]) -> list[RetrievedKnowledgeChunk]:
+            return [
+                chunk
+                for chunk in candidates
+                if (
+                    chunk.metadata.section_type is KnowledgeSectionType.CAUTION
+                    and chunk.metadata.document_type
+                    in {KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE, KnowledgeDocumentType.SUPPLEMENT_CODE}
+                    # Multi-ingredient paragraphs cannot be safely assigned to a single ingredient.
+                    and len(chunk.metadata.ingredient_names) == 1
+                    and self._normalize_entity_name(chunk.metadata.ingredient_names[0]) in allowed
+                    and chunk.content.strip()
+                )
+            ]
+
+        existing = matching_cautions(retrieved_chunks)
+        covered = {self._normalize_entity_name(chunk.metadata.ingredient_names[0]) for chunk in existing}
+        missing_names = [name for name in names if self._normalize_entity_name(name) not in covered]
+        if not missing_names:
+            return self._unique_chunks(existing)
+        query = " ".join(missing_names) + " 섭취 시 주의사항 임신 수유 고령자 간질환 신장질환"
+        caution_plan = MedicationKnowledgeQueryPlan(
+            original_query=query,
+            expanded_query=query,
+            entity_names=missing_names,
+            entities=[
+                MedicationQueryEntity(
+                    surface=name,
+                    canonical_name=name,
+                    entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                    kind=InteractionEntityKind.SUPPLEMENT,
+                    source=MedicationQueryEntitySource.QDRANT,
+                )
+                for name in missing_names
+            ],
+            document_types=[KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE, KnowledgeDocumentType.SUPPLEMENT_CODE],
+            section_types=[KnowledgeSectionType.CAUTION],
+        )
+        caution_execution = execution_plan.model_copy(
+            update={
+                "query_plan": caution_plan,
+                "patient_medication_names": [],
+                "patient_supplement_names": [],
+                "approved_rule_pair_keys": [],
+                "approved_therapeutic_class_names": [],
+                "include_patient_context": False,
+                "limit": 6,
+            }
+        )
+        async with self._tracer.span("supplement_cautions.retrieve", run_type="retriever") as span:
+            try:
+                async with asyncio.timeout(4.0):
+                    attempt = await self._retrieve_knowledge(execution_plan=caution_execution)
+                cautions = matching_cautions(attempt.result.chunks)
+                span.end(
+                    {"status": "UNAVAILABLE" if attempt.unavailable else "COMPLETED", "matched_count": len(cautions)}
+                )
+                return self._unique_chunks([*existing, *cautions])
+            except TimeoutError:
+                span.end({"status": "TIMEOUT", "matched_count": len(existing)})
+                return self._unique_chunks(existing)
 
     @staticmethod
     def _should_lookup_official_guide_for_interaction(

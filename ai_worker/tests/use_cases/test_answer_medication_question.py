@@ -2085,7 +2085,10 @@ async def test_functional_supplement_goal_uses_source_backed_ingredient_guidance
 
     assert result.route is MedicationChatRoute.SUPPLEMENT_GUIDE
     assert "제품명 또는 복용 목적" not in result.answer
-    assert result.answer == "**숙면**\n\n🧬 **성분**\n- L-테아닌"
+    assert result.answer == (
+        "**수면의 질 개선 관련 기능성 원료**\n\n💪🏻 **영양제 정보**\n"
+        "- L-테아닌: 긴장 완화와 수면의 질 개선에 도움을 줄 수 있음"
+    )
     assert "수면은 건강 유지" not in result.answer
 
 
@@ -2302,7 +2305,9 @@ async def test_functional_supplement_goal_bypasses_spurious_product_clarificatio
     assert retriever.received_kwargs is not None
     assert result.route is MedicationChatRoute.SUPPLEMENT_GUIDE
     assert "제품명 또는 복용 목적" not in result.answer
-    assert result.answer == "**숙면**\n\n🧬 **성분**\n- L-테아닌"
+    assert result.answer == (
+        "**수면의 질 개선 관련 기능성 원료**\n\n💪🏻 **영양제 정보**\n- L-테아닌: 수면의 질 개선에 도움을 줄 수 있음"
+    )
 
 
 async def test_non_interaction_question_skips_evidence_reasoning_chain() -> None:

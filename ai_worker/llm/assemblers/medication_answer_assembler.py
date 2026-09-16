@@ -57,6 +57,7 @@ class MedicationAnswerAssembler:
         response_subject: str | None = None,
         adverse_reaction_question: bool = False,
         functional_goal_title: str | None = None,
+        functional_goal_details: bool = False,
         form_caution_guides: dict[str, list[MedicationGuideFact]] | None = None,
         interaction_overview: bool = False,
     ) -> str:
@@ -94,6 +95,7 @@ class MedicationAnswerAssembler:
             public_section = self._functional_goal_section(
                 chunks=chunks,
                 functional_goal_title=functional_goal_title,
+                functional_goal_details=functional_goal_details,
             ) or self._public_knowledge_section(
                 chunks=chunks,
                 interaction_question=interaction_question,
@@ -171,13 +173,28 @@ class MedicationAnswerAssembler:
         *,
         chunks: list[RetrievedKnowledgeChunk],
         functional_goal_title: str | None,
+        functional_goal_details: bool = False,
     ) -> str | None:
         if functional_goal_title is None:
             return None
-        return MedicationAnswerAssembler._named_functional_ingredient_sections(
+        function_section = MedicationAnswerAssembler._named_functional_ingredient_sections(
             chunks,
             functional_goal_title=functional_goal_title,
+            functional_goal_details=functional_goal_details,
         )
+        if function_section is None:
+            return None
+        caution_lines = list(
+            dict.fromkeys(
+                f"- {chunk.metadata.ingredient_names[0]}: {' '.join(chunk.content.split())}"
+                for chunk in chunks
+                if chunk.metadata.section_type is KnowledgeSectionType.CAUTION
+                and len(chunk.metadata.ingredient_names) == 1
+            )
+        )
+        if caution_lines:
+            return function_section + "\n\n⚠️ **주의사항**\n\n" + "\n".join(caution_lines)
+        return function_section
 
     @staticmethod
     def _public_knowledge_section(
@@ -268,13 +285,11 @@ class MedicationAnswerAssembler:
         return lines
 
     @staticmethod
-    def _named_functional_ingredient_sections(
+    def _functional_ingredient_names(
         chunks: list[RetrievedKnowledgeChunk],
         *,
-        functional_goal_title: str | None = None,
-    ) -> str | None:
-        """목표형 영양제 질문에는 검색된 성분명을 답변의 식별자로 남긴다."""
-
+        limit: int,
+    ) -> list[str]:
         ingredient_names: list[str] = []
         seen_names: set[str] = set()
         for chunk in chunks:
@@ -286,12 +301,37 @@ class MedicationAnswerAssembler:
                     continue
                 seen_names.add(normalized_name.casefold())
                 ingredient_names.append(normalized_name)
-                if len(ingredient_names) == (3 if functional_goal_title == "건강 증진" else 4):
-                    break
-            if len(ingredient_names) == (3 if functional_goal_title == "건강 증진" else 4):
-                break
+                if len(ingredient_names) == limit:
+                    return ingredient_names
+        return ingredient_names
+
+    @staticmethod
+    def _named_functional_ingredient_sections(
+        chunks: list[RetrievedKnowledgeChunk],
+        *,
+        functional_goal_title: str | None = None,
+        functional_goal_details: bool = False,
+    ) -> str | None:
+        """목표형 영양제 질문에는 검색된 성분명과 해당 기능을 함께 남긴다."""
+
+        ingredient_names = MedicationAnswerAssembler._functional_ingredient_names(
+            chunks,
+            limit=3 if functional_goal_title == "건강 증진" else 4,
+        )
         if not ingredient_names:
             return None
+        if functional_goal_details:
+            goal = "수면의 질 개선" if functional_goal_title == "숙면" else functional_goal_title
+            return "\n\n".join(
+                [
+                    f"**{goal} 관련 기능성 원료**",
+                    "💪🏻 **영양제 정보**\n"
+                    + "\n".join(
+                        f"- {name}: {MedicationAnswerAssembler._function_for_ingredient(chunks, name)}"
+                        for name in ingredient_names[:3]
+                    ),
+                ]
+            )
         if functional_goal_title:
             if functional_goal_title == "건강 증진":
                 return "\n\n".join(
@@ -315,7 +355,10 @@ class MedicationAnswerAssembler:
     @staticmethod
     def _function_for_ingredient(chunks: list[RetrievedKnowledgeChunk], ingredient_name: str) -> str:
         for chunk in chunks:
-            if ingredient_name not in chunk.metadata.ingredient_names:
+            if (
+                ingredient_name not in chunk.metadata.ingredient_names
+                or chunk.metadata.section_type is not KnowledgeSectionType.FUNCTION
+            ):
                 continue
             content = re.sub(rf"^{re.escape(ingredient_name)}(?:은|는|이|가)?\s*", "", chunk.content.strip())
             return re.sub(r"습니다\.?$", "음", content).rstrip(".")

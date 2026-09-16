@@ -12,5 +12,11 @@ class UrgentHealthSignalPolicy:
         r"(?:온몸|전신)\s*(?:에\s*)?두드러기",
     )
 
+    _EXPLICIT_DENIAL = re.compile(
+        rf"(?:\s*(?:이나|나|와|과|,|·)\s*(?:{_PATTERN.pattern}))*"
+        r"\s*(?:은|는|이|가|도)?\s*없(?:어요|습니다|고|지만|음|다|어)(?=$|[\s.,!?])"
+    )
+
     def evaluate(self, question: str) -> bool:
-        return self._PATTERN.search(question) is not None
+        # 명시적인 부정만 제외하며, 이웃한 실제 위험 증상은 계속 감지한다.
+        return any(not self._EXPLICIT_DENIAL.match(question, match.end()) for match in self._PATTERN.finditer(question))

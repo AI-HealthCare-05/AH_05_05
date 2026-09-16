@@ -638,6 +638,58 @@ def test_assemble_omits_unverified_notice_for_active_intake_interaction() -> Non
     assert "확인하지 못한 조합" not in answer
 
 
+def test_supplement_goal_details_keep_each_ingredient_attached_to_its_function() -> None:
+    base = RetrievedKnowledgeChunk(
+        point_id="sleep-function",
+        chunk_id="z" * 64,
+        content="원료 A는 수면의 질 개선에 도움을 줄 수 있습니다.",
+        embedding_text="원료 A 수면",
+        token_count=20,
+        similarity_score=0.8,
+        metadata=KnowledgeChunkMetadata(
+            source_id="public",
+            document_id="sleep",
+            title="수면 기능",
+            provider="시험기관",
+            access_scope=KnowledgeAccessScope.PUBLIC,
+            document_type=KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+            ingredient_names=["원료 A"],
+            dataset_version="test",
+            section_type=KnowledgeSectionType.FUNCTION,
+            page_start=1,
+            page_end=1,
+            chunk_index=0,
+            content_hash="z" * 64,
+        ),
+    )
+    second = base.model_copy(
+        update={
+            "content": "원료 B는 긴장 완화에 도움을 줄 수 있습니다.",
+            "metadata": base.metadata.model_copy(update={"ingredient_names": ["원료 B"]}),
+        }
+    )
+    background = base.model_copy(
+        update={
+            "content": "수면은 중요한 생리 현상입니다.",
+            "metadata": base.metadata.model_copy(update={"ingredient_names": []}),
+        }
+    )
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=[],
+        chunks=[background, base, base, second],
+        interaction_question=False,
+        functional_goal_title="숙면",
+        functional_goal_details=True,
+    )
+    assert answer == (
+        "**수면의 질 개선 관련 기능성 원료**\n\n💪🏻 **영양제 정보**\n"
+        "- 원료 A: 수면의 질 개선에 도움을 줄 수 있음\n"
+        "- 원료 B: 긴장 완화에 도움을 줄 수 있음"
+    )
+
+
 def test_assemble_groups_adverse_case_report_into_event_and_detail_sections() -> None:
     event_chunk = RetrievedKnowledgeChunk(
         point_id="doxazosin-event",
