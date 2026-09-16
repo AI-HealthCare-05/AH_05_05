@@ -477,7 +477,9 @@ class MedicationAnswerAssembler:
         ]
         if caution_values:
             guide_sections.append(
-                "⚠️ **주의사항**\n" + "\n".join(self._caution_lines(value) for value in caution_values)
+                # RDB 주의사항의 `|`는 독립 조항이 아니라 주어 목록 구분자이고 서술어가
+                # 맨 끝에 한 번만 온다. 조각으로 나누면 위험군에서 행동 지시가 떨어져 나간다.
+                "⚠️ **주의사항**\n" + "\n".join(self._guide_line("", value) for value in caution_values)
             )
         if evidence_coverage is None or not evidence_coverage.requested_section_types:
             self._append_allowed_guide_section(
@@ -625,22 +627,6 @@ class MedicationAnswerAssembler:
     def _guide_line(label: str, value: str) -> str:
         prefix = f"{label}: " if label else ""
         return f"- {prefix}{MedicationAnswerAssembler._clean_guide_value(value)}"
-
-    @classmethod
-    def _caution_lines(cls, value: str) -> str:
-        """주의사항의 독립 조항을 각각의 bullet로 남긴다.
-
-        한 덩어리로 합치면 초안에 수백 자짜리 bullet이 생기고, 재작성이 폴백되면
-        그 원문이 그대로 화면에 나간다. 조항을 나눠도 내용은 버리지 않는다.
-        효능은 `|`가 적응증 나열이라 같은 방식으로 나누지 않는다.
-        """
-
-        segments: list[str] = []
-        for part in cls._clean_guide_value(value).split(", "):
-            # 종결 어미 뒤의 마침표만 문장 경계로 본다. 용량 수치의 소수점은 나누지 않는다.
-            segments.extend(segment.strip() for segment in re.split(r"(?<=[다요오])\.\s+", part) if segment.strip())
-        unique = list(dict.fromkeys(segments))
-        return "\n".join(f"- {segment}" for segment in unique) if unique else cls._guide_line("", value)
 
     @classmethod
     def _clean_guide_value(cls, value: str) -> str:

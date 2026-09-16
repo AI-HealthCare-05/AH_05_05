@@ -1106,30 +1106,3 @@ def test_assemble_keeps_cautions_even_when_only_efficacy_is_requested() -> None:
 
     assert "발열과 통증 완화" in answer
     assert "중증 간장애 환자는 복용하지 마십시오." in answer
-
-
-def test_assemble_splits_rdb_delimited_cautions_into_separate_bullets() -> None:
-    """주의사항 조항이 한 bullet로 합쳐지면 재작성이 폴백될 때 원문이 그대로 나간다."""
-
-    answer = MedicationAnswerAssembler().assemble(
-        context=ActiveIntakeContext(user_id=1),
-        guide=build_guide(
-            product_name="타이레놀정500밀리그램",
-            pre_use_warning="임부는 복용 전 의사와 상의하십시오",
-            precautions=(
-                "매일 세 잔 이상 정기적으로 술을 마시는 사람은 복용 전 의사와 상의하십시오. "
-                "12세 미만은 복용하지 마십시오|중증 간장애 환자는 복용하지 마십시오"
-            ),
-        ),
-        rules=[],
-        chunks=[],
-        interaction_question=False,
-        evidence_coverage=MedicationEvidenceCoverage(
-            requested_section_types=[KnowledgeSectionType.CAUTION],
-            covered_section_types=[KnowledgeSectionType.CAUTION],
-        ),
-    )
-
-    assert "- 매일 세 잔 이상 정기적으로 술을 마시는 사람은 복용 전 의사와 상의하십시오" in answer
-    assert "- 12세 미만은 복용하지 마십시오" in answer
-    assert "- 중증 간장애 환자는 복용하지 마십시오" in answer
