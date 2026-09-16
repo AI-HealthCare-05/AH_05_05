@@ -138,12 +138,6 @@ class RuleBasedGroundedClaimValidator:
             ).hexdigest(),
         )
 
-    @classmethod
-    def contains_medication_change_instruction(cls, text: str) -> bool:
-        """복약 변경 지시 표현이 들어 있는지만 본다. 근거 여부는 판단하지 않는다."""
-
-        return bool(cls._MEDICATION_CHANGE_PATTERN.search(cls._normalize_spacing(text)))
-
     @staticmethod
     def _normalize_spacing(value: str) -> str:
         return re.sub(r"\s+", " ", value).strip()

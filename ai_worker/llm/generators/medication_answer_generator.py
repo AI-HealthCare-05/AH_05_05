@@ -54,8 +54,6 @@ class OpenAIMedicationAnswerGenerator:
         r"\d+(?:[.,]\d+)?\s*(?:mg|mcg|μg|㎍|g|mL|ml|IU|mEq|밀리그램|그램|밀리리터|국제단위|정|캡슐|포|회|일|시간|%)",
         re.IGNORECASE,
     )
-    # 공식 경고문에서 지시 문장만 떼어내기 위한 경계. 원문은 띄어쓰기가 없을 수 있다.
-    _OFFICIAL_SENTENCE_BOUNDARY = re.compile(r"(?<=[다요오])\.\s*")
     _SAFETY_ASSERTION_PATTERN = re.compile(
         r"(?:안전|문제\s*없|괜찮)[^.!?。！？]{0,12}(?:합니다|해요|습니다)|"
         r"(?:상호작용|부작용)(?:이|은|는)?\s*없(?:습니다|어요)",
@@ -265,10 +263,7 @@ class OpenAIMedicationAnswerGenerator:
             generated_answer=generated_answer,
         )
         if preserved_official_warning:
-            generated_answer = self._with_official_warning_restored(
-                result=result,
-                generated_answer=generated_answer,
-            )
+            generated_answer = result.answer
         generated_hash = self._answer_hash(generated_answer)
         fallback_reason = (
             MedicationAnswerFallbackReason.OFFICIAL_WARNING_PRESERVED
@@ -321,43 +316,6 @@ class OpenAIMedicationAnswerGenerator:
                 generated_answer_hash=generated_hash,
             ),
         )
-
-    @classmethod
-    def _with_official_warning_restored(
-        cls,
-        *,
-        result: MedicationChatResult,
-        generated_answer: str,
-    ) -> str:
-        """재서술된 복약 변경 지시만 공식 원문 문장으로 되돌린다.
-
-        답변 전체를 초안으로 바꾸면 요약이 모두 사라지고 가공되지 않은 원문이 나간다.
-        지시 문장만 원문으로 두면 경고 문구는 한 글자도 바뀌지 않으면서
-        나머지 주의사항은 요약을 유지한다. 대응 원문을 찾지 못하면 기존처럼 초안을 쓴다.
-        """
-
-        official_sentences = [
-            sentence.strip()
-            for text in result.official_warning_texts
-            for sentence in cls._OFFICIAL_SENTENCE_BOUNDARY.split(text)
-            if sentence.strip() and RuleBasedGroundedClaimValidator.contains_medication_change_instruction(sentence)
-        ]
-        if not official_sentences:
-            return result.answer
-
-        restored: list[str] = []
-        replaced = 0
-        for line in generated_answer.splitlines():
-            if (
-                line.lstrip().startswith("- ")
-                and replaced < len(official_sentences)
-                and RuleBasedGroundedClaimValidator.contains_medication_change_instruction(line)
-            ):
-                restored.append(f"- {official_sentences[replaced]}")
-                replaced += 1
-            else:
-                restored.append(line)
-        return "\n".join(restored) if replaced else result.answer
 
     @staticmethod
     def _must_preserve_official_warning(
