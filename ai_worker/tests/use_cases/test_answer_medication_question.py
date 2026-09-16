@@ -1834,7 +1834,11 @@ async def test_single_entity_guide_question_ignores_prior_interaction_gate_conte
     assert retriever.received_kwargs is not None
     query_plan = retriever.received_kwargs["execution_plan"].query_plan
     assert query_plan.entity_names == ["마그네슘"]
-    assert query_plan.section_types == [KnowledgeSectionType.FUNCTION]
+    assert query_plan.section_types == [
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.CAUTION,
+        KnowledgeSectionType.DAILY_INTAKE,
+    ]
     assert query_plan.interaction_pairs == []
 
 
@@ -2085,7 +2089,10 @@ async def test_functional_supplement_goal_uses_source_backed_ingredient_guidance
 
     assert result.route is MedicationChatRoute.SUPPLEMENT_GUIDE
     assert "제품명 또는 복용 목적" not in result.answer
-    assert result.answer == "**숙면**\n\n🧬 **성분**\n- L-테아닌"
+    assert result.answer == (
+        "**수면의 질 개선 관련 기능성 원료**\n\n💪🏻 **영양제 정보**\n"
+        "- L-테아닌: 긴장 완화와 수면의 질 개선에 도움을 줄 수 있음"
+    )
     assert "수면은 건강 유지" not in result.answer
 
 
@@ -2302,7 +2309,9 @@ async def test_functional_supplement_goal_bypasses_spurious_product_clarificatio
     assert retriever.received_kwargs is not None
     assert result.route is MedicationChatRoute.SUPPLEMENT_GUIDE
     assert "제품명 또는 복용 목적" not in result.answer
-    assert result.answer == "**숙면**\n\n🧬 **성분**\n- L-테아닌"
+    assert result.answer == (
+        "**수면의 질 개선 관련 기능성 원료**\n\n💪🏻 **영양제 정보**\n- L-테아닌: 수면의 질 개선에 도움을 줄 수 있음"
+    )
 
 
 async def test_non_interaction_question_skips_evidence_reasoning_chain() -> None:
@@ -5585,3 +5594,41 @@ def test_single_drug_contraindication_does_not_use_interaction_route() -> None:
     assert not AnswerMedicationQuestionUseCase._is_interaction_question(
         "아스피린은 임신 중 피해야 하나요?",
     )
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "와파린이랑 같이 먹으면 안되는거 알려줘",
+        "와파린 상호작용 알려줘",
+        "와파린 병용금기 알려줘",
+    ],
+)
+async def test_single_target_interaction_questions_keep_three_way_overview(question: str) -> None:
+    """상대를 지정하지 않은 상호작용 질문은 표현이 달라도 약·영양제·음식 탐색을 유지한다."""
+
+    class Resolver:
+        async def resolve(self, *, question, additional_entities=None):
+            return MedicationQuestionResolution(
+                original_question=question,
+                resolved_question=question,
+                scope="IN_SCOPE",
+                status="UNCHANGED",
+                entity_resolution_available=True,
+                entities=[
+                    MedicationQueryEntity(
+                        surface="와파린",
+                        canonical_name="와파린",
+                        entity_type="INGREDIENT_NAME",
+                        kind="DRUG",
+                        source="CATALOG",
+                    )
+                ],
+            )
+
+    retriever = RecordingQueryPlanRetriever()
+    await build_use_case(question_resolver=Resolver(), retriever=retriever).execute(build_request(question))
+
+    query_plan = retriever.received_kwargs["execution_plan"].query_plan
+    assert query_plan.interaction_overview is True
+    assert len(query_plan.interaction_types) == 3

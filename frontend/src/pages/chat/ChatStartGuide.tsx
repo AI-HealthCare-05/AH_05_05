@@ -6,9 +6,10 @@ const GUIDE_ITEMS = [
 ] as const;
 
 const FREQUENT_QUESTIONS = [
-  '같이 먹어도 될까요?',
-  '언제 먹는 게 좋나요?',
-  '주의할 증상이 있나요?',
+  '복약 메모 알려줘',
+  '진료 일정 알려줘',
+  '내가 먹는 영양제',
+  '복용 중인 약',
 ] as const;
 
 interface ChatStartGuideProps {
@@ -29,15 +30,17 @@ export function ChatStartGuide({ pending, onQuestion }: ChatStartGuideProps) {
         aria-label="챗봇 시작 가이드"
         className="flex flex-col gap-3 rounded-card bg-card p-4 shadow-card"
       >
-        <div className="flex items-center gap-3">
-          <img
-            src="/images/rxvita-mark-256.png"
-            alt=""
-            aria-hidden
-            className="size-16 shrink-0"
-            width={256}
-            height={256}
-          />
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="relative block size-16 shrink-0 overflow-hidden rounded-full">
+            <img
+              src="/images/default-profile.png"
+              alt=""
+              aria-hidden
+              className="absolute left-1/2 top-1/2 size-20 max-w-none -translate-x-1/2 -translate-y-1/2 object-contain"
+              width={462}
+              height={457}
+            />
+          </span>
           <h2 className="text-lg font-bold text-foreground">이 챗봇에서 확인할 수 있어요</h2>
         </div>
         <ul className="flex flex-col gap-1.5 text-sm leading-5 text-foreground">

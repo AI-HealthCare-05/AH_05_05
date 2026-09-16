@@ -2,20 +2,21 @@ import { expect, test } from 'playwright/test';
 import { IS_REAL_API, MOCK_ONLY_REASON } from './helpers/mode';
 
 test.beforeEach(() => test.skip(IS_REAL_API, MOCK_ONLY_REASON));
-// Includes Vite cold start on the WSL-mounted checkout and three stop flows.
+// Includes Vite cold start on the WSL-mounted checkout.
 test.setTimeout(60_000);
 
-test('마지막 영양제를 중단하면 등록 안내만 보여주고 성분 합계는 완전히 숨긴다', async ({ page }) => {
+test('모든 영양제를 선택 삭제하면 등록 안내만 보여주고 성분 합계는 완전히 숨긴다', async ({ page }) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem('poke.access-token', 'empty-list-test');
+    sessionStorage.setItem('poke.account-principal', 'empty-list@example.com');
+  });
+  await page.route('**/api/v1/user/custom-challenge-participations', route => route.fulfill({ json: { items: [], totalCount: 0 } }));
   await page.goto('/dev/supplements');
   const supplementList = page.getByRole('region', { name: '먹고 있는 영양제' });
 
-  for (const name of ['오메가3', '종합비타민', '비타민 D']) {
-    await supplementList.getByRole('button', { name: new RegExp(name) }).click();
-    const editSheet = page.getByRole('dialog', { name });
-    await editSheet.getByRole('button', { name: '복용 중단하기' }).click();
-    const confirm = page.getByRole('dialog', { name: `${name} 복용을 중단할까요?` });
-    await confirm.getByRole('button', { name: '중단하기' }).click();
-  }
+  await page.getByRole('button', { name: '선택', exact: true }).click();
+  for (const checkbox of await supplementList.getByRole('checkbox').all()) await checkbox.check();
+  await page.getByRole('button', { name: '삭제 3개', exact: true }).click();
 
   await expect(
     page.getByRole('heading', { name: '영양제를 등록하고 관리하기', exact: true }),

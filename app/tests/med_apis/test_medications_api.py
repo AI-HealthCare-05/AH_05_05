@@ -15,6 +15,7 @@ from app.tests.med_apis.helpers import authentication_headers
 
 OVERVIEW_URL = "/api/v1/medications"
 DOSES_URL = "/api/v1/medications/doses"
+EXISTS_URL = "/api/v1/medications/exists"
 
 
 async def create_episode(
@@ -64,6 +65,7 @@ class TestMedicationOverviewAPI(TestCase):
     async def test_routes_require_authentication(self) -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             overview = await client.get(OVERVIEW_URL)
+            exists = await client.get(EXISTS_URL)
             history = await client.get(
                 DOSES_URL,
                 params={"from": "2026-08-01", "to": "2026-08-07"},
@@ -75,6 +77,7 @@ class TestMedicationOverviewAPI(TestCase):
             cancel = await client.delete(f"{OVERVIEW_URL}/1")
 
         assert overview.status_code == status.HTTP_401_UNAUTHORIZED
+        assert exists.status_code == status.HTTP_401_UNAUTHORIZED
         assert history.status_code == status.HTTP_401_UNAUTHORIZED
         assert save.status_code == status.HTTP_401_UNAUTHORIZED
         assert cancel.status_code == status.HTTP_401_UNAUTHORIZED
@@ -86,6 +89,49 @@ class TestMedicationOverviewAPI(TestCase):
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
+
+    async def test_prescription_exists_includes_history_outside_list_range(self) -> None:
+        today = datetime.now(config.TIMEZONE).date()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            email = "overview-history-exists@example.com"
+            headers = await authentication_headers(client, email, "01023000101")
+            response = await client.get(EXISTS_URL, headers=headers)
+            assert response.status_code == status.HTTP_200_OK
+            assert response.json() is False
+            user = await User.get(email=email)
+            await create_overview_episode(user, start_date=today - relativedelta(years=3), source_ocr_job_id=901)
+
+            overview = await client.get(OVERVIEW_URL, headers=headers)
+            exists = await client.get(EXISTS_URL, headers=headers)
+
+        assert overview.json() == []
+        assert exists.status_code == status.HTTP_200_OK
+        assert exists.json() is True
+
+    async def test_prescription_exists_excludes_other_users_cancelled_and_incomplete(self) -> None:
+        today = datetime.now(config.TIMEZONE).date()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            email = "overview-exists-owner@example.com"
+            headers = await authentication_headers(client, email, "01023000102")
+            user = await User.get(email=email)
+            await authentication_headers(client, "overview-exists-other@example.com", "01023000103")
+            other = await User.get(email="overview-exists-other@example.com")
+            await create_overview_episode(other, start_date=today, source_ocr_job_id=902)
+            await create_overview_episode(
+                user, start_date=today, source_ocr_job_id=903, episode_status=CareEpisodeStatus.CANCELLED
+            )
+            await create_episode(user, start_date=today, source_ocr_job_id=904)
+            no_start = await create_overview_episode(user, start_date=today, source_ocr_job_id=905)
+            no_start.medication_start_date = None
+            await no_start.save(update_fields=["medication_start_date"])
+            no_source = await create_overview_episode(user, start_date=today, source_ocr_job_id=906)
+            no_source.source_ocr_job_id = None
+            await no_source.save(update_fields=["source_ocr_job_id"])
+
+            response = await client.get(EXISTS_URL, headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() is False
 
     async def test_overview_orders_by_start_date_then_id_descending(self) -> None:
         today = datetime.now(config.TIMEZONE).date()

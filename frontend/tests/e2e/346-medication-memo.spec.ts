@@ -1,3 +1,5 @@
+import { mkdirSync } from 'node:fs';
+import path from 'node:path';
 import { expect, test, type Route } from 'playwright/test';
 
 import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
@@ -55,6 +57,57 @@ test.beforeEach(async ({ page }) => {
     sessionStorage.setItem('poke.account-principal', 'medication-note-346@example.com');
   });
 });
+
+for (const width of [320, 375, 390]) {
+  test(`복약 메모 입력은 ${width}px 모바일 폭 안에서 처방과 복용 일시를 유지한다`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.route('**/api/v1/medications', (route) => fulfillJson(route, [OVERVIEW]));
+    await page.route(/\/api\/v1\/med\/notes\/episodes(?:\?.*)?$/, (route) => fulfillJson(route, [{
+      careEpisodeId: OVERVIEW.recordId,
+      alias: OVERVIEW.alias,
+      startDate: OVERVIEW.start.date,
+      firstDoseAt: `${OVERVIEW.start.date}T${OVERVIEW.mealTimes.evening}:00`,
+      status: 'ACTIVE',
+      noteCount: 0,
+      canCreateNote: true,
+      medicationCount: 1,
+      representativeMedicationName: OVERVIEW.medications[0].name,
+      medications: [{ id: OVERVIEW.medications[0].medicationId, name: OVERVIEW.medications[0].name, dose: OVERVIEW.medications[0].dose }],
+    }]));
+
+    await page.goto('/medications/notes/new');
+    const prescription = page.getByLabel('처방', { exact: true });
+    const takenAt = page.getByLabel('복용 일시');
+    await expect(prescription).toBeEnabled();
+    await expect(takenAt).toBeEditable();
+
+    const geometry = await page.evaluate(() => {
+      const viewport = document.documentElement.clientWidth;
+      const fields = [
+        document.querySelector<HTMLSelectElement>("select[aria-label='처방']")!,
+        document.querySelector<HTMLInputElement>("input[aria-label='복용 일시']")!,
+      ];
+      return {
+        overflow: document.documentElement.scrollWidth - viewport,
+        fieldsFit: fields.every((field) => {
+          const box = field.getBoundingClientRect();
+          return box.left >= 0 && box.right <= viewport;
+        }),
+        matchingWidths: Math.abs(fields[0].getBoundingClientRect().width - fields[1].getBoundingClientRect().width) < 1,
+      };
+    });
+    expect(geometry).toEqual({ overflow: 0, fieldsFit: true, matchingWidths: true });
+
+    const directory = process.env.UI520_SCREENSHOT_DIR;
+    if (directory && width === 390) {
+      mkdirSync(directory, { recursive: true });
+      await page.screenshot({
+        path: path.join(directory, 'medication-note-390.png'),
+        fullPage: true,
+      });
+    }
+  });
+}
 
 test('새 메모는 선택한 처방의 첫 복용 일시를 수정 가능한 기본값으로 보여준다', async ({ page }) => {
   await page.route('**/api/v1/medications', (route) => fulfillJson(route, [OVERVIEW]));

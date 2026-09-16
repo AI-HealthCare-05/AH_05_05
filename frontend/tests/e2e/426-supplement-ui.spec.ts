@@ -263,7 +263,8 @@ for (const width of [375, 390, 1280]) {
     await page.goto('/dev/supplements');
     await page.getByRole('region', { name: '먹고 있는 영양제' })
       .getByRole('button', { name: /테스트 종합 영양제/ }).click();
-    const editor = page.getByRole('dialog', { name: PRODUCT.name });
+    await page.getByRole('dialog', { name: PRODUCT.name }).getByRole('button', { name: '복용 정보 수정', exact: true }).click();
+    const editor = page.getByRole('dialog', { name: '복용 정보 수정', exact: true });
     const slots = editor.getByRole('group', { name: '복용 시간' });
     const lunch = slots.getByRole('button', { name: '점심', exact: true });
     if (testInfo.project.use.hasTouch) await lunch.tap();

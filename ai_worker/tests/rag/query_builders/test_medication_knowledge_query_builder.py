@@ -32,7 +32,10 @@ def test_build_expands_supplement_function_question() -> None:
     assert plan.has_medication_product_cue is False
 
 
-def test_build_treats_generic_supplement_about_question_as_function_request() -> None:
+@pytest.mark.parametrize("question", ["마그네슘에 대해 알려줘", "마그네슘이 뭐야?", "마그네슘 알려줘"])
+def test_build_treats_generic_about_question_as_overview_request(question: str) -> None:
+    """항목을 지정하지 않은 설명 요청은 표현이 달라도 효능·주의사항·복용법을 함께 안내한다."""
+
     plan = MedicationKnowledgeQueryBuilder(
         catalog_entities=[
             MedicationQueryEntity(
@@ -43,9 +46,13 @@ def test_build_treats_generic_supplement_about_question_as_function_request() ->
                 source=MedicationQueryEntitySource.QDRANT,
             )
         ]
-    ).build("마그네슘에 대해 알려줘")
+    ).build(question)
 
-    assert plan.section_types == [KnowledgeSectionType.FUNCTION]
+    assert plan.section_types == [
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.CAUTION,
+        KnowledgeSectionType.DAILY_INTAKE,
+    ]
     assert "효능" in plan.expanded_query
 
 

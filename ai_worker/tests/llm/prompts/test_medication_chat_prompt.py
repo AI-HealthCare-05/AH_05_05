@@ -264,8 +264,8 @@ def test_system_prompt_summarizes_ocr_draft_without_inventing_section_metadata()
     assert "비타민 K는 와파린의 항응고 효과를 줄일 수 있습니다." in SYSTEM_PROMPT
 
 
-def test_system_prompt_uses_v8_six_element_contract_and_private_checklist() -> None:
-    assert MEDICATION_CHAT_PROMPT_VERSION == "medication-chat-prompt-v8"
+def test_system_prompt_uses_v9_six_element_contract_and_private_checklist() -> None:
+    assert MEDICATION_CHAT_PROMPT_VERSION == "medication-chat-prompt-v9"
     for heading in (
         "역할(Role)",
         "작업(Task)",

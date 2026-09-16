@@ -1,3 +1,4 @@
+import json
 from typing import Any, Protocol
 
 from langchain_core.prompts import ChatPromptTemplate
@@ -8,6 +9,7 @@ from ai_worker.llm.prompts.prompt_assets import (
     MedicationPromptStage,
     load_prompt_chain_stage,
 )
+from ai_worker.schemas.chat import ChatHistoryMessage
 from ai_worker.schemas.conversation_gate import ConversationIntent, SymptomFollowUpField
 
 
@@ -19,6 +21,8 @@ class ConversationResponseInput(BaseModel):
     question: str = Field(min_length=1)
     intent: ConversationIntent
     follow_up_fields: list[SymptomFollowUpField] = Field(default_factory=list, max_length=3)
+    recent_history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=10)
+    lifestyle_check_required: bool = False
 
     @field_validator("question")
     @classmethod
@@ -38,7 +42,7 @@ class AsyncConversationResponseClient(Protocol):
     async def ainvoke(self, messages: Any) -> ConversationResponsePayload | dict[str, Any]: ...
 
 
-CONVERSATION_RESPONSE_PROMPT_VERSION = "conversation-response-prompt-v7"
+CONVERSATION_RESPONSE_PROMPT_VERSION = "conversation-response-prompt-v9"
 
 PROMPT_DOCUMENT = load_prompt_chain_stage(
     MedicationPromptStage.CONVERSATION_RESPONSE,
@@ -62,6 +66,11 @@ class ConversationResponseGenerator:
             question=input.question,
             intent=input.intent.value,
             follow_up_fields=", ".join(field.value for field in input.follow_up_fields) or "없음",
+            lifestyle_check_required=input.lifestyle_check_required,
+            history_json=json.dumps(
+                [{"role": message.role.value, "content": message.content} for message in input.recent_history[-4:]],
+                ensure_ascii=False,
+            ),
         )
         payload = await self._client.ainvoke(messages)
         if not isinstance(payload, ConversationResponsePayload):
@@ -74,6 +83,10 @@ class ConversationResponseGenerator:
         bodies = {
             ConversationIntent.GREETING: "안녕하세요. 무엇을 도와드릴까요?",
             ConversationIntent.CASUAL: "그랬군요. 어떤 점이 가장 신경 쓰이는지 말씀해 주세요.",
+            ConversationIntent.GENERAL_HEALTH_FOLLOW_UP: (
+                "✉️ **안내사항**\n\n- 답변을 정리하지 못했습니다. 잠시 후 다시 시도해 주세요.\n\n"
+                "⚠️ **상담 안내**\n\n- 증상이 지속되거나 생활에 지장을 주면 의료진과 상담하세요."
+            ),
             ConversationIntent.VAGUE_SYMPTOM: (
                 "많이 불편하시겠어요. 증상 원인이나 치료 약 추천은 할 수 없지만, "
                 "현재 복용 중인 약과 함께 먹어도 되는지는 확인해드릴 수 있어요. "

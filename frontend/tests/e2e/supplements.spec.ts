@@ -256,13 +256,17 @@ test('목록 카드에서 회당 수량과 슬롯을 편집하면 카드와 성�
   const supplementList = page.getByRole('region', { name: '먹고 있는 영양제' });
   await supplementList.getByRole('button', { name: /오메가3/ }).click();
 
-  const sheet = page.getByRole('dialog', { name: '오메가3' });
+  const overview = page.getByRole('dialog', { name: '오메가3' });
+  await overview.getByRole('button', { name: '복용 정보 수정', exact: true }).click();
+  const sheet = page.getByRole('dialog', { name: '복용 정보 수정', exact: true });
   await expect(sheet.getByText('1 정', { exact: true })).toBeVisible();
   const slots = sheet.getByRole('group', { name: '복용 시간' });
   await expect(slots.getByRole('button', { name: '아침' })).toHaveAttribute('aria-pressed', 'true');
   await expect(slots.getByRole('button', { name: '저녁' })).toHaveAttribute('aria-pressed', 'true');
   await slots.getByRole('button', { name: '점심' }).click();
   await sheet.getByRole('button', { name: '저장' }).click();
+  await expect(sheet).toBeHidden();
+  await overview.getByRole('button', { name: '닫기', exact: true }).click();
 
   const omega = supplementList.getByRole('button', { name: /오메가3/ });
   await expect(omega).toContainText('하루 3회 · 1회 1정');
@@ -332,21 +336,14 @@ test('편집 시트는 비공개 메모와 공개 후기를 구분하고 마스�
     .toHaveValue('꾸준히 먹기 편했어요.');
 });
 
-test('복용 중단을 확인하면 삭제 문구 없이 활성 목록과 성분 합계에서 제외한다', async ({ page }) => {
+test('영양제 상세에는 삭제나 복용 중단 버튼 없이 복용 정보 수정만 제공한다', async ({ page }) => {
   await page.goto('/dev/supplements');
   const supplementList = page.getByRole('region', { name: '먹고 있는 영양제' });
   await supplementList.getByRole('button', { name: /비타민 D/ }).click();
   const editSheet = page.getByRole('dialog', { name: '비타민 D' });
   await expect(editSheet.getByText('삭제', { exact: false })).toHaveCount(0);
-  await editSheet.getByRole('button', { name: '복용 중단하기' }).click();
-
-  const confirm = page.getByRole('dialog', { name: '비타민 D 복용을 중단할까요?' });
-  await expect(confirm.getByText('성분 합계에서 제외됩니다. 다시 추가할 수 있어요.')).toBeVisible();
-  await expect(confirm.getByText('삭제', { exact: false })).toHaveCount(0);
-  await confirm.getByRole('button', { name: '중단하기' }).click();
-
-  await expect(supplementList.getByRole('button', { name: /비타민 D/ })).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: '영양제 2개' })).toBeVisible();
+  await expect(editSheet.getByRole('button', { name: '복용 중단하기' })).toHaveCount(0);
+  await expect(editSheet.getByRole('button', { name: '복용 정보 수정', exact: true })).toBeVisible();
 });
 
 test('성분 8개에서도 초과 항목을 중립 항목보다 먼저 보여준다', async ({ page }) => {
