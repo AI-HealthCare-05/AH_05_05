@@ -249,26 +249,33 @@ class MedicationAnswerAssembler:
             KnowledgeSectionType.DAILY_INTAKE: "✅ **복용법**",
             KnowledgeSectionType.CAUTION: ("🚨 **이상반응**" if adverse_reaction_question else "⚠️ **주의사항**"),
         }
+        # 질문이 항목을 지정했으면 그 항목의 청크만 초안에 싣는다.
+        # 주의사항은 예외로 항상 남긴다. 효능만 물었다는 이유로 금기를 지우면
+        # 사용자는 주의사항이 없다고 읽게 되고, 이는 근거 부재를 안전으로 렌더링하는 것과 같다.
+        # 안내사항 폴백도 같은 청크를 써야 걸러낸 내용이 원문으로 되돌아오지 않는다.
         covered = MedicationAnswerAssembler._covered_sections(evidence_coverage)
+        allowed_chunks = [
+            chunk
+            for chunk in chunks[:4]
+            if chunk.metadata.section_type is KnowledgeSectionType.CAUTION
+            or MedicationAnswerAssembler._section_is_allowed(
+                chunk.metadata.section_type,
+                coverage=evidence_coverage,
+                covered=covered,
+            )
+        ]
         for section_type in (
             KnowledgeSectionType.FUNCTION,
             KnowledgeSectionType.DAILY_INTAKE,
             KnowledgeSectionType.CAUTION,
         ):
-            # 질문이 항목을 지정했으면 그 항목의 청크만 초안에 싣는다.
-            if not MedicationAnswerAssembler._section_is_allowed(
-                section_type,
-                coverage=evidence_coverage,
-                covered=covered,
-            ):
-                continue
             section_lines = [
-                f"- {chunk.content}" for chunk in chunks[:4] if chunk.metadata.section_type is section_type
+                f"- {chunk.content}" for chunk in allowed_chunks if chunk.metadata.section_type is section_type
             ]
             if section_lines:
                 sections.append(section_headings[section_type] + "\n" + "\n".join(section_lines))
-        if len(sections) == 1:
-            sections.append("✉️ **안내사항**\n" + "\n".join(public_lines))
+        if len(sections) == 1 and allowed_chunks:
+            sections.append("✉️ **안내사항**\n" + "\n".join(f"- {chunk.content}" for chunk in allowed_chunks))
         return "\n\n".join(sections)
 
     @staticmethod

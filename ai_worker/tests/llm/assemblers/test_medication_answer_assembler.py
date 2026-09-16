@@ -1058,3 +1058,51 @@ def test_assemble_limits_public_chunks_to_requested_sections() -> None:
 
     assert "음주 중에는 복용하지 마십시오." in answer
     assert "발열과 통증 완화" not in answer
+
+
+def test_assemble_keeps_cautions_even_when_only_efficacy_is_requested() -> None:
+    """효능만 물었다는 이유로 금기를 지우면 주의사항이 없다는 뜻으로 읽힌다."""
+
+    def build_chunk(suffix: str, content: str, section_type: KnowledgeSectionType) -> RetrievedKnowledgeChunk:
+        return RetrievedKnowledgeChunk(
+            point_id=f"tylenol-{suffix}",
+            chunk_id=suffix * 64,
+            content=content,
+            embedding_text=content,
+            token_count=20,
+            similarity_score=0.8,
+            metadata=KnowledgeChunkMetadata(
+                source_id="drug-encyclopedia",
+                document_id=f"tylenol-{suffix}",
+                title="타이레놀",
+                provider="공공자료 제공기관",
+                access_scope=KnowledgeAccessScope.PUBLIC,
+                document_type=KnowledgeDocumentType.REGULATORY_DRUG_LABEL,
+                dataset_version="knowledge-full-v1",
+                ingredient_names=["아세트아미노펜"],
+                section_type=section_type,
+                page_start=1,
+                page_end=1,
+                chunk_index=0,
+                content_hash=suffix * 64,
+            ),
+        )
+
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=[],
+        chunks=[
+            build_chunk("e", "감기로 인한 발열과 통증 완화에 사용합니다.", KnowledgeSectionType.FUNCTION),
+            build_chunk("f", "중증 간장애 환자는 복용하지 마십시오.", KnowledgeSectionType.CAUTION),
+        ],
+        interaction_question=False,
+        response_subject="타이레놀",
+        evidence_coverage=MedicationEvidenceCoverage(
+            requested_section_types=[KnowledgeSectionType.FUNCTION],
+            covered_section_types=[KnowledgeSectionType.FUNCTION],
+        ),
+    )
+
+    assert "발열과 통증 완화" in answer
+    assert "중증 간장애 환자는 복용하지 마십시오." in answer

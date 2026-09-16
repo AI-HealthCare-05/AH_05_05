@@ -17,6 +17,7 @@ from ai_worker.schemas.chat_evaluation import (
 from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_chat import (
+    MedicationAnswerFallbackReason,
     MedicationAnswerRewriteStatus,
     MedicationChatRoute,
     MedicationChatSourceKind,
@@ -332,12 +333,15 @@ def test_manifest_allows_no_source_greeting_without_an_entity() -> None:
 
 
 async def test_draft_fallback_rate_counts_only_rejected_rewrites() -> None:
-    """SKIPPED는 명확화·환자정보 전용처럼 설계된 경로이므로 실패로 세지 않는다."""
+    """초안이 재작성 없이 나간 경우만 센다. 설계된 SKIPPED는 실패가 아니다."""
 
-    statuses = [
-        MedicationAnswerRewriteStatus.REWRITTEN,
-        MedicationAnswerRewriteStatus.DRAFT_FALLBACK,
-        MedicationAnswerRewriteStatus.SKIPPED,
+    outcomes = [
+        (MedicationAnswerRewriteStatus.REWRITTEN, None),
+        (MedicationAnswerRewriteStatus.DRAFT_FALLBACK, MedicationAnswerFallbackReason.UNSUPPORTED_EVIDENCE_SECTION),
+        (MedicationAnswerRewriteStatus.SKIPPED, MedicationAnswerFallbackReason.CLARIFICATION_REQUIRED),
+        (MedicationAnswerRewriteStatus.SKIPPED, MedicationAnswerFallbackReason.NO_GROUNDED_SOURCES),
+        # 결정론적으로 끝나 답변 생성까지 가지 않은 질문은 분모에서 빠진다.
+        (None, None),
     ]
     cases = [
         build_case(
@@ -346,7 +350,7 @@ async def test_draft_fallback_rate_counts_only_rejected_rewrites() -> None:
             entities=["칼슘"],
             sources=[MedicationChatSourceKind.PUBLIC_KNOWLEDGE],
         )
-        for index in range(len(statuses))
+        for index in range(len(outcomes))
     ]
     executor = SequenceExecutor(
         [
@@ -361,8 +365,9 @@ async def test_draft_fallback_rate_counts_only_rejected_rewrites() -> None:
                 langsmith_trace_id=f"trace-{index}",
                 answer="근거 기반 답변",
                 rewrite_status=status,
+                fallback_reason=reason,
             )
-            for index, status in enumerate(statuses)
+            for index, (status, reason) in enumerate(outcomes)
         ]
     )
 
@@ -370,4 +375,4 @@ async def test_draft_fallback_rate_counts_only_rejected_rewrites() -> None:
         ChatEvaluationManifest(dataset_version="chat-test-v1", cases=cases)
     )
 
-    assert report.draft_fallback_rate == pytest.approx(1 / 3)
+    assert report.draft_fallback_rate == pytest.approx(0.5)
