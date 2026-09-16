@@ -296,11 +296,27 @@ class QdrantKnowledgeStore:
             "metadata.special_populations",
             search_query.special_populations,
         )
-        QdrantKnowledgeStore._append_any_filter(
-            conditions,
-            "metadata.section_type",
-            [value.value for value in search_query.section_types],
-        )
+        section_values = [value.value for value in search_query.section_types]
+        if section_values and search_query.interaction_pair_keys:
+            # 요청한 pair를 명시한 청크는 섹션 제한을 면제한다. 영양제끼리의 상호작용
+            # 근거는 INTERACTION이 아니라 기능·주의사항·연구결과 섹션에 들어 있어서,
+            # 섹션만으로 거르면 pair가 일치하는 근거까지 함께 탈락한다.
+            conditions.append(
+                models.Filter(
+                    should=[
+                        models.FieldCondition(
+                            key="metadata.section_type",
+                            match=models.MatchAny(any=section_values),
+                        ),
+                        models.FieldCondition(
+                            key="metadata.interaction_pair_keys",
+                            match=models.MatchAny(any=search_query.interaction_pair_keys),
+                        ),
+                    ]
+                )
+            )
+        else:
+            QdrantKnowledgeStore._append_any_filter(conditions, "metadata.section_type", section_values)
         if search_query.interaction_type is not None:
             conditions.append(
                 models.FieldCondition(
