@@ -30,8 +30,6 @@ class MedicationAnswerAssembler:
     }
     # 숫자로 시작하는 괄호는 용량 표기이므로 남긴다. `(4,000mg)`을 지우면 답변에서 수치가 사라진다.
     _GUIDE_PARENTHETICAL_GLOSS = re.compile(r"\s*\((?!\d)[^()]*\)")
-    # 문장 종결(`~다.`, `~요.`, `~오.`) 뒤에서만 줄을 나눈다. 마침표는 문장에 남긴다.
-    _GUIDE_SENTENCE_BOUNDARY = re.compile(r"(?<=[다요오]\.)\s*")
     _GUIDE_RDB_SPACING = (
         ("감기로인한", "감기로 인한 "),
         ("발열및", "발열 및 "),
@@ -482,9 +480,7 @@ class MedicationAnswerAssembler:
             guide_sections.append(
                 # RDB 주의사항의 `|`는 독립 조항이 아니라 주어 목록 구분자이고 서술어가
                 # 맨 끝에 한 번만 온다. 조각으로 나누면 위험군에서 행동 지시가 떨어져 나간다.
-                # 반면 문장 단위는 서술어를 함께 유지하므로 필드당 한 줄로 뭉치지 않는다.
-                "⚠️ **주의사항**\n"
-                + "\n".join(line for value in caution_values for line in self._guide_sentence_lines(value))
+                "⚠️ **주의사항**\n" + "\n".join(self._guide_line("", value) for value in caution_values)
             )
         if evidence_coverage is None or not evidence_coverage.requested_section_types:
             self._append_allowed_guide_section(
@@ -632,18 +628,6 @@ class MedicationAnswerAssembler:
     def _guide_line(label: str, value: str) -> str:
         prefix = f"{label}: " if label else ""
         return f"- {prefix}{MedicationAnswerAssembler._clean_guide_value(value)}"
-
-    @classmethod
-    def _guide_sentence_lines(cls, value: str) -> list[str]:
-        """주의사항 한 필드를 문장 단위 bullet로 나눈다.
-
-        글자는 그대로 두고 줄만 나누므로 공식 경고문 대조에는 영향이 없다.
-        분량을 줄이는 재서술은 답변 생성 단계의 몫이며 여기서 잘라내지 않는다.
-        """
-
-        cleaned = cls._clean_guide_value(value)
-        sentences = [sentence.strip() for sentence in cls._GUIDE_SENTENCE_BOUNDARY.split(cleaned) if sentence.strip()]
-        return [f"- {sentence}" for sentence in sentences or [cleaned]]
 
     @classmethod
     def _clean_guide_value(cls, value: str) -> str:
