@@ -11,7 +11,8 @@ def test_interaction_gap_guidance_states_the_gap_and_one_official_path() -> None
     )
 
     assert answer == (
-        "✉️ **안내사항**\n\n- 아스피린 ↔ 오메가3 관련 자료를 찾지 못했습니다.\n\n"
+        "✉️ **안내사항**\n\n- 아스피린 ↔ 오메가3 관련 자료를 찾지 못했습니다.\n"
+        "- 확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다.\n\n"
         "📭 **공식 확인 경로**\n\n"
         "- 의약품은 의약품안전나라, 건강기능식품은 식품안전나라에서 확인할 수 있습니다."
     )
@@ -44,3 +45,11 @@ def test_medication_gap_guidance_points_to_the_drug_authority() -> None:
 
     assert "의약품안전나라" in answer
     assert "식품안전나라" not in answer
+
+
+def test_every_gap_guidance_states_that_unconfirmed_is_not_safe() -> None:
+    """근거를 찾지 못한 것을 안전하다는 뜻으로 읽히게 두지 않는다."""
+
+    for subject in EvidenceGapSubject:
+        answer = EvidenceGapGuidanceBuilder().build(subject=subject, entity_names=["오메가3"])
+        assert "안전하다는 뜻은 아닙니다" in answer, subject

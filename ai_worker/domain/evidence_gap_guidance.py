@@ -62,7 +62,8 @@ class EvidenceGapGuidanceBuilder:
         )
         return "\n\n".join(
             [
-                f"✉️ **안내사항**\n\n- {target} 관련 자료를 찾지 못했습니다.",
+                f"✉️ **안내사항**\n\n- {target} 관련 자료를 찾지 못했습니다.\n"
+                "- 확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다.",
                 f"📭 **공식 확인 경로**\n\n- {official_line}",
             ]
         )
