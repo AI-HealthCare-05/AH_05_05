@@ -15,15 +15,23 @@ import {
   TimePickerSheet,
 } from '@/shared/ui';
 import { cn } from '@/shared/lib/cn';
+import {
+  doseDateValidationMessage,
+  earliestDoseDateInKorea,
+  todayInKorea,
+} from '@/shared/lib/koreaDate';
 import { formatMedicationLabel } from '@/shared/lib/medicationLabel';
 import type { OcrRegistrationDraft } from '@/entities/document';
 import {
   getMedicationSchedule,
   saveMedicationSchedule,
+  saveDoseTaken,
   type MealSlot,
   type MealTimes,
   type MedicationSchedule,
   type MedicationStartPoint,
+  type SaveDoseTakenPayload,
+  type SaveMedicationSchedulePayload,
   type ScheduleMedication,
 } from '@/entities/medication';
 import {
@@ -77,6 +85,7 @@ interface MedicationSchedulePageProps {
   scheduleOverride?: MedicationSchedule;
   defaultRecordId?: number;
   scheduleSaver?: typeof saveMedicationSchedule;
+  doseRecordSaver?: typeof saveDoseTaken;
   notifySettingsLoader?: () => Promise<NotifySettings>;
   notifySettingsUpdater?: (payload: UpdateNotifySettingsPayload) => Promise<NotifySettings>;
   permissionReader?: () => PushPermission;
@@ -151,6 +160,14 @@ function formatStartPoint(date: string, slot: MealSlot): string {
   return `${Number(month)}월 ${Number(day)}일 ${label}`;
 }
 
+function sameScheduleContents(
+  left: SaveMedicationSchedulePayload,
+  right: SaveMedicationSchedulePayload,
+): boolean {
+  return JSON.stringify({ mealTimes: left.mealTimes, medications: left.medications }) ===
+    JSON.stringify({ mealTimes: right.mealTimes, medications: right.medications });
+}
+
 function parseRecordId(value: string | null): number | null {
   if (value === null) return null;
   const parsed = Number(value);
@@ -161,6 +178,7 @@ export function MedicationSchedulePage({
   scheduleOverride,
   defaultRecordId,
   scheduleSaver = saveMedicationSchedule,
+  doseRecordSaver = saveDoseTaken,
   notifySettingsLoader = getNotifySettings,
   notifySettingsUpdater = updateNotifySettings,
   permissionReader = getPushPermission,
@@ -208,7 +226,12 @@ export function MedicationSchedulePage({
       setSchedule(data);
       setMealTimes(data.mealTimes ?? DEFAULT_MEAL_TIMES);
       // 저장값 우선. 최초 등록이면 바로 전 화면에서 확인한 조제일을 채워 사용자가 고칩니다.
-      setStartDate(data.start?.date ?? draftStartDate ?? dispensedDate ?? todayISO());
+      setStartDate(
+        data.start?.date ??
+          draftStartDate ??
+          dispensedDate ??
+          (registrationFlow ? todayInKorea() : todayISO()),
+      );
       setStartDateEdited(data.start === null && draftStartDate !== undefined);
       setStartSlot(data.start?.slot ?? null);
 
@@ -549,6 +572,7 @@ export function MedicationSchedulePage({
         recordId={recordId}
         schedule={schedule}
         scheduleSaver={scheduleSaver}
+        doseRecordSaver={doseRecordSaver}
         notifySettingsLoader={notifySettingsLoader}
         notifySettingsUpdater={notifySettingsUpdater}
         permissionReader={permissionReader}
@@ -556,7 +580,7 @@ export function MedicationSchedulePage({
         pushRegistrar={pushRegistrar}
         initialSlots={slots}
         initialMealTimes={mealTimes}
-        initialStartDate={startDate || dispensedDate || todayISO()}
+        initialStartDate={startDate || dispensedDate || todayInKorea()}
         initialStartSlot={startSlot}
         alias={state.episodeAlias ?? ''}
         onBack={handleBack}
@@ -803,6 +827,7 @@ interface MedicationRegistrationWizardProps {
   recordId: number | null;
   schedule: MedicationSchedule;
   scheduleSaver: typeof saveMedicationSchedule;
+  doseRecordSaver: typeof saveDoseTaken;
   notifySettingsLoader: () => Promise<NotifySettings>;
   notifySettingsUpdater: (payload: UpdateNotifySettingsPayload) => Promise<NotifySettings>;
   permissionReader: () => PushPermission;
@@ -824,6 +849,7 @@ function MedicationRegistrationWizard({
   recordId,
   schedule,
   scheduleSaver,
+  doseRecordSaver,
   notifySettingsLoader,
   notifySettingsUpdater,
   permissionReader,
@@ -857,6 +883,11 @@ function MedicationRegistrationWizard({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [completed, setCompleted] = useState(false);
+  const savedScheduleKeyRef = useRef<string | null>(null);
+  const savedSchedulePayloadRef = useRef<SaveMedicationSchedulePayload | null>(null);
+  const notTakenScheduleHandledRef = useRef(false);
+  /** 마지막으로 성공 저장한 실제 첫 복용 기록. 최종 선택이 바뀌면 같은 기록을 보정합니다. */
+  const savedDoseRef = useRef<Pick<SaveDoseTakenPayload, 'date' | 'slot' | 'recordId'> | null>(null);
 
   const scheduledMeds = schedule.medications.filter((medication) => medication.timesPerDay !== null);
   const usedSlots = new Set<MealSlot>(scheduledMeds.flatMap((medication) => slots[medication.medicationId] ?? []));
@@ -867,6 +898,8 @@ function MedicationRegistrationWizard({
     (medication) => (slots[medication.medicationId] ?? []).length ===
       Math.min(medication.timesPerDay!, SLOT_ORDER.length),
   );
+  const firstDoseDateError =
+    startSlot && startSlot !== 'not_taken' ? doseDateValidationMessage(startDate) : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -1041,6 +1074,10 @@ function MedicationRegistrationWizard({
       startSlot === 'not_taken'
         ? SLOT_ORDER.find((slot) => usedSlots.has(slot)) ?? 'morning'
         : startSlot;
+    if (startSlot !== 'not_taken' && firstDoseDateError) {
+      setSaveError(firstDoseDateError);
+      return;
+    }
     if (
       recordId === null ||
       !scheduleStartSlot ||
@@ -1054,15 +1091,51 @@ function MedicationRegistrationWizard({
     setSaving(true);
     setSaveError(null);
     const selectedNotifyMedication = notifyMedication;
+    const schedulePayload = {
+      start: { date: startDate, slot: scheduleStartSlot },
+      mealTimes,
+      medications: scheduledMeds.map((medication) => ({
+        medicationId: medication.medicationId,
+        slots: slots[medication.medicationId] ?? [],
+      })),
+    };
+    const scheduleKey = JSON.stringify({ recordId, payload: schedulePayload });
+    const canSkipScheduleForNotTaken =
+      startSlot === 'not_taken' &&
+      savedSchedulePayloadRef.current !== null &&
+      sameScheduleContents(savedSchedulePayloadRef.current, schedulePayload) &&
+      (savedDoseRef.current !== null || notTakenScheduleHandledRef.current);
+    const dosePayload: SaveDoseTakenPayload | null = startSlot && startSlot !== 'not_taken'
+      ? { date: startDate, slot: startSlot, taken: true, recordId }
+      : null;
     try {
-      await scheduleSaver(recordId, {
-        start: { date: startDate, slot: scheduleStartSlot },
-        mealTimes,
-        medications: scheduledMeds.map((medication) => ({
-          medicationId: medication.medicationId,
-          slots: slots[medication.medicationId] ?? [],
-        })),
-      });
+      if (savedScheduleKeyRef.current !== scheduleKey && !canSkipScheduleForNotTaken) {
+        await scheduleSaver(recordId, schedulePayload);
+        savedScheduleKeyRef.current = scheduleKey;
+        savedSchedulePayloadRef.current = schedulePayload;
+        notTakenScheduleHandledRef.current = startSlot === 'not_taken';
+      } else if (canSkipScheduleForNotTaken) {
+        notTakenScheduleHandledRef.current = true;
+      }
+      if (
+        savedDoseRef.current &&
+        (!dosePayload ||
+          savedDoseRef.current.date !== dosePayload.date ||
+          savedDoseRef.current.slot !== dosePayload.slot ||
+          savedDoseRef.current.recordId !== dosePayload.recordId)
+      ) {
+        const previousDose = savedDoseRef.current;
+        await doseRecordSaver({ ...previousDose, taken: false });
+        savedDoseRef.current = null;
+      }
+      if (dosePayload && !savedDoseRef.current) {
+        await doseRecordSaver(dosePayload);
+        savedDoseRef.current = {
+          date: dosePayload.date,
+          slot: dosePayload.slot,
+          recordId: dosePayload.recordId,
+        };
+      }
       if (selectedNotifyMedication) {
         const permission = permissionReader();
         if (permission !== 'granted') {
@@ -1169,7 +1242,7 @@ function MedicationRegistrationWizard({
               aria-label="복용 시작 날짜"
               type="date"
               value={startDate}
-              max={todayISO()}
+              max={todayInKorea()}
               onChange={(event) => setStartDate(event.target.value)}
             />
             <div className="flex flex-col gap-3">
@@ -1239,7 +1312,7 @@ function MedicationRegistrationWizard({
                 aria-pressed={startSlot === 'not_taken'}
                 onClick={() => {
                   setStartSlot('not_taken');
-                  setStartDate(todayISO());
+                  setStartDate(todayInKorea());
                 }}
                 className={cn(
                   'min-h-touch rounded-input border px-4 py-3 text-left',
@@ -1258,9 +1331,15 @@ function MedicationRegistrationWizard({
                 aria-label="복용 시작 날짜"
                 type="date"
                 value={startDate}
-                max={todayISO()}
+                min={earliestDoseDateInKorea()}
+                max={todayInKorea()}
                 onChange={(event) => setStartDate(event.target.value)}
               />
+              {firstDoseDateError ? (
+                <p role="alert" className="text-sm text-danger-strong">
+                  {firstDoseDateError}
+                </p>
+              ) : null}
               <div className="flex flex-col gap-2">
                 <p className="text-sm font-bold text-foreground">첫 복용 시간</p>
                 <div className="flex flex-wrap gap-2">
@@ -1292,7 +1371,13 @@ function MedicationRegistrationWizard({
                 : '첫 복용 시간을 고르면 여기에 보여드려요.'}
             </Card>
             <div className="mt-auto pb-4">
-              <Button disabled={!startSlot || (startSlot !== 'not_taken' && !startDate)} onClick={() => setStep(5)}>
+              <Button
+                disabled={
+                  !startSlot ||
+                  (startSlot !== 'not_taken' && (!startDate || firstDoseDateError !== null))
+                }
+                onClick={() => setStep(5)}
+              >
                 확인
               </Button>
             </div>
@@ -1361,7 +1446,19 @@ function MedicationRegistrationWizard({
             <Card tone="info" className="p-4">
               저장하면 복약 일정과 알람 설정이 함께 끝나요.
             </Card>
-            {saveError && <p role="alert" className="text-sm text-danger-strong">{saveError}</p>}
+            {saveError && (
+              <div role="alert" className="flex flex-col gap-2 text-sm text-danger-strong">
+                <p>{saveError}</p>
+                <Button
+                  variant="secondary"
+                  size="compact"
+                  disabled={saving}
+                  onClick={() => void completeRegistration()}
+                >
+                  다시 시도
+                </Button>
+              </div>
+            )}
             <div className="mt-auto pb-4">
               <Button
                 disabled={saving || permissionBusy}

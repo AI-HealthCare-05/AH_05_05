@@ -14,12 +14,12 @@ def get_supplement_rank_display_service() -> SupplementRankDisplayService:
 
 @display_router.get(
     "/med/nutr/rank",
-    response_model=SupplementRankDisplayResponse,
+    response_model=SupplementRankDisplayResponse | None,
     status_code=status.HTTP_200_OK,
     summary="현재 영양제 랭킹 전시 조회",
 )
 async def get_current_supplement_rank_display(
     service: Annotated[SupplementRankDisplayService, Depends(get_supplement_rank_display_service)],
-) -> SupplementRankDisplayResponse:
+) -> SupplementRankDisplayResponse | None:
     """현재 전시기간에 포함되고 활성화된 영양제 랭킹 한 건을 순위와 함께 조회한다."""
-    return await service.current()
+    return await service.public_current()

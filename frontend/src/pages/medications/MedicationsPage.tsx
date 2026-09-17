@@ -7,6 +7,7 @@ import {
   cancelMedication,
   getMedicationSchedule,
   getMedicationOverviews,
+  hasMedicationPrescriptions,
   saveMedicationSchedule,
   type MealSlot,
   type MedicationOverview,
@@ -44,6 +45,7 @@ import { medicationPeriodLabel, medicationRangeFromSearchParams } from './medica
 
 interface MedicationsPageProps {
   overviewsLoader?: (range?: MedicationOverviewRange) => Promise<MedicationOverview[]>;
+  prescriptionExistsLoader?: () => Promise<boolean>;
   medicationCanceller?: (recordId: number) => Promise<void>;
   /** 본 경로의 회차 단위 편집/읽기 전용 화면을 켭니다. */
   feature252?: boolean;
@@ -82,6 +84,7 @@ function hasValidEpisodeSchedule(
 
 export function MedicationsPage({
   overviewsLoader = getMedicationOverviews,
+  prescriptionExistsLoader = hasMedicationPrescriptions,
   medicationCanceller = cancelMedication,
   feature252 = false,
 }: MedicationsPageProps) {
@@ -93,7 +96,8 @@ export function MedicationsPage({
   const overviewRequestRef = useRef<{
     key: string;
     loader: typeof overviewsLoader;
-    promise: Promise<MedicationOverview[]>;
+    existsLoader: typeof prescriptionExistsLoader;
+    promise: Promise<{ items: MedicationOverview[]; hasPrescriptions: boolean }>;
   } | null>(null);
   const episodeRequestIdRef = useRef(0);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -103,6 +107,7 @@ export function MedicationsPage({
     [queryKey],
   );
   const [overviews, setOverviews] = useState<MedicationOverview[] | null>(null);
+  const [hasPrescriptions, setHasPrescriptions] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [expandedRecordIds, setExpandedRecordIds] = useState<Set<number>>(new Set());
@@ -129,12 +134,20 @@ export function MedicationsPage({
     const requestKey = `${principalKey ?? 'anonymous'}:${queryKey}:${reloadKey}`;
     if (
       overviewRequestRef.current?.key !== requestKey ||
-      overviewRequestRef.current.loader !== overviewsLoader
+      overviewRequestRef.current.loader !== overviewsLoader ||
+      overviewRequestRef.current.existsLoader !== prescriptionExistsLoader
     ) {
       overviewRequestRef.current = {
         key: requestKey,
         loader: overviewsLoader,
-        promise: overviewsLoader(range),
+        existsLoader: prescriptionExistsLoader,
+        promise: overviewsLoader(range).then(async (data) => {
+          const items = data.filter((overview) => overview.medications.length > 0);
+          return {
+            items,
+            hasPrescriptions: items.length > 0 || await prescriptionExistsLoader(),
+          };
+        }),
       };
     }
     setExpandedRecordIds(new Set());
@@ -146,7 +159,8 @@ export function MedicationsPage({
     overviewRequestRef.current.promise
       .then((data) => {
         if (cancelled) return;
-        const next = data.filter((overview) => overview.medications.length > 0);
+        const next = data.items;
+        setHasPrescriptions(data.hasPrescriptions);
         const nextIds = new Set(next.map((overview) => overview.recordId));
         setOverviews(next);
         setExpandedRecordIds((current) => new Set([...current].filter((id) => nextIds.has(id))));
@@ -160,7 +174,7 @@ export function MedicationsPage({
     return () => {
       cancelled = true;
     };
-  }, [overviewsLoader, principalKey, queryKey, range, reloadKey]);
+  }, [overviewsLoader, prescriptionExistsLoader, principalKey, queryKey, range, reloadKey]);
 
   function toggleExpanded(recordId: number) {
     setExpandedRecordIds((current) => {
@@ -358,6 +372,11 @@ export function MedicationsPage({
       const succeededIds = new Set(succeeded);
       setOverviews((current) => current?.filter((item) => !succeededIds.has(item.recordId)) ?? null);
       setExpandedRecordIds((current) => new Set([...current].filter((id) => !succeededIds.has(id))));
+      if (overviews?.every((item) => succeededIds.has(item.recordId))) {
+        // The last visible prescription may not be the last one across all periods.
+        setOverviews(null);
+        setReloadKey((value) => value + 1);
+      }
     }
 
     if (failed.length === 0) {
@@ -427,7 +446,23 @@ export function MedicationsPage({
     );
   }
 
-  const hasLoadedFeatureEpisodes = feature252 && !loadError && overviews && overviews.length > 0;
+  function renderEmptyState() {
+    return (
+      <section aria-label="복용약 등록 안내" className="flex flex-col items-center gap-3 rounded-card border border-border bg-card px-4 py-8 text-center shadow-card">
+        <h3 className="text-lg font-bold text-foreground">
+          {hasPrescriptions ? '현재 먹고 있는 약이 없어요' : '복용약을 등록하고 관리하기'}
+        </h3>
+        <p className="break-keep text-sm text-muted-foreground">
+          {hasPrescriptions
+            ? '복용약을 등록하고 복용 일정과 기록을 관리해보세요.'
+            : '복용약을 등록하면 복용 일정과 기록을 한눈에 볼 수 있어요.'}
+        </p>
+        <Button className="mt-1 max-w-[150px]" onClick={() => navigate('/document-upload')}>
+          복용약 등록하기
+        </Button>
+      </section>
+    );
+  }
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
@@ -467,7 +502,7 @@ export function MedicationsPage({
           )}
         </div>
 
-        {!hasLoadedFeatureEpisodes &&
+        {!feature252 && !loadError && overviews !== null && overviews.length > 0 &&
           renderListActions('flex flex-wrap items-center justify-between gap-2')}
 
         {loadError ? (
@@ -484,17 +519,10 @@ export function MedicationsPage({
             처방 기록을 불러오고 있어요.
           </LoadingState>
         ) : overviews.length === 0 ? (
-          <Card title="이 기간에 등록한 처방이 없어요" className="p-5 motion-safe:animate-[rx-overlay-in_200ms_ease-out]">
-            <div className="flex flex-col gap-4">
-              <p>다른 기간을 선택해 처방 기록을 확인해보세요.</p>
-              <Button variant="secondary" onClick={() => setFilterOpen(true)}>
-                기간 재설정하기
-              </Button>
-            </div>
-          </Card>
+          renderEmptyState()
         ) : feature252 ? (
           <>
-            <section className="flex flex-col gap-3 motion-safe:animate-[rx-overlay-in_200ms_ease-out]" aria-labelledby="active-episode-list-title">
+            {activeOverviews.length === 0 ? renderEmptyState() : <section className="flex flex-col gap-3 motion-safe:animate-[rx-overlay-in_200ms_ease-out]" aria-labelledby="active-episode-list-title">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex shrink-0 items-baseline gap-2">
                   <h2 id="active-episode-list-title" className="text-xl font-bold text-foreground">
@@ -505,7 +533,7 @@ export function MedicationsPage({
                 {renderListActions('flex shrink-0 items-center gap-2')}
               </div>
               {activeOverviews.map(renderEpisodeCard)}
-            </section>
+            </section>}
             {finishedOverviews.length > 0 && (
               <section className="flex flex-col gap-3 motion-safe:animate-[rx-overlay-in_200ms_ease-out]" aria-labelledby="finished-episode-list-title">
                 <div className="flex items-baseline justify-between gap-3">

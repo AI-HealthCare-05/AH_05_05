@@ -2,8 +2,9 @@
   container: nutrient-totals / inline-size;
 }
 
-/* Report cards can be narrower than the viewport; keep full status copy readable. */
-@container nutrient-totals (max-width: 320px) {
+/* Centering long status copy on the 88% upper-limit mark clips it on mobile.
+   Stack it in narrow cards (including reports), keeping desktop alignment. */
+@container nutrient-totals (max-width: 768px) {
   .nutrient-total-summary {
     max-width: 100%;
   }

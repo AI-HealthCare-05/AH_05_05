@@ -52,6 +52,11 @@ export async function getMedicationOverviews(
   }
 }
 
+export async function hasMedicationPrescriptions(): Promise<boolean> {
+  if (USE_MOCK) return mockMedicationOverviews().some((overview) => overview.medications.length > 0);
+  return http.get<boolean>('/v1/medications/exists');
+}
+
 export function prepareMedicationStateForNewAccount(): void {
   if (USE_MOCK) resetMockMedicationForNewAccount();
 }
