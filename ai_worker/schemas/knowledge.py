@@ -342,6 +342,8 @@ class KnowledgeSearchQuery(BaseModel):
     special_populations: list[str] = Field(default_factory=list)
     section_types: list[KnowledgeSectionType] = Field(default_factory=list)
     limit: int = Field(default=5, ge=1, le=50)
+    offset: int = Field(default=0, ge=0)
+    exhaustive: bool = False
 
     @field_validator(
         "query",

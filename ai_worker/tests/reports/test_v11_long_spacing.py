@@ -63,6 +63,14 @@ def test_numeric_word_boundaries_do_not_split_doses_units_or_entities() -> None:
         assert not re.fullmatch(pattern, f"성인및12세이상은1일1회{unsafe}을복용합니다.&gamma;")
 
 
+def test_spacing_pattern_does_not_split_known_compound_medical_terms() -> None:
+    source = "이약에과민증환자는복용하지마십시오."
+    pattern = source_spacing_pattern(source)
+
+    assert re.fullmatch(pattern, "이 약에 과민증 환자는 복용하지 마십시오.")
+    assert not re.fullmatch(pattern, "이 약에 과 민증 환자는 복용하지 마십시오.")
+
+
 def _long_source() -> str:
     return (
         "이약은복용하지마십시오.성인은120mg을복용하고&gamma;값을확인합니다." * 120

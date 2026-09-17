@@ -15,6 +15,11 @@ _ALLOWED_PROMPT_ASSETS = frozenset(
         "intake_report_prompt_v11.md",
         "intake_report_plain_language.md",
         "intake_report_plain_language_review.md",
+        "intake_report_planner.md",
+        "intake_report_claims.md",
+        "intake_report_verifier.md",
+        "intake_report_spacing.md",
+        "intake_report_spacing_retry.md",
     }
 )
 

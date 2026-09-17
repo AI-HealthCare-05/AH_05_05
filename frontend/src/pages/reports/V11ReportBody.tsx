@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState, type ReactElement } from 'react';
-import type { IntakeReport, NutrientTotal } from '@/entities/intake-report/types';
+import type { CardSource, IntakeReport, LifestyleCard, NutrientTotal } from '@/entities/intake-report/types';
 import { NutrientTotals, type NutrientTotalDisplay } from '@/entities/supplement/ui/NutrientTotals';
 import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { safeLink } from './reportViewPrimitives';
@@ -20,7 +20,27 @@ function decodeEntitiesOnce(text: string): string {
 const evidenceLabels: Record<string, string> = {
   APPROVED_RULE: '승인된 규칙', PUBLIC_GUIDE: '공개 안내', RESEARCH: '연구 근거',
   REGISTERED_INTAKE: '등록한 복용 정보', UNVERIFIED: '확인되지 않은 정보',
+  REGULATORY: '규제기관 자료', SYSTEMATIC_REVIEW: '체계적 문헌고찰', REVIEW_ARTICLE: '종설',
+  CLINICAL_STUDY: '임상 연구', OBSERVATIONAL_STUDY: '관찰 연구', CASE_REPORT: '사례 보고',
+  PRECLINICAL: '전임상 연구', UNKNOWN: '근거 수준 미확인',
 };
+
+
+function RagEvidence({ sourceIds, sources }: { sourceIds: string[]; sources: CardSource[] }) {
+  const evidence = sources.filter(source => sourceIds.includes(source.id) && source.quote && source.chunkId);
+  if (!evidence.length) return null;
+  return <details className="v11-rag-evidence">
+    <summary>근거 확인</summary>
+    {evidence.map(source => {
+      const href = safeLink(source.url);
+      return <div key={source.id}>
+        {href ? <a href={href} target="_blank" rel="noopener noreferrer">{source.title}</a> : <span>{source.title}</span>}
+        {source.organization ? <span> · {source.organization}</span> : null}
+        <blockquote>{source.quote}</blockquote>
+      </div>;
+    })}
+  </details>;
+}
 
 function CollapsibleText({ text, forceOpen = false }: { text: string; forceOpen?: boolean }) {
   const decoded = decodeEntitiesOnce(text);
@@ -85,6 +105,28 @@ function ActionGroupedCards<T extends { action?: string | null }>({ cards, conte
     : renderCard(group.members[0].card, true, group.members[0].index))}</>;
 }
 
+const ingredientDisclaimer = '정확한 제품은 미확정이며, 확인된 성분 공통 안내입니다.';
+
+function ProductGuidance({ label, cards, sources }: { label: string; cards: LifestyleCard[]; sources: CardSource[] }) {
+  const summaries = cards.map(card => decodeEntitiesOnce(card.summary).trim());
+  const hasDisclaimer = summaries.some(summary => summary.startsWith(ingredientDisclaimer));
+  const descriptions = summaries.map(summary => summary.startsWith(ingredientDisclaimer)
+    ? summary.slice(ingredientDisclaimer.length).trim() : summary).filter(Boolean);
+  const actions = [...new Set(cards.map(card => decodeEntitiesOnce(card.action ?? '').replace(/\s+/g, ' ').trim()).filter(Boolean))];
+  const categories = [...new Set(cards.map(card => card.category).filter(Boolean))];
+  return <article className="v11-guidance-product" aria-label={decodeEntitiesOnce(label)}>
+    <h3 className="v11-guidance-product-title">{decodeEntitiesOnce(label)}</h3>
+    <div className="v11-guidance-categories">{categories.map(category => <span className="v11-tag" key={category}>{decodeEntitiesOnce(category)}</span>)}</div>
+    <div className="v11-guidance-titles">{cards.map(card => <h4 key={card.id}>{decodeEntitiesOnce(card.title)}</h4>)}</div>
+    <div className="v11-guidance-description">
+      {hasDisclaimer ? <p>{ingredientDisclaimer}</p> : null}
+      {descriptions.map((description, index) => <p key={index}>{description}</p>)}
+    </div>
+    {actions.length > 0 ? <div className="v11-action">{actions.map(action => <p key={action}>{action}</p>)}</div> : null}
+    <RagEvidence sourceIds={[...new Set(cards.flatMap(card => card.sourceIds))]} sources={sources} />
+  </article>;
+}
+
 function nutrientNumber(value: string | null | undefined): number | null {
   if (value == null || value.trim() === '') return null;
   const number = Number(value);
@@ -138,6 +180,22 @@ export function V11ReportBody({ report }: { report: IntakeReport }) {
   const nutrientTotals = report.nutrientTotals.filter(item => (nutrientNumber(item.amount) ?? 0) > 0);
   const sortedInteractions = cards.interactions.slice().sort((a, b) => Number(b.actionLevel === 'WARNING') - Number(a.actionLevel === 'WARNING'));
   const actualCounts = `등록한 복용약 ${report.dataAvailability.activeMedicationCount}종 · 영양제 ${report.dataAvailability.activeSupplementCount}종`;
+  const guidanceGroups = new Map<string, { label: string; cards: typeof cards.lifestyle }>();
+  for (const card of cards.lifestyle) {
+    const ids = [...new Set(card.relatedItemIds)].sort((a, b) => a - b);
+    const matchingTypes = new Set(report.currentStack.filter(item => ids.includes(item.itemId)).map(item => item.itemType));
+    const explicitType = /^(?:food-drink|driving):\d+$/.test(card.id) ? 'MEDICATION'
+      : card.id.startsWith('timing:') ? 'SUPPLEMENT'
+      : ids.length === 1 ? /^rag:[^:]+:(medication|supplement):/i.exec(card.id)?.[1]?.toUpperCase() : undefined;
+    const type = explicitType ?? (ids.length === 1 && matchingTypes.size === 1 ? [...matchingTypes][0] : undefined);
+    const key = JSON.stringify([type ?? '', ids]);
+    const items = report.currentStack.filter(item => ids.includes(item.itemId) && (!type || item.itemType === type));
+    const ambiguous = !type && ids.some(id => report.currentStack.filter(item => item.itemId === id).length !== 1);
+    const label = ambiguous ? '공통 안내' : [...new Set(items.map(item => item.productName))].join(' · ') || '공통 안내';
+    const group = guidanceGroups.get(key);
+    if (group) group.cards.push(card);
+    else guidanceGroups.set(key, { label, cards: [card] });
+  }
 
   return <div className="v11-report">
     <section className="v11-hero" aria-label="리포트 개요">
@@ -188,10 +246,8 @@ export function V11ReportBody({ report }: { report: IntakeReport }) {
     </section> : null}
 
     {cards.lifestyle.length > 0 ? <section id="v11-lifestyle" className="v11-card" aria-labelledby="v11-lifestyle-title">
-      <h2 id="v11-lifestyle-title">생활습관 가이드</h2>
-      <ActionGroupedCards cards={cards.lifestyle} contextKey={card => card.category ?? ''} renderCard={(card, showAction) => <article className="v11-pair" key={card.id}>
-        {card.category ? <span className="v11-tag">{card.category}</span> : null}<h3>{decodeEntitiesOnce(card.title)}</h3><CollapsibleText text={card.summary} />{showAction && card.action ? <p className="v11-action">{decodeEntitiesOnce(card.action)}</p> : null}
-      </article>} />
+      <h2 id="v11-lifestyle-title">약·영양제별 주의사항 및 가이드</h2>
+      {[...guidanceGroups].map(([key, group]) => <ProductGuidance key={key} label={group.label} cards={group.cards} sources={cards.sources} />)}
     </section> : null}
 
     {nutrientTotals.length > 0 ? <section id="v11-nutrients" className="v11-card" aria-labelledby="v11-nutrients-title">

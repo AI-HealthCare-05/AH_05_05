@@ -23,6 +23,9 @@ RUN uv sync --group app --no-dev --frozen
 COPY ./app ./app
 COPY ./ai_worker ./ai_worker
 COPY ./data/reference_seed ./data/reference_seed
+# Report RAG checks provenance against manifests; raw PDFs are not shipped.
+COPY ./data/knowledge/manifests/sources.yaml ./data/knowledge/manifests/sources.yaml
+COPY ./data/knowledge/manifests/documents.jsonl ./data/knowledge/manifests/documents.jsonl
 
 RUN mkdir -p /run/ocr-images /run/ocr-runtime
 

@@ -106,7 +106,7 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
             candidates.extend(lookup.candidate_names)
             if lookup.guide is not None:
                 candidates.append(lookup.guide.product_name)
-        candidates = list(dict.fromkeys(candidates))
+        candidates = self._safe_candidate_names(query, candidates, entries)
         return MedicationGuideLookup(
             is_ambiguous=bool(candidates),
             candidate_names=candidates,
@@ -293,6 +293,62 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
             and re.findall(r"\d+(?:\.\d+)?", cls._unit_spelling_key(original_key))
             == re.findall(r"\d+(?:\.\d+)?", cls._unit_spelling_key(corrected_key))
         )
+
+    @classmethod
+    def _safe_candidate_names(
+        cls,
+        query: str,
+        candidates: list[str],
+        entries: list[MedicationCatalogEntry],
+    ) -> list[str]:
+        """제품 구조가 충분한 입력에서는 후보에도 같은 안전 경계를 적용한다."""
+
+        unique_candidates = list(dict.fromkeys(name for name in candidates if name.strip()))
+        query_parts = cls._product_parts(query, allow_unknown_form=True)
+        if query_parts is None or not cls._has_explicit_product_structure(query_parts[1]):
+            return unique_candidates
+
+        query_brand = cls._normalize_ingredient_name(query_parts[0])
+        known_ingredients = {
+            ingredient for entry in entries for ingredient in cls._ingredient_names(entry.canonical_name)
+        }
+        query_is_known_ingredient = any(
+            cls._ingredient_matches(query_brand, ingredient) for ingredient in known_ingredients
+        )
+        return [
+            candidate
+            for candidate in unique_candidates
+            if cls._safe_product_correction(query, candidate)
+            and (
+                not query_is_known_ingredient
+                or any(
+                    cls._ingredient_matches(query_brand, ingredient) for ingredient in cls._ingredient_names(candidate)
+                )
+            )
+        ]
+
+    @classmethod
+    def _has_explicit_product_structure(cls, suffix: str) -> bool:
+        return bool(cls._STRENGTH.search(suffix) or len(re.findall(r"\d+(?:\.\d+)?", suffix)) > 1)
+
+    @classmethod
+    def _ingredient_names(cls, product_name: str) -> tuple[str, ...]:
+        _, annotations = cls._split_annotations(product_name)
+        return tuple(
+            normalized
+            for annotation in annotations
+            if not any(delimiter in annotation for delimiter in (":", "|", "/"))
+            for normalized in [cls._normalize_ingredient_name(annotation)]
+            if len(normalized) >= 3
+        )
+
+    @classmethod
+    def _normalize_ingredient_name(cls, value: str) -> str:
+        return re.sub(r"[^가-힣a-z0-9]", "", cls._normalize_name(value))
+
+    @staticmethod
+    def _ingredient_matches(query_brand: str, ingredient: str) -> bool:
+        return len(query_brand) >= 3 and ingredient.startswith(query_brand)
 
     @classmethod
     def _product_parts(cls, name: str, *, allow_unknown_form: bool = False) -> tuple[str, str, tuple[str, ...]] | None:

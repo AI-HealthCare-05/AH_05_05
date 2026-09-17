@@ -199,6 +199,22 @@ def test_search_query_rejects_invalid_interaction_pair_key() -> None:
         )
 
 
+def test_search_query_has_validated_pagination_offset() -> None:
+    query = KnowledgeSearchQuery(
+        query="마그네슘 기능",
+        dataset_version="knowledge-v1",
+    )
+
+    assert query.offset == 0
+    assert query.exhaustive is False
+    with pytest.raises(ValidationError, match="offset"):
+        KnowledgeSearchQuery(
+            query="마그네슘 기능",
+            dataset_version="knowledge-v1",
+            offset=-1,
+        )
+
+
 def test_source_manifest_rejects_duplicate_source_ids() -> None:
     source = {
         "source_id": "duplicate_source",

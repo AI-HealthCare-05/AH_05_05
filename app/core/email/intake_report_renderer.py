@@ -11,6 +11,8 @@ from urllib.parse import urlsplit
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from ai_worker.reports.guidance_groups import group_lifestyle_guidance_cards, product_guidance_display
+
 if TYPE_CHECKING:
     from app.dtos.intake_reports import IntakeReportResponse
 
@@ -25,6 +27,14 @@ _EVIDENCE_LABELS = {
     "RESEARCH": "연구 근거",
     "REGISTERED_INTAKE": "등록한 복용 정보",
     "UNVERIFIED": "확인되지 않은 정보",
+    "REGULATORY": "규제기관 자료",
+    "SYSTEMATIC_REVIEW": "체계적 문헌고찰",
+    "REVIEW_ARTICLE": "종설",
+    "CLINICAL_STUDY": "임상 연구",
+    "OBSERVATIONAL_STUDY": "관찰 연구",
+    "CASE_REPORT": "사례 보고",
+    "PRECLINICAL": "전임상 연구",
+    "UNKNOWN": "근거 수준 미확인",
 }
 
 
@@ -175,7 +185,7 @@ class _EmailText(HTMLParser):
             self.ignored += 1
         if self.ignored:
             return
-        if tag in {"h1", "h2", "h3", "p", "tr", "li", "br"}:
+        if tag in {"h1", "h2", "h3", "h4", "p", "tr", "li", "br"}:
             self.parts.append("\n")
         if tag == "a":
             self.link = dict(attrs).get("href")
@@ -188,7 +198,7 @@ class _EmailText(HTMLParser):
         if tag == "a" and self.link:
             self.parts.append(f" ({self.link})")
             self.link = None
-        if tag in {"h1", "h2", "h3", "p", "tr", "li", "td", "div"}:
+        if tag in {"h1", "h2", "h3", "h4", "p", "tr", "li", "td", "div"}:
             self.parts.append("\n")
 
     def handle_data(self, data: str) -> None:
@@ -231,6 +241,27 @@ def render_intake_report_email(report: "IntakeReportResponse", *, standalone: bo
                 item["nutrient_name"] if item["sort_key"][0] == 4 else "",
             )
         )
+    sources_by_id = {source["id"]: source for source in cards["sources"]}
+    lifestyle = []
+    for group in group_lifestyle_guidance_cards(cards["lifestyle"], stack):
+        display = product_guidance_display(group)
+        lifestyle.append(
+            {
+                "title": display.title,
+                "categories": display.categories,
+                "warning_titles": display.warning_titles,
+                "common_ingredient_disclaimer": display.common_ingredient_disclaimer,
+                "summaries": display.summaries,
+                "actions": display.actions,
+                "rag_sources": [
+                    sources_by_id[source_id]
+                    for source_id in display.source_ids
+                    if source_id in sources_by_id
+                    and sources_by_id[source_id].get("quote")
+                    and sources_by_id[source_id].get("chunk_id")
+                ],
+            }
+        )
     markup = _TEMPLATES.get_template("emails/intake_report_cards.html").render(
         report=data,
         standalone=standalone,
@@ -243,7 +274,7 @@ def render_intake_report_email(report: "IntakeReportResponse", *, standalone: bo
             ("evidence_level", "action_level"),
         ),
         overlaps=_groups(cards["overlaps"], ()),
-        lifestyle=_groups(cards["lifestyle"], ("category",)),
+        lifestyle=lifestyle,
     )
     return markup, intake_report_plain_text(markup)
 

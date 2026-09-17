@@ -70,6 +70,8 @@ SectionCoverageEvaluator = Callable[[list[RetrievedKnowledgeChunk], MedicationKn
 class MedicationKnowledgeCandidateRetriever:
     """질의 임베딩과 단계별 Qdrant 후보 조회만 담당합니다."""
 
+    _EXHAUSTIVE_PAGE_SIZE = 50
+
     def __init__(
         self,
         *,
@@ -91,7 +93,11 @@ class MedicationKnowledgeCandidateRetriever:
         execution_plan: MedicationSearchExecutionPlan,
     ) -> MedicationKnowledgeCandidateSearchResult:
         plan = execution_plan.query_plan
-        candidate_limit = min(50, max(20, execution_plan.limit * 4))
+        candidate_limit = (
+            self._EXHAUSTIVE_PAGE_SIZE
+            if execution_plan.include_all_eligible
+            else min(50, max(20, execution_plan.limit * 4))
+        )
         queries = list(dict.fromkeys([plan.expanded_query, *plan.alternate_queries]))
         if self._is_interaction_overview(execution_plan):
             subject = plan.entity_names[0]
@@ -148,6 +154,7 @@ class MedicationKnowledgeCandidateRetriever:
                             query_vector=query_vector,
                             tier=tier,
                             candidate_limit=candidate_limit,
+                            exhaustive=execution_plan.include_all_eligible,
                         )
                         for index, (query, query_vector) in enumerate(
                             zip(
@@ -287,18 +294,37 @@ class MedicationKnowledgeCandidateRetriever:
         query_vector: list[float],
         tier: MedicationKnowledgeSearchTier,
         candidate_limit: int,
+        exhaustive: bool,
     ) -> list[RetrievedKnowledgeChunk]:
-        return await self._vector_store.search(
-            query_vector=query_vector,
-            search_query=KnowledgeSearchQuery(
-                query=query,
-                dataset_version=self._dataset_version,
-                drug_names=list(tier.medication_names),
-                ingredient_names=list(tier.supplement_names),
-                interaction_pair_keys=list(tier.interaction_pair_keys),
-                limit=candidate_limit,
-            ),
-        )
+        results: list[RetrievedKnowledgeChunk] = []
+        seen_chunk_ids: set[str] = set()
+        offset = 0
+        while True:
+            batch = await self._vector_store.search(
+                query_vector=query_vector,
+                search_query=KnowledgeSearchQuery(
+                    query=query,
+                    dataset_version=self._dataset_version,
+                    drug_names=list(tier.medication_names),
+                    ingredient_names=list(tier.supplement_names),
+                    interaction_pair_keys=list(tier.interaction_pair_keys),
+                    limit=candidate_limit,
+                    offset=offset,
+                    exhaustive=exhaustive,
+                ),
+            )
+            if not exhaustive:
+                return batch
+            if not batch:
+                return results
+            new_results = [result for result in batch if result.chunk_id not in seen_chunk_ids]
+            if not new_results:
+                raise RuntimeError(
+                    "Knowledge store가 pagination offset을 적용하지 않아 exhaustive 검색을 중단했습니다."
+                )
+            results.extend(new_results)
+            seen_chunk_ids.update(result.chunk_id for result in new_results)
+            offset += self._EXHAUSTIVE_PAGE_SIZE
 
     def _embedding_runnable(
         self,
@@ -320,6 +346,7 @@ class MedicationKnowledgeCandidateRetriever:
         query_vector: list[float],
         tier: MedicationKnowledgeSearchTier,
         candidate_limit: int,
+        exhaustive: bool,
     ) -> RunnableLambda:
         async def search(_input: object) -> list[RetrievedKnowledgeChunk]:
             return await self._search_once(
@@ -327,6 +354,7 @@ class MedicationKnowledgeCandidateRetriever:
                 query_vector=query_vector,
                 tier=tier,
                 candidate_limit=candidate_limit,
+                exhaustive=exhaustive,
             )
 
         return RunnableLambda(

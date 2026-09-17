@@ -1185,14 +1185,90 @@ def test_plan_rejects_missing_duplicate_cross_owner_category_and_source_mutation
 
 
 def test_general_guide_interaction_is_kept_but_not_inferred_as_personal_pair() -> None:
-    catalog, plan = _valid_plan(_draft())
-    cards = render_cards(validate_card_plan(plan, catalog), catalog, _draft())
+    draft = _draft()
+    draft.guide_evidence[0] = _guide(
+        guide_id=11,
+        product_name="첫 약",
+        interactions="뉴퀴놀론계 항생물질과 함께 복용 시 의사 또는 약사와 상의하십시오.",
+    )
+    catalog, plan = _valid_plan(draft)
+    cards = render_cards(validate_card_plan(plan, catalog), catalog, draft)
 
     guide_cards = [card for card in cards.interactions if card.evidence_level == "PUBLIC_GUIDE"]
-    assert len(guide_cards) == 2
+    assert len(guide_cards) == 1
     assert all(card.action_level == "CHECK" for card in guide_cards)
     assert guide_cards[0].related_item_ids == [101]
     assert "특정 병용 조합" in guide_cards[0].action
+
+
+def test_non_food_guide_interaction_uses_a_drug_interaction_title() -> None:
+    draft = _draft()
+    antibiotic_warning = "뉴퀴놀론계 항생물질과 함께 복용 시 의사 또는 약사와 상의하십시오."
+    draft.guide_evidence[0] = _guide(guide_id=11, product_name="첫 약", interactions=antibiotic_warning)
+
+    catalog = build_evidence_catalog(draft)
+
+    interaction = next(card for card in catalog.interactions if card.card_id == "guide-interaction:101")
+    assert interaction.title == "첫 약의 약물 상호작용 안내"
+    assert interaction.summary == antibiotic_warning
+    assert all(card.card_id != "food-drink:101" for card in catalog.lifestyle)
+
+
+def test_standalone_food_warning_is_not_repeated_as_a_general_interaction() -> None:
+    draft = _draft()
+    fruit_juice_warning = "자몽 주스, 오렌지 및 사과 주스와 함께 복용 시 물과 함께 복용하는 것을 권장합니다."
+    draft.guide_evidence[0] = _guide(guide_id=11, product_name="펙소나딘", interactions=fruit_juice_warning)
+
+    catalog = build_evidence_catalog(draft)
+
+    assert all(card.card_id != "guide-interaction:101" for card in catalog.interactions)
+    assert next(card.summary for card in catalog.lifestyle if card.card_id == "food-drink:101") == fruit_juice_warning
+
+
+def test_detail_fragments_with_the_same_label_render_once_with_sentence_spacing() -> None:
+    draft = _draft()
+    usage = "성인은1일1회복용합니다.24시간이내에추가복용하지마십시오."
+    draft.guide_evidence[0] = _guide(guide_id=11, product_name="첫 약")
+    draft.guide_evidence[0] = draft.guide_evidence[0].model_copy(update={"usage_instructions": usage})
+    catalog, plan = _valid_plan(draft)
+
+    cards = render_cards(validate_card_plan(plan, catalog), catalog, draft)
+    usage_details = [detail for detail in cards.medications[0].details if detail.label == "복용 방법"]
+
+    assert len(usage_details) == 1
+    assert usage_details[0].text == "성인은1일1회복용합니다. 24시간이내에추가복용하지마십시오."
+    markdown = render_cards_markdown(cards, draft)
+    medication_markdown = markdown.split("## 약 정보", maxsplit=1)[1]
+    first_medication_markdown = medication_markdown.split("### 첫 약", maxsplit=1)[1].split("### 둘째 약", maxsplit=1)[
+        0
+    ]
+    assert first_medication_markdown.count("**복용 방법**") == 1
+
+
+def test_final_card_rendering_repairs_safe_latin_and_parenthetical_korean_boundaries() -> None:
+    draft = _draft()
+    guide = draft.guide_evidence[0].model_copy(
+        update={"adverse_reactions": "AST상승,ALT상승,(소아)복용,(성인)또는,천공(뚫림)과민증상"}
+    )
+    draft = draft.model_copy(update={"guide_evidence": [guide, draft.guide_evidence[1]]})
+    catalog, plan = _valid_plan(draft)
+
+    cards = render_cards(validate_card_plan(plan, catalog), catalog, draft)
+
+    adverse_reactions = next(detail for detail in cards.medications[0].details if detail.label == "이상 반응")
+    assert adverse_reactions.text == "AST 상승,ALT 상승,(소아) 복용,(성인) 또는,천공(뚫림) 과민증상"
+
+
+def test_final_card_rendering_keeps_parenthetical_particles_attached() -> None:
+    draft = _draft()
+    guide = draft.guide_evidence[0].model_copy(update={"adverse_reactions": "(소아)은복용하지마십시오."})
+    draft = draft.model_copy(update={"guide_evidence": [guide, draft.guide_evidence[1]]})
+    catalog, plan = _valid_plan(draft)
+
+    cards = render_cards(validate_card_plan(plan, catalog), catalog, draft)
+
+    adverse_reactions = next(detail for detail in cards.medications[0].details if detail.label == "이상 반응")
+    assert adverse_reactions.text == "(소아)은복용하지마십시오."
 
 
 @pytest.mark.parametrize(
@@ -1212,7 +1288,7 @@ def test_mixed_drug_and_food_warning_stays_in_interactions_only(mixed_warning: s
     cards = render_cards(validate_card_plan(plan, catalog), catalog, draft)
 
     interaction = next(card for card in cards.interactions if card.id == "guide-interaction:101")
-    assert interaction.summary == source
+    assert interaction.summary == mixed_warning
     assert interaction.evidence_level == "PUBLIC_GUIDE"
     assert interaction.action_level == "CHECK"
     food_cards = [card for card in cards.lifestyle if card.id == "food-drink:101"]
@@ -1236,7 +1312,7 @@ def test_standalone_food_warning_is_preserved_verbatim(food_warning: str) -> Non
     assert next(card.summary for card in cards.lifestyle if card.id == "food-drink:101") == food_warning
 
 
-def test_interaction_and_lifestyle_accept_spacing_only_summary_normalization() -> None:
+def test_lifestyle_accepts_spacing_only_summary_normalization() -> None:
     raw_summary = "자몽주스와함께복용하면이약의효과가감소할수있으므로물과함께복용하십시오."
     spaced_summary = "자몽 주스와 함께 복용하면 이 약의 효과가 감소할 수 있으므로 물과 함께 복용하십시오."
     draft = _draft()
@@ -1249,33 +1325,20 @@ def test_interaction_and_lifestyle_accept_spacing_only_summary_normalization() -
     catalog, plan = _valid_plan(draft)
     payload = catalog.model_payload()
 
-    assert (
-        next(item for item in payload["interactions"] if item["cardId"] == "guide-interaction:101")["summary"]
-        == raw_summary
-    )
     assert next(item for item in payload["lifestyle"] if item["cardId"] == "food-drink:101")["summary"] == raw_summary
     with pytest.raises(ValueError, match="TEXT_SPACING_REQUIRED"):
         validate_card_plan(plan, catalog)
 
     normalized = plan.model_dump(mode="json")
-    insufficient = plan.model_dump(mode="json")
-    for selection in insufficient["interactions"]:
-        if selection["card_id"] == "guide-interaction:101":
-            selection["summary_text"] = raw_summary.replace("자몽주스", "자몽 주스")
-    with pytest.raises(ValueError, match="TEXT_SPACING_REQUIRED"):
-        validate_card_plan(IntakeReportCardsPlan.model_validate(insufficient), catalog)
-
-    for section in ("interactions", "lifestyle"):
-        for selection in normalized[section]:
-            if selection["card_id"] in {"guide-interaction:101", "food-drink:101"}:
-                selection["summary_text"] = spaced_summary
+    for selection in normalized["lifestyle"]:
+        if selection["card_id"] == "food-drink:101":
+            selection["summary_text"] = spaced_summary
     validated = validate_card_plan(IntakeReportCardsPlan.model_validate(normalized), catalog)
     cards = render_cards(validated, catalog, draft)
 
-    assert next(card.summary for card in cards.interactions if card.id == "guide-interaction:101") == spaced_summary
     assert next(card.summary for card in cards.lifestyle if card.id == "food-drink:101") == spaced_summary
 
-    normalized["interactions"][0]["summary_text"] = "자몽 주스와 함께 복용하면 효과가 증가합니다."
+    normalized["lifestyle"][0]["summary_text"] = "자몽 주스와 함께 복용하면 효과가 증가합니다."
     with pytest.raises(ValueError, match="TEXT_MUTATION"):
         validate_card_plan(IntakeReportCardsPlan.model_validate(normalized), catalog)
 
@@ -1313,7 +1376,13 @@ def test_plan_rejects_putting_general_guidance_before_approved_warning() -> None
         check_item="복용 전에 확인하세요.",
         evidence_level=IntakeReportEvidenceLevel.APPROVED_RULE,
     )
-    catalog, plan = _valid_plan(_draft(review_cards=[review]))
+    draft = _draft(review_cards=[review])
+    draft.guide_evidence[0] = _guide(
+        guide_id=11,
+        product_name="첫 약",
+        interactions="뉴퀴놀론계 항생물질과 함께 복용 시 의사 또는 약사와 상의하십시오.",
+    )
+    catalog, plan = _valid_plan(draft)
     payload = plan.model_dump(mode="json")
     payload["interactions"] = [*payload["interactions"][1:], payload["interactions"][0]]
 
@@ -1370,8 +1439,9 @@ def test_missing_medication_information_is_grouped_without_hiding_partial_guides
     markdown = render_cards_markdown(cards, draft)
     assert "### 확인 불가 약품" in markdown
     assert "- 첫 약" in markdown
-    assert "### 첫 약" not in markdown.splitlines()
-    assert ("### 둘째 약" in markdown.splitlines()) is bool(remaining_field)
+    medication_section = markdown.split("## 약 정보", maxsplit=1)[1]
+    assert "### 첫 약" not in medication_section.splitlines()
+    assert ("### 둘째 약" in medication_section.splitlines()) is bool(remaining_field)
 
 
 def test_overlap_shows_only_known_contributors_without_unknown_product_list() -> None:
@@ -1561,7 +1631,7 @@ def test_markdown_does_not_group_interactions_with_the_same_action_across_differ
 
     markdown = render_cards_markdown(cards, _draft())
 
-    assert "공통 안내" not in markdown
+    assert "**공통 안내" not in markdown
     assert markdown.count(shared_action) == 2
 
 
@@ -1578,8 +1648,8 @@ def test_markdown_does_not_group_lifestyle_cards_across_distinct_categories() ->
 
     markdown = render_cards_markdown(cards, _draft())
 
-    assert "공통 안내" not in markdown
-    assert markdown.count(shared_action) == 2
+    assert "**공통 안내" not in markdown
+    assert markdown.count(shared_action) == 1
 
 
 def test_markdown_groups_same_category_lifestyle_and_all_overlaps_regardless_of_nutrient() -> None:
@@ -1615,7 +1685,7 @@ def test_markdown_groups_same_category_lifestyle_and_all_overlaps_regardless_of_
 
     markdown = render_cards_markdown(cards, _draft())
 
-    assert markdown.count("공통 안내 · 2개 항목") == 2
+    assert markdown.count("공통 안내 · 2개 항목") == 1
     assert markdown.count(shared_action) == 2
     for card in [*cards.lifestyle, *cards.overlaps]:
         assert card.title in markdown and card.summary in markdown
@@ -1623,6 +1693,22 @@ def test_markdown_groups_same_category_lifestyle_and_all_overlaps_regardless_of_
 
 def test_markdown_group_retains_distinct_source_metadata_only_at_bottom_without_inline_links() -> None:
     draft = _draft()
+    draft = draft.model_copy(
+        update={
+            "guide_evidence": [
+                _guide(
+                    guide_id=11,
+                    product_name="첫 약",
+                    interactions="뉴퀴놀론계 항생물질과 함께 복용 시 의사 또는 약사와 상의하십시오.",
+                ),
+                _guide(
+                    guide_id=22,
+                    product_name="둘째 약",
+                    interactions="다른 약물과 함께 복용 시 의사 또는 약사와 상의하십시오.",
+                ),
+            ]
+        }
+    )
     catalog, plan = _valid_plan(draft)
     cards = render_cards(validate_card_plan(plan, catalog), catalog, draft)
     markdown = render_cards_markdown(cards, draft)
@@ -1860,6 +1946,11 @@ async def test_generator_defaults_to_evidence_only_even_with_a_display_refiner()
 
 def test_rendered_report_order_does_not_depend_on_model_order() -> None:
     draft = _draft()
+    draft.guide_evidence[0] = _guide(
+        guide_id=11,
+        product_name="첫 약",
+        interactions="뉴퀴놀론계 항생물질과 함께 복용 시 의사 또는 약사와 상의하십시오.",
+    )
     catalog, plan = _valid_plan(draft)
     # Same-severity cards are a genuine tie: the model's order must not win.
     first_interaction = catalog.interactions[0]
@@ -2104,7 +2195,7 @@ async def test_generator_reviews_all_korean_prose_fields_without_exposing_struct
     class PositionsClient:
         async def ainvoke(self, messages):
             fields = json.loads(messages[1].content)["fields"]
-            assert len(fields) == 14
+            assert len(fields) == 12
             assert {field["key"].split("/")[2] for field in fields} == {
                 "efficacy",
                 "caution",
@@ -2296,6 +2387,7 @@ async def test_generator_empty_positions_do_not_bypass_dense_spacing_guard() -> 
         ("15mg/주이상", "15mg /주이상"),
         ("1회4,000mg을복용합니다.", "1회4, 000mg을복용합니다."),
         ("08:15에복용합니다.", "08: 15에복용합니다."),
+        ("이약에과민증환자", "이약에과 민증환자"),
     ],
 )
 def test_unsafe_new_whitespace_rejects_protected_token_splits(

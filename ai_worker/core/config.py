@@ -74,4 +74,6 @@ class Config(BaseSettings):
         ge=0.0,
         le=1.0,
     )
+    # Disabled until the source-locked intake-report RAG release is explicitly enabled.
+    INTAKE_REPORT_RAG_ENABLED: bool = False
     RUN_OPENAI_INTEGRATION_TESTS: bool = False
