@@ -65,7 +65,7 @@ export function ChatSessionList({
             <Button
               size="compact"
               fullWidth={false}
-              variant="secondary"
+              variant="primary"
               aria-label="새 상담"
               className="px-3"
               onClick={onNewChat}

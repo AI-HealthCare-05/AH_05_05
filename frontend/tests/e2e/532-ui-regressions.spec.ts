@@ -31,6 +31,16 @@ test('직접 입력 복약에 복용 시간이 없으면 홈에서 일정 설정
   await expect(page).toHaveURL(/\/medication-schedule\?recordId=12$/);
 });
 
+test('홈 챌린지 전체 보기에는 오른쪽 꺾쇠를 표시한다', async ({ page }) => {
+  await page.goto('/dev/home-unscheduled');
+
+  const more = page.getByRole('region', { name: '챌린지' })
+    .getByRole('link', { name: '전체 보기', exact: true });
+  const chevron = more.locator('svg');
+  await expect(chevron).toBeVisible();
+  await expect(chevron.locator('path')).toHaveAttribute('d', 'm9 18 6-6-6-6');
+});
+
 test('챗봇 최근 대화는 제목 오른쪽에 새 상담과 선택을 함께 둔다', async ({ page }) => {
   await page.goto('/dev/chat');
   await page.evaluate(() => {
@@ -52,7 +62,9 @@ test('챗봇 최근 대화는 제목 오른쪽에 새 상담과 선택을 함께
 
   const toolbar = page.getByRole('group', { name: '최근 대화 작업' });
   await expect(toolbar.getByRole('heading', { name: '최근 대화', exact: true })).toBeVisible();
-  await expect(toolbar.getByRole('button', { name: '새 상담', exact: true })).toBeVisible();
+  const newChat = toolbar.getByRole('button', { name: '새 상담', exact: true });
+  await expect(newChat).toBeVisible();
+  await expect(newChat).toHaveAttribute('data-variant', 'primary');
   await toolbar.getByRole('button', { name: '선택', exact: true }).click();
   await expect(toolbar.getByRole('button', { name: '취소', exact: true })).toBeVisible();
 });
@@ -108,4 +120,26 @@ test('노션에서 지정한 주요 공통 버튼은 동일한 명암 규격을 
     expect(await button.evaluate(element => getComputedStyle(element).boxShadow)).not.toBe('none');
   }
   await expectNoHorizontalPageOverflow(page);
+});
+
+test('영양제 검색창은 둘러보기와 추가 화면에서 포커스 링이 잘리지 않는다', async ({ page }) => {
+  async function expectUnclippedFocus(input: ReturnType<Page['getByRole']>) {
+    await input.focus();
+    expect(await input.evaluate((element) => {
+      const wrapperStyle = getComputedStyle(element.parentElement!);
+      return {
+        overflowX: wrapperStyle.overflowX,
+        overflowY: wrapperStyle.overflowY,
+        hasFocusRing: getComputedStyle(element).boxShadow !== 'none',
+      };
+    })).toEqual({ overflowX: 'visible', overflowY: 'visible', hasFocusRing: true });
+  }
+
+  await page.goto('/dev/supplements?tab=browse');
+  await expectUnclippedFocus(page.getByRole('searchbox', { name: '영양제 제품 검색' }));
+
+  await page.goto('/dev/supplements');
+  await page.getByRole('button', { name: /영양제 추가/ }).click();
+  const dialog = page.getByRole('dialog', { name: '영양제 추가' });
+  await expectUnclippedFocus(dialog.getByRole('searchbox', { name: '영양제 제품 검색' }));
 });

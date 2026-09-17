@@ -7,6 +7,7 @@ import { useChallengeMock } from '@/features/challenges';
 import { getAuthGeneration } from '@/shared/api/client';
 import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { Button } from '@/shared/ui/Button';
+import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { TodayChallengeCarousel, type TodayChallengeCard } from './TodayChallengeCarousel';
 import { officialChallengeProgress } from './officialChallengeProgress';
 import '@/shared/ui/home-clay.css';
@@ -53,7 +54,9 @@ function SummaryFrame({ children, base = '/challenges', mock = false }: { childr
         <h2 id="home-challenge-title" className="text-lg font-bold text-foreground">챌린지</h2>
         {mock && <span className="rounded-pill bg-muted-bg px-2 py-1 text-micro text-muted-foreground">예시 데이터</span>}
       </div>
-      <Link to={base} className="min-h-touch py-3 text-caption font-bold text-primary">전체 보기</Link>
+      <Link to={base} className="min-h-touch py-3 text-caption font-bold text-primary">
+        전체 보기 <DrawnChevron direction="right" className="inline size-3.5 align-middle" />
+      </Link>
     </div>
     <div className="rx-challenge-card min-w-0 rounded-card bg-card p-4 shadow-card">{children}</div>
   </section>;
