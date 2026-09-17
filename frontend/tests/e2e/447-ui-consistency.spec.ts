@@ -312,7 +312,7 @@ test('챌린지·채팅 compact 실행은 긴 문구에서도 44px 높이와 내
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/dev/chat');
-  const newChat = page.getByRole('button', { name: '새 채팅', exact: true });
+  const newChat = page.getByRole('button', { name: '새 상담', exact: true });
   await expect(newChat).toHaveAttribute('data-size', 'compact');
   await expectClay(newChat, 44);
   const longSession = page.getByRole('button', { name: /긴 채팅 목록 문구/ });

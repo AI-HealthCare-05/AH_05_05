@@ -280,7 +280,8 @@ def test_system_prompt_uses_v9_six_element_contract_and_private_checklist() -> N
     assert "covered section 밖의 항목은 추가하지" in SYSTEM_PROMPT
     assert "초안에 포함된 의료 면책 문구를 유지" not in SYSTEM_PROMPT
     assert "✉️ **안내사항**" in SYSTEM_PROMPT
-    assert "📭 **공식 확인 경로**" in SYSTEM_PROMPT
+    # 공식 확인 경로는 코드가 만든다. 소제목을 열어두면 모델이 기관 이름을 지어낼 수 있다.
+    assert "📭 **공식 확인 경로**" not in SYSTEM_PROMPT
     assert "의료진·약사에게 확인할 내용" not in SYSTEM_PROMPT
 
 

@@ -28,7 +28,8 @@ class MedicationAnswerAssembler:
         "자료 없음",
         "정보 없음",
     }
-    _GUIDE_PARENTHETICAL_GLOSS = re.compile(r"\s*\([^()]*\)")
+    # 숫자로 시작하는 괄호는 용량 표기이므로 남긴다. `(4,000mg)`을 지우면 답변에서 수치가 사라진다.
+    _GUIDE_PARENTHETICAL_GLOSS = re.compile(r"\s*\((?!\d)[^()]*\)")
     _GUIDE_RDB_SPACING = (
         ("감기로인한", "감기로 인한 "),
         ("발열및", "발열 및 "),

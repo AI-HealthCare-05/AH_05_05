@@ -166,7 +166,7 @@ def test_email_uses_web_card_order_and_values_without_old_percent_or_exclusions(
     headings = [
         "약·영양제 리포트",
         "함께 확인할 주의사항",
-        "생활습관 가이드",
+        "약·영양제별 주의사항 및 가이드",
         "영양제 성분 합계",
         "약 정보",
         "확인하지 못한 정보",

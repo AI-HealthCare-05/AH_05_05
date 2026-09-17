@@ -317,7 +317,7 @@ test('보안 컨텍스트가 아니면 안내 카메라 대신 기존 기본 카
 
   await expect(page.getByRole('dialog', { name: '약봉투 촬영' })).toHaveCount(0);
   expect(await chooser.element().getAttribute('capture')).toBe('environment');
-  expect(await chooser.element().getAttribute('accept')).toBe('image/jpeg,image/png');
+  expect(await chooser.element().getAttribute('accept')).toMatch(/image\/jpeg,image\/png,image\/heic,image\/heif/);
 });
 
 test('카메라 권한을 거부하면 오류와 두 가지 대체 수단을 안내한다', async ({ page }) => {

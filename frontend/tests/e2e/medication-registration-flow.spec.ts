@@ -1711,7 +1711,7 @@ function expectAuthenticated(requests: CapturedRequest[]) {
   );
 }
 
-test('복약안내문 촬영 안내와 입력은 JPG/PNG 한 장만 받는다', async ({ page }) => {
+test('복약안내문 촬영 안내와 입력은 지원되는 단일 사진을 받는다', async ({ page }) => {
   await authenticate(page);
   await page.goto('/document-upload');
 
@@ -1731,10 +1731,10 @@ test('복약안내문 촬영 안내와 입력은 JPG/PNG 한 장만 받는다', 
 
   const camera = page.getByLabel('카메라로 약봉투 촬영');
   const gallery = page.getByLabel('갤러리에서 약봉투 선택');
-  await expect(camera).toHaveAttribute('accept', 'image/jpeg,image/png');
+  await expect(camera).toHaveAttribute('accept', /image\/jpeg,image\/png,image\/heic,image\/heif/);
   await expect(camera).toHaveAttribute('capture', 'environment');
   await expect(camera).not.toHaveAttribute('multiple');
-  await expect(gallery).toHaveAttribute('accept', 'image/jpeg,image/png');
+  await expect(gallery).toHaveAttribute('accept', /image\/jpeg,image\/png,image\/heic,image\/heif/);
   await expect(gallery).not.toHaveAttribute('capture');
   await expect(gallery).not.toHaveAttribute('multiple');
 });

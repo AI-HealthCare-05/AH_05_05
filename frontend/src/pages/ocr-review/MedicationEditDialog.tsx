@@ -156,8 +156,8 @@ export function MedicationEditDialog({
         }
       >
         {confirmingDelete ? (
-          <div className="flex flex-col gap-4 pr-10">
-            <DialogTitle className="text-xl">이 약을 지울까요?</DialogTitle>
+          <div className="flex flex-col gap-4">
+            <DialogTitle className="pr-10 text-xl">이 약을 지울까요?</DialogTitle>
             <DialogDescription id="medication-delete-description" className="text-base">
               {medication?.name ?? '이 약'} 정보가 결과 확인 목록에서 삭제됩니다.
             </DialogDescription>

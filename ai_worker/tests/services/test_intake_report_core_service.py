@@ -44,7 +44,8 @@ def test_stale_temporary_flag_cannot_bypass_real_ai_configuration() -> None:
         build_intake_report_core_service(settings=settings, qdrant_client=object())
 
 
-def test_builder_uses_structured_evidence_card_generator(monkeypatch) -> None:
+@pytest.mark.parametrize("rag_enabled", [True, False])
+def test_builder_uses_structured_evidence_card_generator(monkeypatch, rag_enabled) -> None:
     import ai_worker.services.intake_report_core_service as module
 
     constructor = module.OpenAIIntakeReportCardsGenerator
@@ -55,15 +56,25 @@ def test_builder_uses_structured_evidence_card_generator(monkeypatch) -> None:
         return constructor(**kwargs)
 
     monkeypatch.setattr(module, "OpenAIIntakeReportCardsGenerator", capture_options)
-    settings = Config(OPENAI_API_KEY="offline-not-a-real-key", KNOWLEDGE_SEARCH_MODE="DENSE", _env_file=None)
+    settings = Config(
+        OPENAI_API_KEY="offline-not-a-real-key",
+        KNOWLEDGE_SEARCH_MODE="DENSE",
+        INTAKE_REPORT_RAG_ENABLED=rag_enabled,
+        _env_file=None,
+    )
     service = build_intake_report_core_service(settings=settings, qdrant_client=object(), tracer=None)
     # The production entrypoint must not silently keep the legacy Markdown
     # generator even when the DTO and frontend accept v11 cards.
-    assert type(service._use_case._generator).__name__ == "OpenAIIntakeReportCardsGenerator"
+    generator = service._use_case._generator
+    if rag_enabled:
+        assert type(generator).__name__ == "RagIntakeReportCardsGenerator"
+        generator = generator._base_generator
+    assert type(generator).__name__ == "OpenAIIntakeReportCardsGenerator"
+    assert options["include_fixed_lifestyle_guidance"] is (not rag_enabled)
     assert options["timeout_seconds"] >= 75.0
     assert options["enable_plain_language"] is False
-    assert service._use_case._generator._plain_language_refiner is None
-    assert service._use_case._generator._generation_timeout_seconds == 90.0
+    assert generator._plain_language_refiner is None
+    assert generator._generation_timeout_seconds == 90.0
 
 
 def test_builder_wires_bounded_candidate_selector_using_configured_model() -> None:

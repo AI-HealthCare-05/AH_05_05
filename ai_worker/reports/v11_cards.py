@@ -15,8 +15,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import TYPE_CHECKING, Literal
+from urllib.parse import urlparse
 
-from ai_worker.reports.text_guidance_rules import is_standalone_food_or_drink_guidance, load_text_guidance_rules
+from ai_worker.reports.guidance_groups import group_lifestyle_guidance_cards, product_guidance_display
+from ai_worker.reports.text_guidance_rules import (
+    is_standalone_food_or_drink_guidance,
+    load_text_guidance_rules,
+    mentions_food_or_drink,
+)
 from ai_worker.reports.v11_lifestyle_guidance import build_lifestyle_guidance_cards
 from ai_worker.schemas.intake_report_cards import (
     CardDetail,
@@ -44,13 +50,44 @@ if TYPE_CHECKING:
 EvidenceCategory = Literal["efficacy", "caution", "contraindication", "detail"]
 
 _BLOCK_SEPARATOR_RE = re.compile(r"\s*(?:\r?\n+|[•●])\s*")
-_SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?。])(?![.\d])\s*")
+_SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?。])(?!(?:\.|(?<=\d\.)(?=\d)))\s*")
 _WHITESPACE_RE = re.compile(r"\s+")
 _MAX_FUZZY_ALIGNMENT_LENGTH = 4_000
 _MAX_PROJECTION_WHITESPACE = 2_000
 _MIN_PROJECTION_SIMILARITY = 0.97
 _MAX_PROJECTION_CHANGED_CHARS = 3
 _NUMERIC_TOKEN_PUNCTUATION = frozenset(".,:/%+-")
+_NO_SPACE_COMPOUND_TERMS = ("과민증",)
+_FINAL_DISPLAY_LATIN_TOKEN_KOREAN_RE = re.compile(r"([A-Z][A-Z0-9]+)(?=[가-힣])")
+_PARENTHETICAL_PARTICLE_PREFIXES = (
+    "으로",
+    "에게",
+    "한테",
+    "부터",
+    "까지",
+    "처럼",
+    "보다",
+    "이며",
+    "이고",
+    "라고",
+    "이라고",
+    "은",
+    "는",
+    "이",
+    "가",
+    "을",
+    "를",
+    "의",
+    "에",
+    "께",
+    "로",
+    "와",
+    "도",
+    "만",
+    "이나",
+    "나",
+    "과",
+)
 _PROMPT_INJECTION_MARKERS = (
     "ignore previous",
     "ignore all instructions",
@@ -196,6 +233,15 @@ def _compact_text(value: str) -> str:
     return _WHITESPACE_RE.sub("", value)
 
 
+def _is_no_space_compound_boundary(value: str, boundary: int) -> bool:
+    """Keep a reviewed compound term intact when only whitespace is being repaired."""
+    return any(
+        match.start() < boundary < match.end()
+        for term in _NO_SPACE_COMPOUND_TERMS
+        for match in re.finditer(re.escape(term), value)
+    )
+
+
 def _whitespace_boundaries(value: str) -> tuple[str, set[int]]:
     compact: list[str] = []
     boundaries: set[int] = set()
@@ -246,6 +292,8 @@ def _unsafe_new_whitespace_boundary(  # noqa: C901 - protected token rules stay 
         if not 0 < boundary < len(canonical_compact):
             continue
         if any(start < boundary < end for start, end in entity_spans):
+            return True
+        if _is_no_space_compound_boundary(canonical_compact, boundary):
             return True
         left = canonical_compact[boundary - 1]
         right = canonical_compact[boundary]
@@ -356,6 +404,21 @@ def _project_near_match_whitespace(  # noqa: C901 - all bounded projection guard
 
 def _needs_korean_spacing(value: str) -> bool:
     return any(len(run) >= 18 for run in re.findall(r"[가-힣]+", value))
+
+
+def _normalize_final_clinical_spacing(value: str) -> str:
+    """Add only unambiguous display spaces without changing reviewed characters."""
+    normalized = _FINAL_DISPLAY_LATIN_TOKEN_KOREAN_RE.sub(r"\1 ", value)
+
+    def closing_parenthesis_boundary(match: re.Match[str]) -> str:
+        following = normalized[match.end() :]
+        if any(following.startswith(term) for term in _NO_SPACE_COMPOUND_TERMS):
+            return ") "
+        if any(following.startswith(particle) for particle in _PARENTHETICAL_PARTICLE_PREFIXES):
+            return ")"
+        return ") "
+
+    return re.sub(r"\)(?=[가-힣])", closing_parenthesis_boundary, normalized)
 
 
 def _is_prompt_injection(value: str) -> bool:
@@ -618,14 +681,18 @@ def _interaction_catalog(
         if guide is None:
             continue
         fragments, _ = _fragments(guide.drug_food_interactions)
-        if not fragments:
+        general_fragments = [fragment for fragment in fragments if not is_standalone_food_or_drink_guidance(fragment)]
+        if not general_fragments:
             continue
         source_ids = (f"guide:{guide.medication_guide_id}",)
+        interaction_label = (
+            "약·음식" if any(mentions_food_or_drink(fragment) for fragment in general_fragments) else "약물"
+        )
         interactions.append(
             CatalogInteraction(
                 card_id=f"guide-interaction:{item_id}",
-                title=f"{medication.product_name}의 약·음식 상호작용 안내",
-                summary=" ".join(fragments),
+                title=f"{medication.product_name}의 {interaction_label} 상호작용 안내",
+                summary=" ".join(general_fragments),
                 action=(
                     "제품 안내의 일반 정보예요. 등록 목록 안의 특정 병용 조합으로 확인된 것은 "
                     "아니므로, 적용 여부를 전문가에게 확인하세요."
@@ -693,11 +760,17 @@ def _lifestyle_catalog(
     return lifestyle
 
 
-def build_evidence_catalog(draft: IntakeReportDraft) -> V11EvidenceCatalog:
+def build_evidence_catalog(
+    draft: IntakeReportDraft,
+    *,
+    include_fixed_lifestyle_guidance: bool = True,
+) -> V11EvidenceCatalog:
     """Build a complete, per-registration evidence boundary from a real draft."""
     medications, medication_sources = _medication_evidence(draft)
     interactions, review_sources = _interaction_catalog(draft, medications)
-    guidance_cards, guidance_sources = build_lifestyle_guidance_cards(draft)
+    guidance_cards, guidance_sources = (
+        build_lifestyle_guidance_cards(draft) if include_fixed_lifestyle_guidance else ([], [])
+    )
     lifestyle = [
         *_lifestyle_catalog(draft, medications),
         *(
@@ -1149,9 +1222,28 @@ def _section(
     evidence_ids = selection.evidence_ids
     facts = [facts_by_id[evidence_id] for evidence_id in evidence_ids]
     return CardSection(
-        text=(selection.text.strip() if selection.text is not None else " ".join(fact.text for fact in facts)),
+        text=_normalize_final_clinical_spacing(
+            selection.text.strip() if selection.text is not None else " ".join(fact.text for fact in facts)
+        ),
         source_ids=sorted(selection.source_ids),
     )
+
+
+def _card_details(detail_facts: list[EvidenceFact], detail_texts: list[str]) -> list[CardDetail]:
+    """Combine sentence fragments from one source field under one visible label."""
+    grouped: dict[str, CardDetail] = {}
+    for index, fact in enumerate(detail_facts):
+        text = _normalize_final_clinical_spacing(detail_texts[index].strip() if detail_texts else fact.text)
+        existing = grouped.get(fact.label)
+        if existing is None:
+            grouped[fact.label] = CardDetail(label=fact.label, text=text, source_ids=sorted(fact.source_ids))
+            continue
+        grouped[fact.label] = CardDetail(
+            label=fact.label,
+            text=f"{existing.text} {text}",
+            source_ids=sorted(set([*existing.source_ids, *fact.source_ids])),
+        )
+    return list(grouped.values())
 
 
 def _nutrient_subject(name: str) -> str:
@@ -1211,14 +1303,7 @@ def render_cards(
                 efficacy=_section(selection.efficacy, facts_by_id),
                 caution=_section(selection.caution, facts_by_id),
                 contraindication=_section(selection.contraindication, facts_by_id),
-                details=[
-                    CardDetail(
-                        label=fact.label,
-                        text=(selection.detail_texts[index].strip() if selection.detail_texts else fact.text),
-                        source_ids=sorted(fact.source_ids),
-                    )
-                    for index, fact in enumerate(detail_facts)
-                ],
+                details=_card_details(detail_facts, selection.detail_texts),
                 source_ids=sorted(selection.source_ids),
             )
         )
@@ -1229,8 +1314,10 @@ def render_cards(
         InteractionCard(
             id=(card := interactions_by_id[selection.card_id]).card_id,
             title=card.title,
-            summary=(selection.summary_text.strip() if selection.summary_text is not None else card.summary),
-            action=card.action,
+            summary=_normalize_final_clinical_spacing(
+                selection.summary_text.strip() if selection.summary_text is not None else card.summary
+            ),
+            action=_normalize_final_clinical_spacing(card.action),
             related_item_ids=list(card.related_item_ids),
             source_ids=list(card.source_ids),
             evidence_level=card.evidence_level,
@@ -1247,8 +1334,10 @@ def render_cards(
             id=(card := lifestyle_by_id[selection.card_id]).card_id,
             category=card.category,
             title=card.title,
-            summary=(selection.summary_text.strip() if selection.summary_text is not None else card.summary),
-            action=card.action,
+            summary=_normalize_final_clinical_spacing(
+                selection.summary_text.strip() if selection.summary_text is not None else card.summary
+            ),
+            action=_normalize_final_clinical_spacing(card.action),
             related_item_ids=list(card.related_item_ids),
             source_ids=list(card.source_ids),
         )
@@ -1281,6 +1370,16 @@ _MARKDOWN_LITERAL_ENTITIES = str.maketrans(
 def _literal(value: str) -> str:
     flattened = value.replace("\r", " ").replace("\n", " ")
     return html.escape(flattened, quote=True).translate(_MARKDOWN_LITERAL_ENTITIES)
+
+
+def _safe_markdown_source_url(value: str | None) -> bool:
+    if not value:
+        return False
+    try:
+        parsed = urlparse(value)
+        return parsed.scheme in {"http", "https"} and bool(parsed.netloc) and parsed.username is None
+    except ValueError:
+        return False
 
 
 def _table_cell(value: str) -> str:
@@ -1405,27 +1504,31 @@ def render_cards_markdown(  # noqa: C901 - section projection is deliberately li
         )
 
     if cards.lifestyle:
-        lines.extend(("", "## 생활습관 가이드"))
+        lines.extend(("", "## 약·영양제별 주의사항 및 가이드"))
+        rag_source_numbers = {
+            source.id: index for index, source in enumerate(cards.sources, start=1) if source.quote and source.chunk_id
+        }
 
-        def _lifestyle_lines(card: object, show_action: bool) -> list[str]:
-            block = [
-                "",
-                f"### {_clinical_literal(card.title)}",
-                f"**{_literal(card.category)}**",
-                "",
-                _clinical_literal(card.summary),
+        for product_group in group_lifestyle_guidance_cards(cards.lifestyle, draft.current_stack):
+            display = product_guidance_display(product_group)
+            lines.extend(("", f"### {_literal(display.title)}"))
+            if display.categories:
+                lines.extend(("", f"**구분:** {' · '.join(_literal(category) for category in display.categories)}"))
+            if display.warning_titles:
+                lines.extend(("", *[f"#### {_clinical_literal(title)}" for title in display.warning_titles]))
+            if display.common_ingredient_disclaimer:
+                lines.extend(("", _literal(display.common_ingredient_disclaimer)))
+            if display.summaries:
+                lines.extend(("", "**안내 내용**", *[_clinical_literal(summary) for summary in display.summaries]))
+            if display.actions:
+                lines.extend(("", "**할 일**", *[f"- {_clinical_literal(action)}" for action in display.actions]))
+            references = [
+                f"[{rag_source_numbers[source_id]}]"
+                for source_id in display.source_ids
+                if source_id in rag_source_numbers
             ]
-            if show_action:
-                block.extend(("", f"**할 일:** {_clinical_literal(card.action)}"))
-            return block
-
-        lines.extend(
-            _grouped_action_lines(
-                list(cards.lifestyle),
-                context_key=lambda card: card.category,
-                card_lines=_lifestyle_lines,
-            )
-        )
+            if references:
+                lines.extend(("", f"**근거:** {', '.join(references)}"))
 
     if draft.unverified_items:
         lines.extend(("", "## 확인이 필요한 등록 정보"))
@@ -1520,13 +1623,19 @@ def render_cards_markdown(  # noqa: C901 - section projection is deliberately li
     for index, source in enumerate(cards.sources, start=1):
         organization = f" · {source.organization}" if source.organization else ""
         evidence_label = f" · {_EVIDENCE_LEVEL_LABELS.get(source.evidence_level, '근거 수준 미확인')}"
-        if source.url:
+        if _safe_markdown_source_url(source.url):
             lines.append(
                 f"- [{index}] [{_literal(source.title)}]({source.url})"
                 f"{_literal(organization)}{_literal(evidence_label)}"
             )
         else:
             lines.append(f"- [{index}] {_literal(source.title)}{_literal(organization)}{_literal(evidence_label)}")
+        if source.quote:
+            lines.append(f"  - 인용: {_literal(source.quote)}")
+        if source.chunk_id:
+            lines.append(f"  - 청크: {_literal(source.chunk_id)}")
+        if source.dataset_version:
+            lines.append(f"  - 데이터셋: {_literal(source.dataset_version)}")
     lines.extend(
         (
             "",

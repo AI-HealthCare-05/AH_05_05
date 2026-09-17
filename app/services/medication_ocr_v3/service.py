@@ -141,10 +141,13 @@ class MedicationOcrV3Service:
         if (
             self._preprocess_version == "v3.4.1"
             and isinstance(pipeline_result, AnalyzePipelineResult)
-            and any(stage.name == "candidate" and stage.code == "TABLE_NOT_FOUND" for stage in pipeline_result.stages)
+            and any(
+                stage.name == "candidate" and stage.code in {"TABLE_NOT_FOUND", "AMBIGUOUS_MEDICATION_TABLE"}
+                for stage in pipeline_result.stages
+            )
             and "output_saturate_unsharp_mild" in processed.operations
         ):
-            # Unsharp filtering can merge small receipt digits into OCR math tokens.
+            # Unsharp filtering can merge receipt digits or distort duplicated names.
             # Retry once with the existing non-sharpening small-print profile;
             # retain all normal table, grounding, and quality checks.
             if self._is_cancelled is not None and await self._is_cancelled():

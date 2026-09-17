@@ -72,6 +72,7 @@ class IntakeReportCurrentStackItem(BaseModel):
     item_id: int = Field(ge=1)
     product_name: str = Field(min_length=1)
     ingredient_name: str | None = None
+    ingredient_aliases: list[str] = Field(default_factory=list)
     ingredient_summary: str | None = None
     registered_intake_info: str = Field(min_length=1)
     scheduled_slots: list[str] = Field(default_factory=list)
@@ -212,6 +213,11 @@ class IntakeReportGenerationOutcome(BaseModel):
     cards: IntakeReportCards | None = None
     fallback_used: bool
     fallback_reason: IntakeReportFallbackReason | None = None
+    # None preserves legacy generator behaviour; False means no RAG evidence
+    # passed the quote/provenance checks, not merely that a server was online.
+    rag_evidence_available: bool | None = None
+    rag_metrics: dict[str, int] = Field(default_factory=dict)
+    rag_partial: bool = False
 
 
 class IntakeReportResult(BaseModel):

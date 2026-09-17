@@ -34,14 +34,25 @@
 .v11-pair:first-of-type { padding-top: .125rem; border-top: 0; }
 .v11-pair:last-child { padding-bottom: 0; }
 .v11-pair h3 { margin-top: .4375rem; }
+.v11-guidance-product { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 2px solid #c4d6cb; }
+.v11-guidance-product:first-of-type { margin-top: .75rem; padding-top: 0; border-top: 0; }
+.v11-guidance-product-title { font-size: 1rem; font-weight: 700; overflow-wrap: anywhere; margin-bottom: .75rem; }
+.v11-guidance-categories { display: flex; flex-wrap: wrap; gap: .375rem; margin-top: .5rem; }
+.v11-guidance-titles { margin: .75rem 0; }
+.v11-guidance-titles h4 { margin: .375rem 0; font-size: .875rem; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.v11-guidance-description p, .v11-guidance-product .v11-action p { margin-top: .625rem; font-size: .8125rem; line-height: 1.65; overflow-wrap: anywhere; white-space: pre-line; }
+.v11-guidance-product .v11-action { margin-top: .75rem; }
+.v11-guidance-product .v11-action p:first-child { margin-top: 0; }
 .v11-pair p { margin-top: .4375rem; color: #4d685a; font-size: .8125rem; line-height: 1.65; overflow-wrap: anywhere; }
 .v11-tag { display: inline-block; padding: .1875rem .4375rem; border-radius: .375rem; background: #f6edd8; color: #785822; font-size: .6875rem; font-weight: 800; }
 .v11-urgent .v11-tag { background: #fbe4de; color: #983e30; }
 .v11-action { padding: .625rem; border-radius: .5625rem; background: #f3f6ef; color: #405e51 !important; font-size: .8125rem; line-height: 1.65; overflow-wrap: anywhere; }
 .v11-urgent .v11-action { background: #fff0eb; }
 .v11-action-group { min-width: 0; padding: 1.25rem 0; margin-top: .25rem; border-top: 3px solid #c4d6cb; }
-.v11-card > .v11-action-group + .v11-pair { margin-top: .25rem; padding-top: 1.25rem; border-top: 3px solid #c4d6cb; }
-.v11-card > h2 + .v11-action-group { margin-top: 0; padding-top: .125rem; border-top: 0; }
+.v11-card > .v11-action-group + .v11-pair,
+.v11-guidance-product > .v11-action-group + .v11-pair { margin-top: .25rem; padding-top: 1.25rem; border-top: 3px solid #c4d6cb; }
+.v11-card > h2 + .v11-action-group,
+.v11-guidance-product > h3 + .v11-action-group { margin-top: 0; padding-top: .125rem; border-top: 0; }
 .v11-action-group:last-child { padding-bottom: 0; }
 .v11-action-group .v11-action-shared { margin-bottom: .875rem; }
 .v11-action-shared-label { display: block; margin-bottom: .25rem; color: #296d59; font-size: .6875rem; font-weight: 800; }
@@ -54,6 +65,8 @@
 .v11-expand-label, .v11-collapse-label { display: inline-flex; align-items: center; gap: .25rem; margin-top: .25rem; color: #1d6e55; font-size: .75rem; font-weight: 800; }
 .v11-expand-label, .v11-collapse-label { padding: 0; border: 0; background: transparent; cursor: pointer; }
 .v11-card-sources { margin-top: .625rem !important; color: #657b70 !important; font-size: .75rem !important; }
+.v11-rag-evidence { margin-top: .5rem; color: #50695a; font-size: .75rem; overflow-wrap: anywhere; }
+.v11-rag-evidence blockquote { margin: .5rem 0; padding-left: .75rem; border-left: 2px solid #c4d6cb; white-space: pre-wrap; }
 .v11-report a { color: #1d6e55; }
 .v11-hint, .v11-reference { color: #687c72; font-size: .75rem; line-height: 1.6; overflow-wrap: anywhere; }
 .v11-nutrient-notes { list-style: disc; padding-left: 1rem; }

@@ -667,7 +667,7 @@ test('상한 없는 성분은 권장 눈금을 70%에 두고 마커를 트랙 �
   await expect(fat.locator('[data-nutrient-range]')).toHaveCount(0);
 });
 
-test('상한 없는 바의 오른쪽 끝을 흐리고 기준 미만과 이상에 안전한 색을 사용한다', async ({ page }) => {
+test('상한 없는 바를 흐리지 않고 기준 미만과 이상에 안전한 색을 사용한다', async ({ page }) => {
   await openSupplementFixture(page, MIXED_STANDARD_PRODUCT, MALE_NUTRIENT_STANDARD);
 
   const protein = page.getByRole('article', { name: '단백질 성분 합계' });
@@ -677,8 +677,7 @@ test('상한 없는 바의 오른쪽 끝을 흐리고 기준 미만과 이상에
   const proteinMask = await proteinTrack.evaluate((element) =>
     getComputedStyle(element).maskImage,
   );
-  expect(proteinMask).toContain('linear-gradient');
-  expect(proteinMask).toContain('80%');
+  expect(proteinMask).toBe('none');
   await expect(proteinFill).toHaveClass(/bg-primary/);
   await expect(proteinMarker).toHaveClass(/bg-primary-strong/);
   await expect(proteinFill).not.toHaveClass(/bg-danger/);

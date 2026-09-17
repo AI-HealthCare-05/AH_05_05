@@ -564,12 +564,22 @@ class MedicationKnowledgeQueryBuilder:
         section_types: list[KnowledgeSectionType],
     ) -> list[KnowledgeDocumentType]:
         if KnowledgeSectionType.INTERACTION in section_types:
-            return [
+            document_types = [
                 KnowledgeDocumentType.DRUG_FOOD_INTERACTION_GUIDE,
                 KnowledgeDocumentType.RESEARCH_ARTICLE,
                 KnowledgeDocumentType.SUPPLEMENT_INTERACTION_MONOGRAPH,
                 KnowledgeDocumentType.PHARM_REVIEW,
             ]
+            if any(entity.kind is InteractionEntityKind.SUPPLEMENT for entity in entities):
+                # 영양제끼리의 상호작용 근거는 전용 모노그래프가 아니라
+                # 건강기능식품 코드·기능 문서 본문에 들어 있다.
+                document_types.extend(
+                    [
+                        KnowledgeDocumentType.SUPPLEMENT_CODE,
+                        KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+                    ]
+                )
+            return document_types
         if any(entity.kind == InteractionEntityKind.SUPPLEMENT for entity in entities):
             return [
                 KnowledgeDocumentType.SUPPLEMENT_CODE,

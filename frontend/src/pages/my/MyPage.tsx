@@ -503,7 +503,7 @@ export function MyPage({
                       ? `${managementCounts.medication}개`
                       : managementLoadError
                         ? '확인 불가'
-                        : '확인 중'
+                        : ''
                   }
                   onClick={() => navigate('/medications')}
                 />
@@ -514,7 +514,7 @@ export function MyPage({
                       ? `${managementCounts.supplement}개`
                       : managementLoadError
                         ? '확인 불가'
-                        : '확인 중'
+                        : ''
                   }
                   onClick={() => navigate('/supplements')}
                   divided
@@ -526,7 +526,7 @@ export function MyPage({
                       ? `예정 ${managementCounts.upcomingVisit}개`
                       : managementLoadError
                         ? '확인 불가'
-                        : '확인 중'
+                        : ''
                   }
                   onClick={() => navigate('/my/visits')}
                   divided

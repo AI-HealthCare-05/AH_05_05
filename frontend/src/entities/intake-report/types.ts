@@ -16,6 +16,12 @@ export interface ProductGuide {
 }
 export interface CardSource {
   id: string; title: string; organization: string | null; url: string | null; evidenceLevel: string;
+  quote?: string | null; chunkId?: string | null; datasetVersion?: string | null;
+}
+export interface ReportSectionStatus {
+  sectionId: 'food_drink' | 'lifestyle' | 'additional_precautions';
+  status: 'verified' | 'partial' | 'unverified';
+  reason: string; targetItemIds: number[];
 }
 export interface CardSection { text: string; sourceIds: string[]; }
 export interface CardDetail { label: string; text: string; sourceIds: string[]; }
@@ -39,6 +45,7 @@ export interface LifestyleCard {
 export interface IntakeReportCards {
   medications: MedicationCard[]; interactions: InteractionCard[]; overlaps: OverlapCard[];
   lifestyle: LifestyleCard[]; sources: CardSource[];
+  sectionStatuses?: ReportSectionStatus[];
   originalTexts?: { key: string; label: string; text: string; sourceIds: string[] }[];
 }
 export interface IntakeReport {
