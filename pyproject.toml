@@ -45,6 +45,7 @@ app = [
     "opencv-python-headless>=5,<6",
     "orjson>=3.11.5",
     "pillow>=11,<13",
+    "pillow-heif>=1.7,<2",
     "qdrant-client>=1.19.0",
     "langchain-openai>=1.5.1",
     "passlib[bcrypt]>=1.7.4",
