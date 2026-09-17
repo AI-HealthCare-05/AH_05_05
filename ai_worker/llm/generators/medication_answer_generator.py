@@ -704,15 +704,18 @@ class OpenAIMedicationAnswerGenerator:
 
     @staticmethod
     def _is_evidence_gap_guidance(result: MedicationChatResult) -> bool:
-        """근거 부재 안내는 새 의학 주장을 만들지 않는 범위에서만 LLM이 정리한다."""
+        """근거 부재 안내다. 초안이 이미 최종 형식이라 LLM 재작성을 거치지 않는다."""
 
         return MedicationChatReasonCode.IN_SCOPE_NO_EVIDENCE.value in result.safety_reason_codes
 
     @classmethod
     def _allows_no_source_llm_guidance(cls, result: MedicationChatResult) -> bool:
-        """근거 부재 안내와 저위험 일반 영양 안내만 출처 없이 LLM 정리를 허용한다."""
+        """저위험 일반 영양 안내만 출처 없이 LLM 정리를 허용한다.
 
-        return cls._is_evidence_gap_guidance(result) or (
+        근거 부재 안내는 앞에서 이미 걸러지므로 여기까지 오지 않는다.
+        """
+
+        return (
             cls._GENERAL_SUPPLEMENT_GUIDANCE_REASON_CODE in result.safety_reason_codes
             and result.route == MedicationChatRoute.SUPPLEMENT_GUIDE
             and result.risk_decision is not None
