@@ -153,7 +153,9 @@ def test_email_groups_unavailable_medications_without_empty_details(standalone):
     assert "확인 불가 약품" in plain
     assert "스토엠정" in plain
     assert "확인 불가 약품" in markup
-    assert markup.count('<details class="medicine">') == (1 if standalone else 0)
+    # Standalone emails use the same accordion projection for both the
+    # confirmed medication and the unavailable-medication group.
+    assert markup.count('<details class="medicine">') == (2 if standalone else 0)
 
 
 def test_email_uses_web_card_order_and_values_without_old_percent_or_exclusions():

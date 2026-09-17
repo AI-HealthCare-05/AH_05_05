@@ -306,8 +306,8 @@ async def test_verifier_can_narrow_mixed_dose_quote_to_specific_adverse_event() 
         return {
             "claims": [
                 narrowed_claim
-                if value["server_checks"] or value["candidate_claims"]["claims"][0]["evidence"][0]["exact_quote"]
-                == adverse_bullet
+                if value["server_checks"]
+                or value["candidate_claims"]["claims"][0]["evidence"][0]["exact_quote"] == adverse_bullet
                 else broad_claim
             ]
         }
