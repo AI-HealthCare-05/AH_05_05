@@ -3995,6 +3995,7 @@ class AnswerMedicationQuestionUseCase:
         answer = EvidenceGapGuidanceBuilder().build(
             subject=EvidenceGapSubject.UNKNOWN,
             entity_names=interpretation.normalized_entity_names,
+            question=request.question,
         )
         return MedicationChatResult(
             request_id=request.request_id,
@@ -4024,6 +4025,7 @@ class AnswerMedicationQuestionUseCase:
         answer = EvidenceGapGuidanceBuilder().build(
             subject=cls._evidence_gap_subject(execution_plan.query_plan),
             entity_names=execution_plan.query_plan.entity_names,
+            question=request.question,
         )
         if resolution.status == MedicationExpressionResolutionStatus.AUTO_CORRECTED:
             answer = cls._correction_notice(resolution) + "\n\n" + answer

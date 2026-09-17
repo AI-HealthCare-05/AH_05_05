@@ -54,8 +54,13 @@ class EvidenceGapGuidanceBuilder:
         *,
         subject: EvidenceGapSubject,
         entity_names: list[str],
+        question: str | None = None,
     ) -> str:
-        target = self._notice_target(subject=subject, entity_names=entity_names)
+        target = self._notice_target(
+            subject=subject,
+            entity_names=entity_names,
+            question=question,
+        )
         official_line = self._OFFICIAL_SOURCE_LINES.get(
             subject,
             self._DEFAULT_OFFICIAL_SOURCE_LINE,
@@ -81,17 +86,27 @@ class EvidenceGapGuidanceBuilder:
             return ", ".join(names)
         return "질문 대상"
 
-    @staticmethod
+    # 인용한 질문이 길면 안내 문구가 읽기 어려워진다.
+    _MAX_QUOTED_QUESTION_LENGTH = 40
+
+    @classmethod
     def _notice_target(
+        cls,
         *,
         subject: EvidenceGapSubject,
         entity_names: list[str],
+        question: str | None = None,
     ) -> str:
         names = [name.strip() for name in entity_names if name.strip()]
         if subject == EvidenceGapSubject.INTERACTION and len(names) >= 2:
             return " ↔ ".join(names[:2])
         if names:
             return ", ".join(names)
+        # 대상을 인식하지 못한 질문이다. 질문에서 이름을 뽑아내면 코드가 대상을 판단하는
+        # 셈이므로, 사용자가 쓴 문장을 그대로 인용해 무엇을 찾지 못했는지만 알린다.
+        quoted = (question or "").strip()
+        if quoted and len(quoted) <= cls._MAX_QUOTED_QUESTION_LENGTH:
+            return f"「{quoted}」"
         return "질문 대상"
 
     @staticmethod
