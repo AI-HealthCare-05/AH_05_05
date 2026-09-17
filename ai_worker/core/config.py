@@ -74,4 +74,6 @@ class Config(BaseSettings):
         ge=0.0,
         le=1.0,
     )
+    # Source-locked report RAG is enabled by default; explicit false remains an opt-out.
+    INTAKE_REPORT_RAG_ENABLED: bool = True
     RUN_OPENAI_INTEGRATION_TESTS: bool = False

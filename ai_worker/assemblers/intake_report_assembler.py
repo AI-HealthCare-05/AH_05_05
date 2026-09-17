@@ -101,6 +101,13 @@ class IntakeReportAssembler:
                 item_type=IntakeReportItemType.MEDICATION,
                 item_id=medication.medication_id,
                 product_name=medication.name,
+                ingredient_aliases=list(
+                    dict.fromkeys(
+                        name.strip()
+                        for name in medication.interaction_names
+                        if name.strip() and name.strip() != medication.name.strip()
+                    )
+                ),
                 registered_intake_info=IntakeReportAssembler._medication_intake_info(
                     medication.dose,
                     medication.times_per_day,

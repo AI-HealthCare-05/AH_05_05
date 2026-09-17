@@ -109,35 +109,53 @@ class QdrantHybridKnowledgeStore(QdrantKnowledgeStore):
     ) -> list[RetrievedKnowledgeChunk]:
         self._validate_vectors([query_vector])
         await self._validate_existing_collection()
-        candidate_limit = min(
-            self._MAX_SEARCH_CANDIDATES,
-            search_query.limit * 4,
+        candidate_limit = (
+            search_query.limit
+            if search_query.exhaustive
+            else min(
+                self._MAX_SEARCH_CANDIDATES,
+                search_query.limit * 4,
+            )
         )
+        query_filter = self._build_filter(search_query)
+        candidate_pool_limit = candidate_limit
+        if search_query.exhaustive and self._search_mode == KnowledgeSearchMode.HYBRID:
+            count_result = await self._client.count(
+                collection_name=self._collection_name,
+                count_filter=query_filter,
+                exact=True,
+            )
+            candidate_pool_limit = max(1, int(count_result.count))
         request = self._query_request(
             query_vector=query_vector,
             query_text=search_query.query,
             candidate_limit=candidate_limit,
+            candidate_pool_limit=candidate_pool_limit,
+            query_filter=query_filter,
         )
-        query_filter = self._build_filter(search_query)
         query_kwargs = {
             "collection_name": self._collection_name,
             "query_filter": query_filter,
             "limit": candidate_limit,
+            "offset": search_query.offset,
             "with_payload": True,
             "with_vectors": False,
         }
         dense_scores: dict[str, float] | None = None
         if self._search_mode == KnowledgeSearchMode.HYBRID:
+            dense_query_kwargs = {
+                **query_kwargs,
+                "query": query_vector,
+                "using": self._DENSE_VECTOR_NAME,
+                "limit": candidate_pool_limit,
+                "offset": 0,
+            }
             response, dense_response = await asyncio.gather(
                 self._client.query_points(
                     **query_kwargs,
                     **request,
                 ),
-                self._client.query_points(
-                    **query_kwargs,
-                    query=query_vector,
-                    using=self._DENSE_VECTOR_NAME,
-                ),
+                self._client.query_points(**dense_query_kwargs),
             )
             dense_scores = self._point_scores(dense_response.points)
         else:
@@ -149,10 +167,16 @@ class QdrantHybridKnowledgeStore(QdrantKnowledgeStore):
             response.points,
             dense_scores=dense_scores,
         )
-        return KnowledgeSearchResultRefiner.refine(
-            results,
-            query=search_query.query,
-            limit=search_query.limit,
+        if search_query.exhaustive and response.points and not results:
+            raise RuntimeError("exhaustive Knowledge search received a nonempty page with no valid payloads.")
+        return (
+            results
+            if search_query.exhaustive
+            else KnowledgeSearchResultRefiner.refine(
+                results,
+                query=search_query.query,
+                limit=search_query.limit,
+            )
         )
 
     def _query_request(
@@ -161,6 +185,8 @@ class QdrantHybridKnowledgeStore(QdrantKnowledgeStore):
         query_vector: list[float],
         query_text: str,
         candidate_limit: int,
+        candidate_pool_limit: int,
+        query_filter: models.Filter,
     ) -> dict:
         if self._search_mode == KnowledgeSearchMode.DENSE:
             return {
@@ -178,12 +204,14 @@ class QdrantHybridKnowledgeStore(QdrantKnowledgeStore):
                 models.Prefetch(
                     query=query_vector,
                     using=self._DENSE_VECTOR_NAME,
-                    limit=candidate_limit,
+                    filter=query_filter,
+                    limit=candidate_pool_limit,
                 ),
                 models.Prefetch(
                     query=sparse_query,
                     using=self._BM25_VECTOR_NAME,
-                    limit=candidate_limit,
+                    filter=query_filter,
+                    limit=candidate_pool_limit,
                 ),
             ],
             "query": models.FusionQuery(fusion=models.Fusion.RRF),

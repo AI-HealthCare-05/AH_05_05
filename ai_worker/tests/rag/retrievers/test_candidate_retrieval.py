@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from ai_worker.rag.errors import GuidelineRetrievalError
 from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
     MedicationKnowledgeQueryBuilder,
 )
@@ -251,3 +252,80 @@ async def test_incomplete_exact_pair_evidence_continues_to_entity_and_semantic_t
         candidate_retrieval.KnowledgeSearchTier.EXACT_PAIR,
         candidate_retrieval.KnowledgeSearchTier.ENTITY,
     ]
+
+
+@pytest.mark.asyncio
+async def test_exhaustive_retrieval_pages_each_tier_until_store_is_empty() -> None:
+    class PagedStore(FakeKnowledgeStore):
+        async def search(self, *, query_vector, search_query):
+            self.queries.append(search_query)
+            if search_query.offset == 0:
+                return [
+                    SimpleNamespace(
+                        chunk_id=f"chunk-{index}",
+                        metadata=SimpleNamespace(interaction_pair_keys=[]),
+                    )
+                    for index in range(50)
+                ]
+            if search_query.offset == 50:
+                return [
+                    SimpleNamespace(
+                        chunk_id=f"chunk-{index}",
+                        metadata=SimpleNamespace(interaction_pair_keys=[]),
+                    )
+                    for index in range(50, 53)
+                ]
+            return []
+
+    plan = build_execution_plan()
+    plan = plan.model_copy(
+        update={
+            "include_all_eligible": True,
+            "query_plan": plan.query_plan.model_copy(update={"alternate_queries": []}),
+        }
+    )
+    store = PagedStore()
+    retriever = MedicationKnowledgeCandidateRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v17",
+        eligibility_evaluator=lambda *_: "ELIGIBLE",
+        section_coverage_evaluator=lambda *_: True,
+    )
+
+    result = await retriever.retrieve(execution_plan=plan)
+
+    assert [query.offset for query in store.queries] == [0, 50, 100]
+    assert all(query.limit == 50 for query in store.queries)
+    assert all(query.exhaustive for query in store.queries)
+    assert len(result.eligible) == 53
+    assert [tier.value for tier in result.attempted_search_tiers] == ["ENTITY"]
+
+
+@pytest.mark.asyncio
+async def test_exhaustive_retrieval_fails_if_store_ignores_offset() -> None:
+    class OffsetIgnoringStore(FakeKnowledgeStore):
+        async def search(self, *, query_vector, search_query):
+            self.queries.append(search_query)
+            return [SimpleNamespace(chunk_id="same-chunk", metadata=SimpleNamespace(interaction_pair_keys=[]))]
+
+    plan = build_execution_plan()
+    plan = plan.model_copy(
+        update={
+            "include_all_eligible": True,
+            "query_plan": plan.query_plan.model_copy(update={"alternate_queries": []}),
+        }
+    )
+    retriever = MedicationKnowledgeCandidateRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=OffsetIgnoringStore(),
+        dataset_version="knowledge-full-v17",
+        eligibility_evaluator=lambda *_: "ELIGIBLE",
+        section_coverage_evaluator=lambda *_: True,
+    )
+
+    with pytest.raises(GuidelineRetrievalError) as exc_info:
+        await retriever.retrieve(execution_plan=plan)
+
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
+    assert "offset" in str(exc_info.value.__cause__)

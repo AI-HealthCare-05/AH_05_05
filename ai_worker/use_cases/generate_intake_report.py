@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+import logging
 from collections.abc import Awaitable, Callable
 
 from ai_worker.assemblers.intake_report_assembler import IntakeReportAssembler
@@ -33,6 +34,45 @@ from ai_worker.schemas.medication_search import (
     MedicationQueryEntityType,
     MedicationSearchExecutionPlan,
 )
+
+logger = logging.getLogger(__name__)
+
+
+_SAFE_RAG_METRIC_NAMES = frozenset({"query_count", "focused_query_count", "verified_claim_count"})
+_SAFE_RAG_SECTION_METRIC_SUFFIXES = frozenset(
+    {
+        "retrieved_chunk_count",
+        "filtered_chunk_count",
+        "drafted_claim_count",
+        "verifier_omitted_claim_count",
+        "verified_card_count",
+        "retriever_raw_candidate_count",
+        "retriever_eligible_candidate_count",
+        "retriever_selected_child_count",
+        "batch_count",
+        "batch_forwarded_chunk_count",
+        "split_chunk_count",
+        "batch_completed_count",
+        "batch_incomplete_count",
+        "batch_failed_count",
+    }
+)
+
+
+def _safe_rag_metrics(metrics: dict[str, int]) -> dict[str, int]:
+    """Keep report runtime logs to known integer counters only."""
+    safe: dict[str, int] = {}
+    for name, value in metrics.items():
+        if not isinstance(value, int) or isinstance(value, bool):
+            continue
+        if name in _SAFE_RAG_METRIC_NAMES or name.startswith("claim_rejected_"):
+            safe[name] = value
+            continue
+        if name.startswith("section_") and any(
+            name.endswith(f"_{suffix}") for suffix in _SAFE_RAG_SECTION_METRIC_SUFFIXES
+        ):
+            safe[name] = value
+    return safe
 
 
 class GenerateIntakeReportUseCase:
@@ -67,6 +107,7 @@ class GenerateIntakeReportUseCase:
         *,
         user_id: int,
     ) -> IntakeReportResult:
+        deadline = asyncio.get_running_loop().time() + 110.0
         context = await self._load_context(user_id=user_id)
         if not context.medications and not context.supplements:
             return IntakeReportResult.empty(user_id=user_id)
@@ -137,15 +178,47 @@ class GenerateIntakeReportUseCase:
             nutrient_data = await self._nutrient_loader(context)
             draft = self._with_nutrients(draft, context, nutrient_data)
         async with self._tracer.span("intake_report.generate_markdown") as span:
-            outcome = await self._generator.generate(draft=draft)
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise AIWorkerError("보고서 생성 제한 시간을 초과했습니다.")
+            try:
+                async with asyncio.timeout(remaining):
+                    budgeted_generate = getattr(self._generator, "generate_with_budget", None)
+                    outcome = (
+                        await budgeted_generate(draft=draft, remaining_seconds=remaining)
+                        if callable(budgeted_generate)
+                        else await self._generator.generate(draft=draft)
+                    )
+            except TimeoutError as error:
+                raise AIWorkerError("보고서 생성 제한 시간을 초과했습니다.") from error
             span.end(
                 {
                     "fallback_used": outcome.fallback_used,
                     "fallback_reason": (outcome.fallback_reason.value if outcome.fallback_reason is not None else None),
+                    "rag_evidence_available": outcome.rag_evidence_available,
+                    "rag_query_count": outcome.rag_metrics.get("query_count", 0),
+                    "rag_verified_claim_count": outcome.rag_metrics.get("verified_claim_count", 0),
+                }
+            )
+            logger.info(
+                "intake_report.rag_metrics=%s",
+                json.dumps(_safe_rag_metrics(outcome.rag_metrics), sort_keys=True, separators=(",", ":")),
+            )
+        outcome_rag_available = (
+            outcome.rag_evidence_available if outcome.rag_evidence_available is not None else rag_available
+        )
+        if outcome.rag_evidence_available is not None:
+            draft = draft.model_copy(
+                update={
+                    "data_availability": draft.data_availability.model_copy(
+                        update={"rag_evidence_available": outcome_rag_available}
+                    )
                 }
             )
         status = (
-            IntakeReportStatus.COMPLETED if rag_available and not outcome.fallback_used else IntakeReportStatus.PARTIAL
+            IntakeReportStatus.COMPLETED
+            if outcome_rag_available and not outcome.fallback_used and not outcome.rag_partial
+            else IntakeReportStatus.PARTIAL
         )
         return draft.to_result(
             status=status,

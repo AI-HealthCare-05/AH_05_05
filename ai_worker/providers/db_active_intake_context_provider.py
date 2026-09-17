@@ -31,6 +31,8 @@ class DbActiveIntakeContextProvider:
         r"(?:mg|mcg|μg|㎍|g|밀리그램|마이크로그램|그램)\s*$",
         re.IGNORECASE,
     )
+    _TRAILING_GENERIC_DOSAGE_FORM = re.compile(r"(?:정|캡슐)$")
+    _COMBINATION_SEPARATOR = re.compile(r"[/+,&·ㆍ]")
 
     def __init__(
         self,
@@ -107,16 +109,25 @@ class DbActiveIntakeContextProvider:
             linked_names.setdefault(link.medication_id, []).append(link.interaction_entity.canonical_name)
 
         candidates_by_id = {}
+        generic_dosage_form_fallbacks_by_id: dict[int, str] = {}
         for item in medications:
             if item.medication_id in linked_names:
                 continue
             full_name = normalize_interaction_name(item.name).casefold()
             strength_free_name = cls._TRAILING_STRENGTH.sub("", full_name).strip()
-            candidates_by_id[item.medication_id] = list(dict.fromkeys([full_name, strength_free_name]))
+            generic_ingredient_name = strength_free_name
+            if not cls._COMBINATION_SEPARATOR.search(strength_free_name):
+                generic_ingredient_name = cls._TRAILING_GENERIC_DOSAGE_FORM.sub("", strength_free_name).strip()
+                generic_dosage_form_fallbacks_by_id[item.medication_id] = (
+                    generic_ingredient_name if generic_ingredient_name != strength_free_name else ""
+                )
+            candidates_by_id[item.medication_id] = list(
+                dict.fromkeys([full_name, strength_free_name, generic_ingredient_name])
+            )
         candidate_names = {name for names in candidates_by_id.values() for name in names if name}
-        catalog_names = (
+        catalog_entities = (
             {
-                entity.normalized_name: entity.canonical_name
+                entity.normalized_name: entity
                 for entity in await InteractionEntity.filter(entity_kind="DRUG", normalized_name__in=candidate_names)
             }
             if candidate_names
@@ -124,8 +135,13 @@ class DbActiveIntakeContextProvider:
         )
         for medication_id, candidates in candidates_by_id.items():
             for candidate in candidates:
-                if canonical_name := catalog_names.get(candidate):
-                    linked_names[medication_id] = [canonical_name]
+                if entity := catalog_entities.get(candidate):
+                    if (
+                        generic_dosage_form_fallbacks_by_id.get(medication_id) == candidate
+                        and normalize_interaction_name(entity.canonical_name).casefold() != candidate
+                    ):
+                        continue
+                    linked_names[medication_id] = [entity.canonical_name]
                     break
         return [
             item.model_copy(update={"interaction_names": sorted(set(linked_names.get(item.medication_id, [])))})
