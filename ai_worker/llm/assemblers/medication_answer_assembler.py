@@ -565,7 +565,9 @@ class MedicationAnswerAssembler:
             )
         if interaction_question and not chunks and not rules:
             if active_intake_interaction:
-                return sections, False
+                # 등록 목록 사이를 물은 질문이다. 범위를 밝히지 않으면 조회가 실패한 것처럼 읽힌다.
+                sections.append(cls._active_intake_interaction_gap_section())
+                return sections, True
             sections.append(cls._unverified_interaction_section())
             return sections, True
         return sections, False
@@ -704,6 +706,20 @@ class MedicationAnswerAssembler:
         if not pairs:
             return ""
         return MedicationAnswerAssembler._unverified_interaction_section()
+
+    @staticmethod
+    def _active_intake_interaction_gap_section() -> str:
+        """등록 목록 사이에서 조합을 찾지 못했음을 범위와 함께 알린다.
+
+        조회가 끝났는지 여부는 이 단계에서 알 수 없으므로 단정하지 않는다.
+        찾지 못한 범위만 밝히고, 안전하다는 뜻이 아님을 함께 남긴다.
+        """
+
+        return (
+            "🔁 **복약정보와 상호작용**\n"
+            "- 등록하신 약·영양제 조합에서는 승인된 상호작용 규칙을 찾지 못했습니다.\n"
+            "- 확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다."
+        )
 
     @staticmethod
     def _unverified_interaction_section() -> str:
