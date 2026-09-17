@@ -426,7 +426,8 @@ def _missing_table_result(code="TABLE_NOT_FOUND"):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("second_fails", [False, True])
-async def test_missing_table_retries_once_without_unsharp_and_accounts_for_both_calls(monkeypatch, second_fails):
+@pytest.mark.parametrize("code", ["TABLE_NOT_FOUND", "AMBIGUOUS_MEDICATION_TABLE"])
+async def test_missing_table_retries_once_without_unsharp_and_accounts_for_both_calls(monkeypatch, second_fails, code):
     from app.services.medication_ocr_v3 import service as subject
 
     first = _processed()
@@ -436,8 +437,8 @@ async def test_missing_table_retries_once_without_unsharp_and_accounts_for_both_
     preprocess = Mock(side_effect=[first, alternate])
     pipeline = AsyncMock(
         side_effect=[
-            _missing_table_result(),
-            _missing_table_result() if second_fails else _successful_pipeline_result(),
+            _missing_table_result(code),
+            _missing_table_result(code) if second_fails else _successful_pipeline_result(),
         ]
     )
     monkeypatch.setattr(subject, "preprocess_image", preprocess)
@@ -462,7 +463,7 @@ async def test_missing_table_retries_once_without_unsharp_and_accounts_for_both_
     ("version", "code"),
     [
         ("v3.4.2", "TABLE_NOT_FOUND"),
-        ("v3.4.1", "AMBIGUOUS_MEDICATION_TABLE"),
+        ("v3.4.2", "AMBIGUOUS_MEDICATION_TABLE"),
     ],
 )
 async def test_table_retry_does_not_repeat_alternate_profile_or_bypass_ambiguity(monkeypatch, version, code):

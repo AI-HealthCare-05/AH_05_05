@@ -1590,6 +1590,9 @@ def _name_field(cell: LayoutCell) -> MedicationField:
 
 def _canonical_name_value(text: str) -> str:
     normalized = " ".join(unicodedata.normalize("NFKC", text).split()).replace("_", "")
+    # OCR can join the preceding row's storage label to a starred product name.
+    # Require an explicit product separator; never strip a product-name prefix.
+    normalized = re.sub(r"^(?:\((?:실온|냉장|차광)보관\)|(?:실온|냉장|차광)보관)\s*\*\s*(?=[가-힣])", "", normalized)
     normalized = strip_leading_name_symbols(normalized)
     normalized = re.sub(r"^(?:[A-Z0-9]{1,3}\s+)+(?=[가-힣])", "", normalized)
     normalized = re.sub(r"^비\)\s*", "", normalized)
