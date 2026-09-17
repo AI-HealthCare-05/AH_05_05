@@ -36,10 +36,11 @@
 .v11-pair h3 { margin-top: .4375rem; }
 .v11-guidance-product { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 2px solid #c4d6cb; }
 .v11-guidance-product:first-of-type { margin-top: .75rem; padding-top: 0; border-top: 0; }
-.v11-guidance-product-title { font-size: 1rem; font-weight: 700; overflow-wrap: anywhere; margin-bottom: .75rem; }
+.v11-guidance-product-title { font-size: 1rem; font-weight: 400; overflow-wrap: anywhere; margin-bottom: .75rem; }
 .v11-guidance-categories { display: flex; flex-wrap: wrap; gap: .375rem; margin-top: .5rem; }
+.v11-guidance-categories .v11-tag { font-weight: 400; }
 .v11-guidance-titles { margin: .75rem 0; }
-.v11-guidance-titles h4 { margin: .375rem 0; font-size: .875rem; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.v11-guidance-titles h4 { margin: .375rem 0; font-size: .875rem; font-weight: 400; line-height: 1.5; overflow-wrap: anywhere; }
 .v11-guidance-description p, .v11-guidance-product .v11-action p { margin-top: .625rem; font-size: .8125rem; line-height: 1.65; overflow-wrap: anywhere; white-space: pre-line; }
 .v11-guidance-product .v11-action { margin-top: .75rem; }
 .v11-guidance-product .v11-action p:first-child { margin-top: 0; }
@@ -64,9 +65,15 @@
 .v11-collapsible-full { margin-top: .375rem; color: #4d685a; font-size: .8125rem; line-height: 1.65; overflow-wrap: anywhere; }
 .v11-expand-label, .v11-collapse-label { display: inline-flex; align-items: center; gap: .25rem; margin-top: .25rem; color: #1d6e55; font-size: .75rem; font-weight: 800; }
 .v11-expand-label, .v11-collapse-label { padding: 0; border: 0; background: transparent; cursor: pointer; }
+.v11-guidance-description .v11-expand-label, .v11-guidance-description .v11-collapse-label { font-weight: 400; }
 .v11-card-sources { margin-top: .625rem !important; color: #657b70 !important; font-size: .75rem !important; }
 .v11-rag-evidence { margin-top: .5rem; color: #50695a; font-size: .75rem; overflow-wrap: anywhere; }
+.v11-rag-evidence summary { font-weight: 400 !important; }
 .v11-rag-evidence blockquote { margin: .5rem 0; padding-left: .75rem; border-left: 2px solid #c4d6cb; white-space: pre-wrap; }
+.v11-rag-evidence-quotes { margin: .5rem 0 0; padding-left: 1rem; }
+.v11-rag-evidence-quotes li { margin-top: .375rem; }
+.v11-rag-evidence-quotes li:first-child { margin-top: 0; }
+.v11-rag-evidence-quotes blockquote { margin: 0; }
 .v11-report a { color: #1d6e55; }
 .v11-hint, .v11-reference { color: #687c72; font-size: .75rem; line-height: 1.6; overflow-wrap: anywhere; }
 .v11-nutrient-notes { list-style: disc; padding-left: 1rem; }
