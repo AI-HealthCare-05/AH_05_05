@@ -5,6 +5,8 @@
 
 최신 서버 계약은 [`medication-guide-ocr-api-spec-v1.md`](medication-guide-ocr-api-spec-v1.md)를 기준으로 한다.
 
+사진 형식·정규화·조건부 재시도 요구사항은 [OCR 사진 입력 요구사항](ocr/input-requirements.md)을 참고한다. HEIC/HEIF·WebP·BMP·단일 TIFF 및 MPO 대표 프레임을 지원하며, 미리보기의 원본은 정규화된 전처리 전 JPEG/PNG일 수 있다.
+
 ## 현재 공개 API
 
 | Method | Path | 성공 응답 | 역할 |
