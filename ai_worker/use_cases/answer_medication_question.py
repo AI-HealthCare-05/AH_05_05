@@ -4212,13 +4212,15 @@ class AnswerMedicationQuestionUseCase:
         )
         return draft.model_copy(
             update={
-                "answer": self._assembler.assemble(
-                    context=answer_context,
-                    guide=None,
-                    rules=[],
-                    chunks=[],
-                    interaction_question=True,
-                    question_interaction_pairs=execution_plan.query_plan.interaction_pairs,
+                "answer": EvidenceGapGuidanceBuilder.as_notice(
+                    self._assembler.assemble(
+                        context=answer_context,
+                        guide=None,
+                        rules=[],
+                        chunks=[],
+                        interaction_question=True,
+                        question_interaction_pairs=execution_plan.query_plan.interaction_pairs,
+                    )
                 ),
                 "route": MedicationChatRoute.INTERACTION,
                 "sources": self._build_sources(
