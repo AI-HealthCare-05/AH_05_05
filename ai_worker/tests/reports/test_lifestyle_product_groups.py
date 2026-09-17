@@ -15,7 +15,9 @@ def test_markdown_groups_product_guidance_without_interleaving_or_losing_rag_ref
     draft = _draft()
     second_medication = draft.current_stack[0].model_copy(update={"item_id": 303, "product_name": "이부프로펜"})
     colliding_supplement = draft.current_stack[1].model_copy(update={"item_id": 101, "product_name": "동일번호 영양제"})
-    draft = draft.model_copy(update={"current_stack": [draft.current_stack[0], colliding_supplement, second_medication]})
+    draft = draft.model_copy(
+        update={"current_stack": [draft.current_stack[0], colliding_supplement, second_medication]}
+    )
     shared_action = "제품 설명서를 확인하세요."
     cards = IntakeReportCards(
         lifestyle=[
@@ -87,7 +89,9 @@ def test_markdown_groups_product_guidance_without_interleaving_or_losing_rag_ref
 
     assert "## 약·영양제별 주의사항 및 가이드" in markdown
     assert markdown.index("### 아세트아미노펜\n") < markdown.index("#### 첫 약 안내")
-    assert markdown.index("#### 첫 약 안내") < markdown.index("#### 둘째 약 안내") < markdown.index("### 동일번호 영양제")
+    assert (
+        markdown.index("#### 첫 약 안내") < markdown.index("#### 둘째 약 안내") < markdown.index("### 동일번호 영양제")
+    )
     assert markdown.index("### 공통 안내") < markdown.index("#### 두 약 함께 안내")
     assert markdown.count(COMMON_INGREDIENT_DISCLAIMER) == 1
     assert markdown.index("둘째 약 안내") < markdown.index(COMMON_INGREDIENT_DISCLAIMER) < markdown.index("첫 약 설명")
@@ -150,7 +154,11 @@ def test_email_groups_product_guidance_without_interleaving() -> None:
                 "quote": f"{source_title} 인용",
                 "chunk_id": source_id,
             }
-            for source_id, source_title in [("rag-a", "첫 약 근거"), ("rag-b", "두 번째 약 근거"), ("rag-c", "둘째 첫 약 근거")]
+            for source_id, source_title in [
+                ("rag-a", "첫 약 근거"),
+                ("rag-b", "두 번째 약 근거"),
+                ("rag-c", "둘째 첫 약 근거"),
+            ]
         ]
     )
 
@@ -231,7 +239,13 @@ def test_group_resolver_uses_declared_card_type_and_never_guesses_a_collision() 
 
     groups = group_lifestyle_guidance_cards(cards, draft.current_stack)
 
-    assert [group.title for group in groups] == ["아세트아미노펜", "동일번호 영양제", "공통 안내", "공통 안내", "공통 안내"]
+    assert [group.title for group in groups] == [
+        "아세트아미노펜",
+        "동일번호 영양제",
+        "공통 안내",
+        "공통 안내",
+        "공통 안내",
+    ]
     medication_display = product_guidance_display(groups[0])
     assert medication_display.categories == ("음식", "운전")
     assert medication_display.warning_titles == ("약 음식 주의", "약 음식 주의")

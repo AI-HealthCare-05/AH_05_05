@@ -662,9 +662,7 @@ async def test_search_forwards_pagination_offset_to_qdrant() -> None:
         async def get_collection(self, collection_name: str):
             return SimpleNamespace(
                 config=SimpleNamespace(
-                    params=SimpleNamespace(
-                        vectors=models.VectorParams(size=3, distance=models.Distance.COSINE)
-                    )
+                    params=SimpleNamespace(vectors=models.VectorParams(size=3, distance=models.Distance.COSINE))
                 )
             )
 
@@ -701,16 +699,12 @@ async def test_exhaustive_search_fails_closed_on_nonempty_malformed_page() -> No
         async def get_collection(self, collection_name: str):
             return SimpleNamespace(
                 config=SimpleNamespace(
-                    params=SimpleNamespace(
-                        vectors=models.VectorParams(size=3, distance=models.Distance.COSINE)
-                    )
+                    params=SimpleNamespace(vectors=models.VectorParams(size=3, distance=models.Distance.COSINE))
                 )
             )
 
         async def query_points(self, **kwargs):
-            return SimpleNamespace(
-                points=[SimpleNamespace(id="malformed", score=0.9, payload={})]
-            )
+            return SimpleNamespace(points=[SimpleNamespace(id="malformed", score=0.9, payload={})])
 
     store = QdrantKnowledgeStore(
         client=MalformedPageClient(),

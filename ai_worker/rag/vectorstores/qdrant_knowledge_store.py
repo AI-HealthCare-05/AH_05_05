@@ -162,9 +162,7 @@ class QdrantKnowledgeStore:
             if result is not None:
                 raw_results.append(result)
         if search_query.exhaustive and response.points and not raw_results:
-            raise RuntimeError(
-                "exhaustive Knowledge search received a nonempty page with no valid payloads."
-            )
+            raise RuntimeError("exhaustive Knowledge search received a nonempty page with no valid payloads.")
         refined_results = (
             raw_results
             if search_query.exhaustive

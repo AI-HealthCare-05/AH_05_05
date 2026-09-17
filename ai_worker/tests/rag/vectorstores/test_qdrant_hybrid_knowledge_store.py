@@ -262,9 +262,7 @@ async def test_exhaustive_hybrid_search_fails_closed_on_nonempty_malformed_page(
 
         async def query_points(self, **kwargs):
             self.query_calls.append(kwargs)
-            return SimpleNamespace(
-                points=[SimpleNamespace(id="malformed", score=0.9, payload={})]
-            )
+            return SimpleNamespace(points=[SimpleNamespace(id="malformed", score=0.9, payload={})])
 
     client = MalformedHybridClient()
     store = QdrantHybridKnowledgeStore(

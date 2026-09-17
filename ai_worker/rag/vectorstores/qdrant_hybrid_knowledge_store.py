@@ -168,9 +168,7 @@ class QdrantHybridKnowledgeStore(QdrantKnowledgeStore):
             dense_scores=dense_scores,
         )
         if search_query.exhaustive and response.points and not results:
-            raise RuntimeError(
-                "exhaustive Knowledge search received a nonempty page with no valid payloads."
-            )
+            raise RuntimeError("exhaustive Knowledge search received a nonempty page with no valid payloads.")
         return (
             results
             if search_query.exhaustive
