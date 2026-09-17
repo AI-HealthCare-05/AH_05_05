@@ -4,6 +4,7 @@ from tortoise import Tortoise
 
 from ai_worker.repositories.medication_product_guide_repository import (
     DbMedicationProductGuideRepository,
+    _restore_numeric_separator,
 )
 from app.core.db.databases import TORTOISE_APP_MODELS
 from app.models.interactions import MedicationProductGuide
@@ -709,3 +710,18 @@ async def test_report_handles_balanced_product_annotations_without_changing_iden
     assert corrected.guide is not None
     assert corrected.guide.medication_guide_id == guide.id
     assert corrected.is_inferred
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        # 세 자리 묶음은 적재 과정에서 깨진 쉼표다.
+        ("일일최대용량(4|000mg)을초과하지마십시오", "일일최대용량(4,000mg)을초과하지마십시오"),
+        ("1일2|400mg까지", "1일2,400mg까지"),
+        # 세 자리가 아니면 원래 조항 구분자이므로 건드리지 않는다.
+        ("5|6일간투여하여도", "5|6일간투여하여도"),
+        ("1일3회|2정씩복용", "1일3회|2정씩복용"),
+    ],
+)
+def test_restore_numeric_separator_only_repairs_thousand_groups(value: str, expected: str) -> None:
+    assert _restore_numeric_separator(value) == expected

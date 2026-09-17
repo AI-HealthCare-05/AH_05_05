@@ -3995,6 +3995,7 @@ class AnswerMedicationQuestionUseCase:
         answer = EvidenceGapGuidanceBuilder().build(
             subject=EvidenceGapSubject.UNKNOWN,
             entity_names=interpretation.normalized_entity_names,
+            question=request.question,
         )
         return MedicationChatResult(
             request_id=request.request_id,
@@ -4024,6 +4025,7 @@ class AnswerMedicationQuestionUseCase:
         answer = EvidenceGapGuidanceBuilder().build(
             subject=cls._evidence_gap_subject(execution_plan.query_plan),
             entity_names=execution_plan.query_plan.entity_names,
+            question=request.question,
         )
         if resolution.status == MedicationExpressionResolutionStatus.AUTO_CORRECTED:
             answer = cls._correction_notice(resolution) + "\n\n" + answer
@@ -4061,14 +4063,16 @@ class AnswerMedicationQuestionUseCase:
         interpretation: MedicationQuestionInterpretation,
         evidence_coverage: MedicationEvidenceCoverage,
     ) -> MedicationChatResult:
-        answer = self._assembler.assemble(
-            context=context,
-            guide=None,
-            rules=[],
-            chunks=[],
-            interaction_question=True,
-            active_intake_interaction=True,
-            evidence_coverage=evidence_coverage,
+        answer = EvidenceGapGuidanceBuilder.as_notice(
+            self._assembler.assemble(
+                context=context,
+                guide=None,
+                rules=[],
+                chunks=[],
+                interaction_question=True,
+                active_intake_interaction=True,
+                evidence_coverage=evidence_coverage,
+            )
         )
         reason_codes = [
             MedicationChatReasonCode.IN_SCOPE_NO_EVIDENCE.value,
@@ -4208,13 +4212,15 @@ class AnswerMedicationQuestionUseCase:
         )
         return draft.model_copy(
             update={
-                "answer": self._assembler.assemble(
-                    context=answer_context,
-                    guide=None,
-                    rules=[],
-                    chunks=[],
-                    interaction_question=True,
-                    question_interaction_pairs=execution_plan.query_plan.interaction_pairs,
+                "answer": EvidenceGapGuidanceBuilder.as_notice(
+                    self._assembler.assemble(
+                        context=answer_context,
+                        guide=None,
+                        rules=[],
+                        chunks=[],
+                        interaction_question=True,
+                        question_interaction_pairs=execution_plan.query_plan.interaction_pairs,
+                    )
                 ),
                 "route": MedicationChatRoute.INTERACTION,
                 "sources": self._build_sources(
@@ -4328,9 +4334,14 @@ class AnswerMedicationQuestionUseCase:
         if query_plan.interaction_pair is not None or query_plan.interaction_pairs or query_plan.interaction_types:
             return EvidenceGapSubject.INTERACTION
         entity_kinds = {entity.kind for entity in query_plan.entities}
-        if InteractionEntityKind.DRUG in entity_kinds:
+        has_drug = InteractionEntityKind.DRUG in entity_kinds
+        has_supplement = InteractionEntityKind.SUPPLEMENT in entity_kinds
+        # 약과 영양제가 섞인 질문에서 한쪽만 고르면 나머지 확인처를 빠뜨린 안내가 된다.
+        if has_drug and has_supplement:
+            return EvidenceGapSubject.UNKNOWN
+        if has_drug:
             return EvidenceGapSubject.MEDICATION
-        if InteractionEntityKind.SUPPLEMENT in entity_kinds:
+        if has_supplement:
             return EvidenceGapSubject.SUPPLEMENT
         return EvidenceGapSubject.UNKNOWN
 

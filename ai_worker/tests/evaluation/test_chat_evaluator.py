@@ -340,6 +340,8 @@ async def test_draft_fallback_rate_counts_only_rejected_rewrites() -> None:
         (MedicationAnswerRewriteStatus.DRAFT_FALLBACK, MedicationAnswerFallbackReason.UNSUPPORTED_EVIDENCE_SECTION),
         (MedicationAnswerRewriteStatus.SKIPPED, MedicationAnswerFallbackReason.CLARIFICATION_REQUIRED),
         (MedicationAnswerRewriteStatus.SKIPPED, MedicationAnswerFallbackReason.NO_GROUNDED_SOURCES),
+        # 근거 부재 안내는 초안을 쓰도록 설계된 경로이므로 실패로 세지 않는다.
+        (MedicationAnswerRewriteStatus.SKIPPED, MedicationAnswerFallbackReason.EVIDENCE_GAP_NOTICE),
         # 결정론적으로 끝나 답변 생성까지 가지 않은 질문은 분모에서 빠진다.
         (None, None),
     ]
@@ -375,4 +377,4 @@ async def test_draft_fallback_rate_counts_only_rejected_rewrites() -> None:
         ChatEvaluationManifest(dataset_version="chat-test-v1", cases=cases)
     )
 
-    assert report.draft_fallback_rate == pytest.approx(0.5)
+    assert report.draft_fallback_rate == pytest.approx(0.4)
