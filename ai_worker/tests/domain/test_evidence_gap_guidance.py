@@ -59,7 +59,7 @@ def test_unresolved_target_quotes_the_question_instead_of_a_generic_label() -> N
         question="노니 분말의 효능이 뭐야?",
     )
 
-    assert "「노니 분말의 효능이 뭐야?」 관련 자료를 찾지 못했습니다." in answer
+    assert "「노니 분말의 효능이 뭐야?」라고 하신 질문에 답할 자료를 찾지 못했습니다." in answer
     assert "질문 대상" not in answer
 
 
@@ -85,7 +85,7 @@ def test_quoted_question_keeps_the_notice_on_one_bullet() -> None:
         question="노니\n분말  효능",
     )
 
-    assert "- 「노니 분말 효능」 관련 자료를 찾지 못했습니다." in answer
+    assert "- 「노니 분말 효능」라고 하신 질문에 답할 자료를 찾지 못했습니다." in answer
     assert all(line.startswith(("-", "✉️", "📭")) for line in answer.splitlines() if line.strip())
 
 

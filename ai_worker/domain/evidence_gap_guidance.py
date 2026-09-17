@@ -60,8 +60,7 @@ class EvidenceGapGuidanceBuilder:
         )
         return "\n\n".join(
             [
-                f"✉️ **안내사항**\n\n- {target} 관련 자료를 찾지 못했습니다.\n"
-                "- 확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다.",
+                f"✉️ **안내사항**\n\n- {target}\n- 확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다.",
                 f"📭 **공식 확인 경로**\n\n- {official_line}",
             ]
         )
@@ -79,14 +78,15 @@ class EvidenceGapGuidanceBuilder:
     ) -> str:
         names = [name.strip() for name in entity_names if name.strip()]
         if subject == EvidenceGapSubject.INTERACTION and len(names) >= 2:
-            return " ↔ ".join(names[:2])
+            return f"{' ↔ '.join(names[:2])} 관련 자료를 찾지 못했습니다."
         if names:
-            return ", ".join(names)
+            return f"{', '.join(names)} 관련 자료를 찾지 못했습니다."
         # 대상을 인식하지 못한 질문이다. 질문에서 이름을 뽑아내면 코드가 대상을 판단하는
         # 셈이므로, 사용자가 쓴 문장을 그대로 인용해 무엇을 찾지 못했는지만 알린다.
         # 이 답변은 LLM 재작성을 거치지 않아 마크다운 정제도 받지 않는다.
         # 개행이 그대로 실리면 불렛 밖 맨 줄이 생기므로 공백을 먼저 정규화한다.
         quoted = re.sub(r"\s+", " ", question or "").strip()
         if quoted and len(quoted) <= cls._MAX_QUOTED_QUESTION_LENGTH:
-            return f"「{quoted}」"
-        return "질문 대상"
+            # 인용은 문장이므로 명사구 자리에 넣지 않는다.
+            return f"「{quoted}」라고 하신 질문에 답할 자료를 찾지 못했습니다."
+        return "질문 대상 관련 자료를 찾지 못했습니다."

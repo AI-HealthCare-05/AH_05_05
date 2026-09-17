@@ -4334,9 +4334,14 @@ class AnswerMedicationQuestionUseCase:
         if query_plan.interaction_pair is not None or query_plan.interaction_pairs or query_plan.interaction_types:
             return EvidenceGapSubject.INTERACTION
         entity_kinds = {entity.kind for entity in query_plan.entities}
-        if InteractionEntityKind.DRUG in entity_kinds:
+        has_drug = InteractionEntityKind.DRUG in entity_kinds
+        has_supplement = InteractionEntityKind.SUPPLEMENT in entity_kinds
+        # 약과 영양제가 섞인 질문에서 한쪽만 고르면 나머지 확인처를 빠뜨린 안내가 된다.
+        if has_drug and has_supplement:
+            return EvidenceGapSubject.UNKNOWN
+        if has_drug:
             return EvidenceGapSubject.MEDICATION
-        if InteractionEntityKind.SUPPLEMENT in entity_kinds:
+        if has_supplement:
             return EvidenceGapSubject.SUPPLEMENT
         return EvidenceGapSubject.UNKNOWN
 
