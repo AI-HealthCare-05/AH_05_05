@@ -3411,7 +3411,8 @@ async def test_execute_distinguishes_in_scope_question_without_evidence() -> Non
     assert result.safety_status == SafetyStatus.RESTRICTED
     assert result.safety_reason_codes == ["IN_SCOPE_NO_EVIDENCE"]
     assert "✉️ **안내사항**" in result.answer
-    assert "📭 **공식 확인 경로**" not in result.answer
+    # 확인처는 코드가 정한다. LLM이 기관 이름을 만들면 없는 출처가 생긴다.
+    assert "📭 **공식 확인 경로**" in result.answer
     assert "의료진·약사에게 확인할 내용" not in result.answer
     assert "안전한 조합" not in result.answer
 

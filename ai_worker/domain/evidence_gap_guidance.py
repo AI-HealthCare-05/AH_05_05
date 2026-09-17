@@ -42,6 +42,13 @@ class EvidenceGapGuidanceBuilder:
         ]
         return "\n\n".join(section for section in sections if section)
 
+    # 공인 확인처는 질문 대상에 따라 고정한다. 기관 이름을 LLM이 만들면 없는 출처가 생긴다.
+    _OFFICIAL_SOURCE_LINES = {
+        EvidenceGapSubject.MEDICATION: "의약품안전나라에서 허가사항을 확인할 수 있습니다.",
+        EvidenceGapSubject.SUPPLEMENT: "식품안전나라에서 기능성 원료 정보를 확인할 수 있습니다.",
+    }
+    _DEFAULT_OFFICIAL_SOURCE_LINE = "의약품은 의약품안전나라, 건강기능식품은 식품안전나라에서 확인할 수 있습니다."
+
     def build(
         self,
         *,
@@ -49,9 +56,14 @@ class EvidenceGapGuidanceBuilder:
         entity_names: list[str],
     ) -> str:
         target = self._notice_target(subject=subject, entity_names=entity_names)
+        official_line = self._OFFICIAL_SOURCE_LINES.get(
+            subject,
+            self._DEFAULT_OFFICIAL_SOURCE_LINE,
+        )
         return "\n\n".join(
             [
                 f"✉️ **안내사항**\n\n- {target} 관련 자료를 찾지 못했습니다.",
+                f"📭 **공식 확인 경로**\n\n- {official_line}",
             ]
         )
 

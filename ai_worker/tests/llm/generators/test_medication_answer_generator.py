@@ -802,26 +802,22 @@ async def test_generator_uses_llm_for_low_risk_general_supplement_guidance_witho
     assert client.messages is not None
 
 
-async def test_generator_uses_llm_for_evidence_gap_official_guidance() -> None:
-    client = FakeAnswerClient(
-        response={
-            "answer": (
-                "✉️ **안내사항**\n\n"
-                "- 마그네슘 ↔ 아연 관련 자료를 찾지 못했습니다.\n\n"
-                "📭 **공식 확인 경로**\n\n"
-                "- 식품안전나라의 기능성 원료 정보를 확인하세요."
-            ),
-            "section_types": [],
-        }
-    )
-    generator = OpenAIMedicationAnswerGenerator(
-        model="gpt-4o-mini",
-        client=client,
+async def test_generator_does_not_call_llm_for_evidence_gap_notice() -> None:
+    """근거 부재 안내는 이미 최종 형식이며 보탤 사실이 없다.
+
+    재작성을 맡기면 조회하지 못한 내용을 채워 넣을 자리만 생긴다.
+    """
+
+    client = FakeAnswerClient(error=AssertionError("호출하면 안 됩니다."))
+    generator = OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client)
+    draft = (
+        "✉️ **안내사항**\n\n- 마그네슘 ↔ 아연 관련 자료를 찾지 못했습니다.\n\n"
+        "📭 **공식 확인 경로**\n\n- 의약품은 의약품안전나라, 건강기능식품은 식품안전나라에서 확인할 수 있습니다."
     )
     initial = build_result().model_copy(
         update={
             "route": MedicationChatRoute.RESTRICTED,
-            "answer": "마그네슘 ↔ 아연 관련 자료를 찾지 못했습니다.",
+            "answer": draft,
             "sources": [],
             "safety_reason_codes": [MedicationChatReasonCode.IN_SCOPE_NO_EVIDENCE.value],
         }
@@ -837,43 +833,10 @@ async def test_generator_uses_llm_for_evidence_gap_official_guidance() -> None:
         result=initial,
     )
 
-    assert outcome.observation.status == MedicationAnswerRewriteStatus.REWRITTEN
-    assert client.messages is not None
-    assert "식품안전나라" in outcome.result.answer
-
-
-async def test_generator_keeps_evidence_gap_draft_when_rewrite_adds_caution_section() -> None:
-    """근거를 찾지 못한 답변에 주의사항이 생기면 조회하지 못한 내용을 채운 것이다."""
-
-    client = FakeAnswerClient(
-        response={
-            "answer": ("⚠️ **주의사항**\n\n- 임부는 탁센을 복용하지 마세요.\n- 위장출혈 위험이 있습니다."),
-            "section_types": [],
-        }
-    )
-    generator = OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client)
-    initial = build_result().model_copy(
-        update={
-            "route": MedicationChatRoute.RESTRICTED,
-            "answer": "현재 제공된 근거에서 임산부가 조심해야 할 약물을 확인하기 어렵습니다.",
-            "sources": [],
-            "safety_reason_codes": [MedicationChatReasonCode.IN_SCOPE_NO_EVIDENCE.value],
-        }
-    )
-
-    outcome = await generator.generate(
-        request=MedicationChatRequest(
-            request_id="0f6f3a1c-6f7d-4a0b-9c2e-2f5b1d8e4a11",
-            user_id=1,
-            question="임산부가 조심해야 할 약물이야?",
-        ),
-        context=ActiveIntakeContext(user_id=1),
-        result=initial,
-    )
-
-    assert outcome.observation.status == MedicationAnswerRewriteStatus.DRAFT_FALLBACK
-    assert outcome.observation.fallback_reason == MedicationAnswerFallbackReason.UNSUPPORTED_EVIDENCE_SECTION
-    assert outcome.result.answer == initial.answer
+    assert client.messages is None
+    assert outcome.observation.status == MedicationAnswerRewriteStatus.SKIPPED
+    assert outcome.observation.fallback_reason == MedicationAnswerFallbackReason.EVIDENCE_GAP_NOTICE
+    assert outcome.result.answer == draft
 
 
 async def test_generator_skips_llm_when_only_registered_intake_sources_exist() -> None:
