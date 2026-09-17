@@ -433,6 +433,9 @@ export function HomePage({
                       doseMutationPending={doseMutationPending}
                       onMemo={() => navigate('/medications/notes/new', { state: { entry: 'home' } })}
                       onUpload={() => navigate('/document-upload')}
+                      onSchedule={(recordId) =>
+                        navigate(`/medication-schedule?recordId=${recordId}`)
+                      }
                     />
                   </HomeSectionPanel>
                 ) : (
@@ -597,6 +600,7 @@ function LoggedInMedicationContent({
   doseMutationPending,
   onMemo,
   onUpload,
+  onSchedule,
 }: {
   state: MedicationHomeState;
   overviews: MedicationOverview[];
@@ -611,6 +615,7 @@ function LoggedInMedicationContent({
   doseMutationPending: boolean;
   onMemo: () => void;
   onUpload: () => void;
+  onSchedule: (recordId: number) => void;
 }) {
   if (state === 'empty') {
     return (
@@ -634,6 +639,38 @@ function LoggedInMedicationContent({
         </div>
         <Button variant="secondary" onClick={onUpload}>
           새 약봉투 등록
+        </Button>
+      </Card>
+    );
+  }
+
+  const scheduleTarget = overviews
+    .filter((overview) => overview.medications.some((medication) => !medication.asNeeded))
+    .sort((left, right) => right.start.date.localeCompare(left.start.date))
+    .find((overview) =>
+      overview.medications.some(
+        (medication) => !medication.asNeeded && medication.slots.length === 0,
+      ),
+    );
+  const hasScheduledMedication = overviews.some((overview) => {
+    const todayOffset = daysBetween(overview.start.date, currentDate);
+    return overview.medications.some(
+      (medication) =>
+        !medication.asNeeded &&
+        medication.slots.length > 0 &&
+        todayOffset >= 0 &&
+        todayOffset < medication.days,
+    );
+  });
+
+  if (!hasScheduledMedication && scheduleTarget) {
+    return (
+      <Card title="복용 시간을 설정해주세요" className="gap-4 bg-primary-bg p-5">
+        <p className="text-sm text-muted-foreground">
+          등록한 복용약을 오늘의 복약에서 확인하려면 복용 시간을 정해주세요.
+        </p>
+        <Button onClick={() => onSchedule(scheduleTarget.recordId)}>
+          복용 시간 설정하기
         </Button>
       </Card>
     );
@@ -697,6 +734,12 @@ function localISODate(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function daysBetween(from: string, to: string): number {
+  const fromDate = new Date(`${from}T00:00:00`);
+  const toDate = new Date(`${to}T00:00:00`);
+  return Math.round((toDate.getTime() - fromDate.getTime()) / 86_400_000);
 }
 
 function medicationHomeStateFromOverviews(

@@ -41,7 +41,7 @@ for (const viewport of [{ width: 1280, height: 600 }, { width: 1440, height: 600
     await page.goto('/chat');
     const main = page.getByRole('main');
     for (const mode of ['browse', 'selection']) {
-      if (mode === 'selection') await page.getByRole('button', { name: '대화 삭제', exact: true }).click();
+      if (mode === 'selection') await page.getByRole('button', { name: '선택', exact: true }).click();
       const rows = mode === 'browse' ? main.getByRole('button', { name: /^세로 확인/ }) : main.locator('label').filter({ has: page.getByRole('checkbox') });
       await expect(rows).toHaveCount(20);
       const measurement = await measureLines(rows);

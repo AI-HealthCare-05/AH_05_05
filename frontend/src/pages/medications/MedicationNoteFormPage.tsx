@@ -412,7 +412,7 @@ export function MedicationNoteFormPage() {
           else navigate(enteredFromHome ? '/home' : '/medications/notes', { replace: true });
         }}
       />
-      <main className="flex flex-1 flex-col gap-5 overflow-y-auto px-page-x py-5">
+      <main className="flex min-w-0 max-w-full flex-1 flex-col gap-5 overflow-x-clip overflow-y-auto px-page-x py-5">
         {initialLoadError ? (
           <div className="flex flex-col items-start gap-3">
             <p role="alert" className="text-sm text-danger-strong">

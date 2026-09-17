@@ -24,7 +24,7 @@ import {
   SupplementsPage,
   type NutrientStandardProfile,
 } from '@/pages/supplements';
-import { mockSupplementsWithThreeExceeded } from '@/entities/supplement';
+import { mockSupplementsWithThreeExceeded, type Supplement } from '@/entities/supplement';
 import { ChallengeMockProvider } from '@/features/challenges';
 import { ChallengeLayout } from '@/pages/challenges/ChallengeLayout';
 import { ChallengeHomePreviewPage } from '@/pages/challenges/ChallengeHomePreviewPage';
@@ -66,6 +66,21 @@ import { ChatLauncher } from './ChatLauncher';
 import { useSession } from './SessionContext';
 
 const THREE_EXCEEDED_SUPPLEMENTS = mockSupplementsWithThreeExceeded();
+const NO_UPPER_LIMIT_SUPPLEMENT: Supplement[] = [
+  {
+    supplementId: 532,
+    productId: 'sp-532',
+    name: '비타민 B1',
+    doseAmount: 1,
+    doseUnit: '정',
+    slots: ['morning'],
+    score: null,
+    reviewBody: null,
+    note: null,
+    nutrientDataAvailable: true,
+    nutrients: [{ nutrientId: 'thiamine', name: '비타민 B1', amount: 1.2, unit: 'mg' }],
+  },
+];
 const EXISTING_CHAT_HISTORY: ChatMessage[] = [
   { role: 'user', text: '이전에 물어본 질문이에요.', sources: [] },
   {
@@ -139,6 +154,14 @@ const FOURTEEN_DAY_MEDICATION_OVERVIEW: MedicationOverview = {
     days: 14,
   })),
 };
+const UNSCHEDULED_MEDICATION_OVERVIEW: MedicationOverview = {
+  ...ACTIVE_MEDICATION_OVERVIEW,
+  recordId: 12,
+  medications: ACTIVE_MEDICATION_OVERVIEW.medications.map((medication) => ({
+    ...medication,
+    slots: [],
+  })),
+};
 const CROSS_YEAR_MEDICATION_OVERVIEW: MedicationOverview = {
   ...ACTIVE_MEDICATION_OVERVIEW,
   recordId: 36,
@@ -156,6 +179,7 @@ const loadCompletedOnlyMedicationOverviews = async () => COMPLETED_ONLY_MEDICATI
 const loadActiveMedicationOverview = async () => ACTIVE_MEDICATION_OVERVIEW;
 const loadOneMedicationOverview = async () => ONE_MEDICATION_OVERVIEW;
 const loadFourteenDayMedicationOverview = async () => FOURTEEN_DAY_MEDICATION_OVERVIEW;
+const loadUnscheduledMedicationOverview = async () => UNSCHEDULED_MEDICATION_OVERVIEW;
 const loadMultipleMedicationOverviews = async () => MULTIPLE_MEDICATION_OVERVIEWS;
 const loadManyMedicationOverviews = async () => MANY_MEDICATION_OVERVIEWS;
 const loadCrossYearMedicationOverviews = async () => [CROSS_YEAR_MEDICATION_OVERVIEW];
@@ -192,6 +216,7 @@ const sendChatWithoutStoredHistory = async (): Promise<SendChatResult> => ({
 const failChatSessionHistory = async (_sessionId: number): Promise<ChatMessage[]> => {
   throw new Error('대화 이력 API가 아직 준비되지 않았어요.');
 };
+const neverResolves = () => new Promise<never>(() => undefined);
 
 function RequireAuthentication() {
   const { authenticated, principalKey } = useSession();
@@ -355,6 +380,17 @@ export function AppRouter() {
           path="/dev/my-authenticated"
           element={<MyPage authenticatedOverride />}
         />
+        <Route
+          path="/dev/my-management-loading"
+          element={
+            <MyPage
+              authenticatedOverride
+              medicationOverviewsLoader={neverResolves}
+              supplementsLoader={neverResolves}
+              followUpVisitsLoader={neverResolves}
+            />
+          }
+        />
         <Route path="/dev/my/profile" element={<MyProfilePage />} />
         <Route path="/dev/my-profile" element={<MyProfilePage />} />
         <Route path="/dev/my-visits" element={<FollowUpVisitsPage />} />
@@ -423,6 +459,24 @@ export function AppRouter() {
             <HomePage
               authenticatedOverride
               medicationOverviewLoader={loadOneMedicationOverview}
+            />
+          }
+        />
+        <Route
+          path="/dev/supplements-no-upper-limit"
+          element={
+            <SupplementsPage
+              supplementsOverride={NO_UPPER_LIMIT_SUPPLEMENT}
+              profileOverride={DEV_NUTRIENT_PROFILE}
+            />
+          }
+        />
+        <Route
+          path="/dev/home-unscheduled"
+          element={
+            <HomePage
+              authenticatedOverride
+              medicationOverviewLoader={loadUnscheduledMedicationOverview}
             />
           }
         />
