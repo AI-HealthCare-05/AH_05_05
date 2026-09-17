@@ -81,7 +81,7 @@ CONFIRMED_OCR_RESULT_EXAMPLE = {
         },
         status.HTTP_422_UNPROCESSABLE_CONTENT: {
             "model": OcrErrorResponse,
-            "description": "요청·이미지 검증 실패 (VALIDATION_ERROR, INVALID_IMAGE)",
+            "description": "요청·이미지 검증 실패 (VALIDATION_ERROR, INVALID_IMAGE, UNSUPPORTED_IMAGE_FORMAT, MULTI_IMAGE_NOT_SUPPORTED, IMAGE_TOO_LARGE, IMAGE_CONVERSION_FAILED)",
         },
         status.HTTP_503_SERVICE_UNAVAILABLE: {
             "model": OcrErrorResponse,
@@ -105,7 +105,7 @@ CONFIRMED_OCR_RESULT_EXAMPLE = {
                             "file": {
                                 "type": "string",
                                 "format": "binary",
-                                "description": "단일 JPG, PNG, HEIC, HEIF, WebP, BMP, TIFF 사진. 서버에서 JPG/PNG로 정규화하며 GIF 및 다중 이미지는 지원하지 않습니다.",
+                                "description": "JPG, PNG, HEIC/HEIF, WebP, BMP, 단일 TIFF 사진(50 MiB 이하). 실제 디코딩 형식을 기준으로 JPG/PNG로 정규화합니다. MPO는 대표 프레임만 사용하며 GIF 및 그 외 다중 이미지는 지원하지 않습니다. 원본은 최대 64MP·한 변 16,000px이며 결과는 40MP·10,000px 이내로 축소합니다.",
                             }
                         },
                     }
@@ -142,7 +142,7 @@ async def submit_medication_guide_ocr(
                 "image/jpeg": {"schema": {"type": "string", "format": "binary"}},
                 "image/png": {"schema": {"type": "string", "format": "binary"}},
             },
-            "description": "원본 문서 이미지",
+            "description": "임시 보관 중인 정규화된 전처리 전 이미지(JPEG/PNG). 업로드 원본 바이트와 다를 수 있습니다.",
         },
         status.HTTP_404_NOT_FOUND: {"model": OcrErrorResponse, "description": "OCR 작업 없음 (OCR_JOB_NOT_FOUND)"},
         status.HTTP_422_UNPROCESSABLE_CONTENT: {
