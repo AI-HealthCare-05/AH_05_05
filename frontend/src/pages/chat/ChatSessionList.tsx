@@ -1,6 +1,13 @@
 import { Plus } from 'lucide-react';
 import type { ChatSessionSummary } from '@/entities/chat';
-import { BottomTabbar, Button, Checkbox, Header, type TabKey } from '@/shared/ui';
+import {
+  BottomTabbar,
+  Button,
+  Header,
+  SelectionActions,
+  SelectionCheckbox,
+  type TabKey,
+} from '@/shared/ui';
 
 interface ChatSessionListProps {
   sessions: ChatSessionSummary[];
@@ -74,15 +81,14 @@ export function ChatSessionList({
               새 상담
             </Button>
           )}
-          <Button
-            size="compact"
-            fullWidth={false}
-            variant="secondary"
-            className="px-3"
-            onClick={onToggleSelectionMode}
-          >
-            {selectionMode ? '취소' : '선택'}
-          </Button>
+          <SelectionActions
+            selectionMode={selectionMode}
+            selectedCount={selectedSessionIds.size}
+            onStart={onToggleSelectionMode}
+            onCancel={onToggleSelectionMode}
+            onDelete={onDeleteSelected}
+            aria-label="최근 대화 선택"
+          />
         </div>
         {selectionMode && (
           <p className="text-sm text-muted-foreground">삭제할 대화를 선택하세요</p>
@@ -108,7 +114,7 @@ export function ChatSessionList({
                 key={session.sessionId}
                 className="flex min-h-touch min-w-0 cursor-pointer items-center gap-3 border-b border-border px-4 py-3 last:border-b-0"
               >
-                <Checkbox
+                <SelectionCheckbox
                   aria-label={`${session.title} 선택`}
                   checked={selectedSessionIds.has(session.sessionId)}
                   onCheckedChange={() => onToggleSession(session.sessionId)}
@@ -130,13 +136,6 @@ export function ChatSessionList({
         </div>
       </main>
 
-      {selectionMode && (
-        <div className="shrink-0 border-t border-border bg-card px-page-x py-3">
-          <Button disabled={selectedSessionIds.size === 0} onClick={onDeleteSelected}>
-            {selectedSessionIds.size}개 삭제
-          </Button>
-        </div>
-      )}
       <BottomTabbar active={null} onChange={onTabChange} className="border-t border-border" />
     </div>
   );

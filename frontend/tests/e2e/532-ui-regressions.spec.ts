@@ -67,6 +67,13 @@ test('챗봇 최근 대화는 제목 오른쪽에 새 상담과 선택을 함께
   await expect(newChat).toHaveAttribute('data-variant', 'primary');
   await toolbar.getByRole('button', { name: '선택', exact: true }).click();
   await expect(toolbar.getByRole('button', { name: '취소', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /\d+개 삭제/ })).toHaveCount(0);
+
+  await page.getByRole('checkbox', { name: '최근 상담 질문 선택', exact: true }).click();
+  const remove = toolbar.getByRole('button', { name: '삭제 1개', exact: true });
+  await expect(remove).toBeVisible();
+  await expect(remove).toHaveAttribute('data-variant', 'danger');
+  await expect(page.getByRole('button', { name: '삭제 1개', exact: true })).toHaveCount(1);
 });
 
 test('모바일 복약 메모의 복용 일시는 화면 폭을 넘기지 않는다', async ({ page }) => {
