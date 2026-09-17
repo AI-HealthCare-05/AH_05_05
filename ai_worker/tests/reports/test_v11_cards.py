@@ -1499,8 +1499,13 @@ def test_markdown_is_deterministic_projection_of_the_same_card_content() -> None
         assert card.efficacy.text in markdown
         assert card.caution.text in markdown
         assert card.contraindication.text in markdown
-    for card in [*cards.interactions, *cards.overlaps, *cards.lifestyle]:
+    for card in [*cards.interactions, *cards.overlaps]:
         assert card.title in markdown
+        assert card.summary in markdown
+        assert card.action in markdown
+    # Lifestyle cards are projected into one product/group body, so their
+    # individual titles are intentionally not repeated in Markdown.
+    for card in cards.lifestyle:
         assert card.summary in markdown
         assert card.action in markdown
 
@@ -1687,8 +1692,11 @@ def test_markdown_groups_same_category_lifestyle_and_all_overlaps_regardless_of_
 
     assert markdown.count("공통 안내 · 2개 항목") == 1
     assert markdown.count(shared_action) == 2
-    for card in [*cards.lifestyle, *cards.overlaps]:
+    for card in cards.overlaps:
         assert card.title in markdown and card.summary in markdown
+    for card in cards.lifestyle:
+        assert card.title not in markdown
+        assert card.summary in markdown
 
 
 def test_markdown_group_retains_distinct_source_metadata_only_at_bottom_without_inline_links() -> None:
@@ -2949,10 +2957,14 @@ def test_markdown_renders_new_lifestyle_guidance_once_with_sources_only_at_botto
     unescaped_body = html.unescape(body)
     unescaped_sources_section = html.unescape(sources_section)
 
-    assert markdown.count(food_card.title) == 1
-    assert markdown.count(timing_card.title) == 1
+    # New lifestyle guidance is rendered as one merged product/group body;
+    # retain every distinct summary and action without individual card titles.
+    assert markdown.count(food_card.title) == 0
+    assert markdown.count(timing_card.title) == 0
     assert unescaped_body.count(food_card.summary) == 1
     assert unescaped_body.count(timing_card.summary) == 1
+    assert unescaped_body.count(food_card.action) == 1
+    assert unescaped_body.count(timing_card.action) == 1
     for source in cards.sources:
         if source.id in {*food_card.source_ids, *timing_card.source_ids}:
             assert source.title not in unescaped_body

@@ -11,7 +11,11 @@ from urllib.parse import urlsplit
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from ai_worker.reports.guidance_groups import group_lifestyle_guidance_cards, product_guidance_display
+from ai_worker.reports.guidance_groups import (
+    group_guidance_evidence,
+    group_lifestyle_guidance_cards,
+    product_guidance_display,
+)
 
 if TYPE_CHECKING:
     from app.dtos.intake_reports import IntakeReportResponse
@@ -245,6 +249,13 @@ def render_intake_report_email(report: "IntakeReportResponse", *, standalone: bo
     lifestyle = []
     for group in group_lifestyle_guidance_cards(cards["lifestyle"], stack):
         display = product_guidance_display(group)
+        cited_sources = [
+            sources_by_id[source_id]
+            for source_id in display.source_ids
+            if source_id in sources_by_id
+            and sources_by_id[source_id].get("quote")
+            and sources_by_id[source_id].get("chunk_id")
+        ]
         lifestyle.append(
             {
                 "title": display.title,
@@ -252,14 +263,10 @@ def render_intake_report_email(report: "IntakeReportResponse", *, standalone: bo
                 "warning_titles": display.warning_titles,
                 "common_ingredient_disclaimer": display.common_ingredient_disclaimer,
                 "summaries": display.summaries,
+                "body": display.body,
+                "body_preview": display.body_preview,
                 "actions": display.actions,
-                "rag_sources": [
-                    sources_by_id[source_id]
-                    for source_id in display.source_ids
-                    if source_id in sources_by_id
-                    and sources_by_id[source_id].get("quote")
-                    and sources_by_id[source_id].get("chunk_id")
-                ],
+                "evidence_groups": group_guidance_evidence(cited_sources),
             }
         )
     markup = _TEMPLATES.get_template("emails/intake_report_cards.html").render(

@@ -24,17 +24,25 @@
 {% macro lifestyle_product_groups(product_groups) -%}
 {% for product_group in product_groups %}
 <div style="{% if not loop.first %}border-top:3px solid #b8cfca;margin-top:22px;padding-top:20px;{% endif %}">
-  <h3 style="margin:0 0 8px;font-size:17px;font-weight:700">{{ product_group.title|evidence }}</h3>
+  <h3 style="margin:0 0 8px;font-size:17px;font-weight:400">{{ product_group.title|evidence }}</h3>
   {% if product_group.categories %}<p style="margin:0 0 8px;color:#59636f;font-size:12px">{{ product_group.categories|join(' · ')|evidence }}</p>{% endif %}
-  {% for title in product_group.warning_titles %}<h4 style="margin:10px 0 0;font-size:15px;font-weight:600">{{ title|evidence }}</h4>{% endfor %}
   {% if product_group.common_ingredient_disclaimer %}<p style="margin:10px 0 0;color:#4b5563">{{ product_group.common_ingredient_disclaimer|evidence }}</p>{% endif %}
-  {% for summary in product_group.summaries %}<p style="margin:10px 0 0;white-space:pre-line;color:#4b5563">{{ summary|evidence }}</p>{% endfor %}
-  {% if product_group.actions %}<div style="padding:12px;margin:10px 0 0;background:#f1f5ed;border-radius:8px"><p style="margin:0 0 4px;font-weight:600">할 일</p><ul style="margin:0;padding-left:20px">{% for action in product_group.actions %}<li>{{ action|evidence }}</li>{% endfor %}</ul></div>{% endif %}
-  {% if product_group.rag_sources %}
-  {% if standalone %}<details><summary>근거 확인</summary>{% else %}<p style="font-size:12px;margin:10px 0 4px"><strong>근거 확인</strong></p>{% endif %}
-  {% for source in product_group.rag_sources %}<div style="font-size:12px;overflow-wrap:anywhere">
-    {% if source.safe_url %}<a href="{{ source.safe_url }}" target="_blank" rel="noopener noreferrer">{{ source.title }}</a>{% else %}<span>{{ source.title }}</span>{% endif %}{% if source.organization %} · {{ source.organization }}{% endif %}
-    <blockquote style="margin:8px 0;padding-left:12px;border-left:2px solid #c4d6cb;white-space:pre-wrap">{{ source.quote }}</blockquote>
+  {% if standalone and product_group.body_preview %}
+  {# The preview is a prefix of the full body: it is hidden once the details opens, and the
+     full text below is never abridged. A client without <details> support shows both, never less. #}
+  <div class="guidance-body">
+    <p class="guidance-preview" style="margin:10px 0 0;white-space:pre-line;color:#4b5563">{{ product_group.body_preview|evidence }}</p>
+    <details><summary>자세히 펼쳐보기</summary>{% for body in product_group.body %}<p style="margin:10px 0 0;white-space:pre-line;color:#4b5563">{{ body|evidence }}</p>{% endfor %}</details>
+  </div>
+  {% else %}
+  {# Inline mail bodies get the full text: a mail client that drops <details> must never hide it. #}
+  {% for body in product_group.body %}<p style="margin:10px 0 0;white-space:pre-line;color:#4b5563">{{ body|evidence }}</p>{% endfor %}
+  {% endif %}
+  {% if product_group.evidence_groups %}
+  {% if standalone %}<details><summary>근거 확인</summary>{% else %}<p style="font-size:12px;margin:10px 0 4px"><strong style="font-weight:400">근거 확인</strong></p>{% endif %}
+  {% for evidence in product_group.evidence_groups %}<div style="font-size:12px;overflow-wrap:anywhere;margin-top:8px">
+    {% if evidence.url %}<a href="{{ evidence.url }}" target="_blank" rel="noopener noreferrer">{{ evidence.title }}</a>{% else %}<span>{{ evidence.title }}</span>{% endif %}{% if evidence.organization %} · {{ evidence.organization }}{% endif %}
+    <ul style="margin:8px 0 0;padding-left:16px">{% for quote in evidence.quotes %}<li style="margin:4px 0"><blockquote style="margin:0;padding-left:12px;border-left:2px solid #c4d6cb;white-space:pre-wrap">{{ quote }}</blockquote></li>{% endfor %}</ul>
   </div>{% endfor %}
   {% if standalone %}</details>{% endif %}
   {% endif %}
@@ -50,7 +58,7 @@
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>약·영양제 리포트</title>
 <style>@media(max-width:480px){.email-outer{padding:12px 8px!important}.email-main{padding:12px!important}}p,li,h1,h2,h3,h4{overflow-wrap:anywhere;word-break:break-word}a{color:#007b79}
 {% if standalone %}
-summary{cursor:pointer;min-height:44px;padding:10px 0}summary:focus-visible{outline:3px solid #007f79;outline-offset:3px}.medicine>summary{display:flex;justify-content:space-between;gap:16px;list-style:none}.medicine>summary::-webkit-details-marker{display:none}.toggle{font-size:12px;white-space:nowrap;flex-shrink:0}.close-label,.medicine[open] .open-label{display:none}.medicine[open] .close-label{display:inline}.graph{position:relative;height:70px;margin:12px 4px}.track{position:absolute;left:0;right:0;top:32px;background:#eef2f1;height:8px;border-radius:8px}.fill{height:8px;border-radius:8px}.marker{position:absolute;top:-3px;width:14px;height:14px;border:2px solid white;border-radius:50%;transform:translateX(-50%)}.threshold{position:absolute;top:0;transform:translateX(-50%);font-size:11px;white-space:nowrap;text-align:center}.threshold i{display:block;width:2px;height:16px;background:#718580;margin:4px auto}.nutrient-heading{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px}.nutrient-heading h3{margin:0;font-size:18px}.nutrient-heading strong{font-size:20px}.nutrient-status{margin-left:auto;font-size:13px}.products{margin-top:4px}.products ul{padding-left:18px}.products summary{font-weight:600}
+summary{cursor:pointer;min-height:44px;padding:10px 0}summary:focus-visible{outline:3px solid #007f79;outline-offset:3px}.medicine>summary{display:flex;justify-content:space-between;gap:16px;list-style:none}.medicine>summary::-webkit-details-marker{display:none}.toggle{font-size:12px;white-space:nowrap;flex-shrink:0}.close-label,.medicine[open] .open-label{display:none}.medicine[open] .close-label{display:inline}.graph{position:relative;height:70px;margin:12px 4px}.track{position:absolute;left:0;right:0;top:32px;background:#eef2f1;height:8px;border-radius:8px}.fill{height:8px;border-radius:8px}.marker{position:absolute;top:-3px;width:14px;height:14px;border:2px solid white;border-radius:50%;transform:translateX(-50%)}.threshold{position:absolute;top:0;transform:translateX(-50%);font-size:11px;white-space:nowrap;text-align:center}.threshold i{display:block;width:2px;height:16px;background:#718580;margin:4px auto}.nutrient-heading{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px}.nutrient-heading h3{margin:0;font-size:18px}.nutrient-heading strong{font-size:20px}.nutrient-status{margin-left:auto;font-size:13px}.products{margin-top:4px}.products ul{padding-left:18px}.products summary{font-weight:600}.guidance-body:has(details[open]) .guidance-preview{display:none}
 {% endif %}</style></head>
 <body style="margin:0;background:#f5f8f7;color:#172033;font-family:Arial,'Malgun Gothic',sans-serif;font-size:14px;line-height:1.7">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;table-layout:fixed"><tr><td class="email-outer" align="center" style="padding:24px 14px">
@@ -117,9 +125,10 @@ summary{cursor:pointer;min-height:44px;padding:10px 0}summary:focus-visible{outl
 </div>{% endfor %}
 {% set unavailable = cards.medications|rejectattr('has_information')|list %}
 {% if unavailable %}<div style="padding:16px 0;border-top:1px solid #dce7e1">
-<h3 style="margin:0 0 10px;font-size:16px">확인 불가 약품</h3>
+{% if standalone %}<details class="medicine"><summary><span>확인 불가 약품</span><span class="toggle"><span class="open-label">상세 보기 ⌄</span><span class="close-label">접기 ⌃</span></span></summary>{% else %}<h3 style="margin:0 0 10px;font-size:16px">확인 불가 약품</h3>{% endif %}
 <p style="font-size:12px;color:#59636f">제품 안내 자료를 확인하지 못한 약입니다.</p>
 <ul style="padding-left:18px">{% for card in unavailable %}<li>{{ card.product_name|evidence }}</li>{% endfor %}</ul>
+{% if standalone %}</details>{% endif %}
 </div>{% endif %}{% endcall %}{% endif %}
 {% if report.unverified_items %}{% call section('확인하지 못한 정보') %}{% for item in report.unverified_items %}<p><strong>{{ item.title|evidence }}</strong> · {{ item.message|evidence }} {{ item.next_step|evidence }}</p>{% endfor %}{% endcall %}{% endif %}
 {% if cards.sources %}{% call section('비교 기준과 출처') %}<ul style="padding-left:18px">{% for source in cards.sources %}<li>{% if source.safe_url %}<a href="{{ source.safe_url }}" target="_blank" rel="noopener noreferrer" style="color:#007b79">{{ source.title|evidence }}</a>{% else %}{{ source.title|evidence }}{% endif %}{% if source.organization %} · {{ source.organization|evidence }}{% endif %} · {{ source.evidence_label }}</li>{% endfor %}</ul>{% endcall %}{% endif %}

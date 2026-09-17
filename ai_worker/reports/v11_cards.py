@@ -1514,14 +1514,10 @@ def render_cards_markdown(  # noqa: C901 - section projection is deliberately li
             lines.extend(("", f"### {_literal(display.title)}"))
             if display.categories:
                 lines.extend(("", f"**구분:** {' · '.join(_literal(category) for category in display.categories)}"))
-            if display.warning_titles:
-                lines.extend(("", *[f"#### {_clinical_literal(title)}" for title in display.warning_titles]))
             if display.common_ingredient_disclaimer:
                 lines.extend(("", _literal(display.common_ingredient_disclaimer)))
-            if display.summaries:
-                lines.extend(("", "**안내 내용**", *[_clinical_literal(summary) for summary in display.summaries]))
-            if display.actions:
-                lines.extend(("", "**할 일**", *[f"- {_clinical_literal(action)}" for action in display.actions]))
+            if display.body:
+                lines.extend(("", *[_clinical_literal(body) for body in display.body]))
             references = [
                 f"[{rag_source_numbers[source_id]}]"
                 for source_id in display.source_ids
