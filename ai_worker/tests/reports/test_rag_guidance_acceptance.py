@@ -322,10 +322,11 @@ def _base_generator() -> OpenAIIntakeReportCardsGenerator:
     )
 
 
-def test_rag_is_opt_in_and_disabling_fixed_guidance_preserves_legacy_cards() -> None:
+def test_rag_defaults_on_and_disabling_fixed_guidance_preserves_legacy_cards(monkeypatch) -> None:
     draft = _draft()
 
-    assert Config(_env_file=None).INTAKE_REPORT_RAG_ENABLED is False
+    monkeypatch.delenv("INTAKE_REPORT_RAG_ENABLED", raising=False)
+    assert Config(_env_file=None).INTAKE_REPORT_RAG_ENABLED is True
 
     legacy_catalog = build_evidence_catalog(draft)
     rag_catalog = build_evidence_catalog(draft, include_fixed_lifestyle_guidance=False)
