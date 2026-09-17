@@ -4063,14 +4063,16 @@ class AnswerMedicationQuestionUseCase:
         interpretation: MedicationQuestionInterpretation,
         evidence_coverage: MedicationEvidenceCoverage,
     ) -> MedicationChatResult:
-        answer = self._assembler.assemble(
-            context=context,
-            guide=None,
-            rules=[],
-            chunks=[],
-            interaction_question=True,
-            active_intake_interaction=True,
-            evidence_coverage=evidence_coverage,
+        answer = EvidenceGapGuidanceBuilder.as_notice(
+            self._assembler.assemble(
+                context=context,
+                guide=None,
+                rules=[],
+                chunks=[],
+                interaction_question=True,
+                active_intake_interaction=True,
+                evidence_coverage=evidence_coverage,
+            )
         )
         reason_codes = [
             MedicationChatReasonCode.IN_SCOPE_NO_EVIDENCE.value,

@@ -2460,7 +2460,10 @@ async def test_active_medication_interaction_without_approved_rule_states_uncert
     ).execute(build_request("현재 먹는 두 약 사이에 상호작용이 있어?"))
 
     assert "☑️ **확인하지 못한 조합**" not in result.answer
-    assert "근거를 확인하지 못한 항목" in result.answer
+    # 이 초안은 LLM 재작성을 거치지 않으므로 규약 소제목과 안전 문구를 갖춰 나간다.
+    assert "✉️ **안내사항**" in result.answer
+    assert "상호작용: 현재 근거에서 확인하지 못했습니다." in result.answer
+    assert "확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다." in result.answer
 
 
 async def test_harmful_request_is_blocked_before_rag() -> None:
