@@ -134,6 +134,14 @@ class MedicationEvidenceCoverageEvaluator:
         ):
             available.add(KnowledgeSectionType.CAUTION)
 
+        if not requested:
+            # 항목을 지정하지 않은 전반 설명 질문이다. 확보한 근거를 그대로 covered로 둔다.
+            # 빈 목록으로 두면 답변이 어떤 섹션을 선언하든 근거 밖으로 판정해 초안이 그대로 나간다.
+            return [
+                section
+                for section in self._SUPPORTED_SECTIONS
+                if section != KnowledgeSectionType.INTERACTION and section in available
+            ]
         return [
             section for section in requested if section != KnowledgeSectionType.INTERACTION and section in available
         ]
