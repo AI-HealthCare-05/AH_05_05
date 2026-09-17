@@ -99,14 +99,14 @@ test('선택 모드에서 마우스로 여러 대화를 고르고 삭제할 수 
   await page.getByRole('button', { name: '선택' }).click();
   await page.getByRole('checkbox', { name: /첫 번째 상담 질문/ }).check();
   await page.getByRole('checkbox', { name: /두 번째 상담 질문/ }).check();
-  await expect(page.getByRole('button', { name: '2개 삭제' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: '삭제 2개' })).toBeEnabled();
 
-  await page.getByRole('button', { name: '2개 삭제' }).click();
+  await page.getByRole('button', { name: '삭제 2개' }).click();
   await page.getByRole('button', { name: '취소' }).click();
   await expect(page.getByText('첫 번째 상담 질문', { exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: '2개 삭제' }).click();
-  await page.getByRole('button', { name: '삭제' }).click();
+  await page.getByRole('button', { name: '삭제 2개' }).click();
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
   await expect(page.getByRole('region', { name: '챗봇 시작 가이드' })).toBeVisible();
 });
 
@@ -132,7 +132,7 @@ test('375px 목록과 선택 화면은 가로로 넘치지 않고 조작 이름�
 
   await page.getByRole('button', { name: '선택' }).click();
   await expect(page.getByRole('checkbox', { name: /작은 화면 상담 질문 선택/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: '0개 삭제' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /삭제 \d+개/ })).toHaveCount(0);
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
   ).toBe(true);
@@ -145,13 +145,13 @@ test('대화 삭제 실패 뒤에도 선택 상태를 유지해 다시 시도할
   await page.getByRole('button', { name: '선택' }).click();
   const checkbox = page.getByRole('checkbox', { name: /삭제 실패 확인 질문 선택/ });
   await checkbox.check();
-  await page.getByRole('button', { name: '1개 삭제' }).click();
-  await page.getByRole('button', { name: '삭제' }).click();
+  await page.getByRole('button', { name: '삭제 1개' }).click();
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
 
   await expect(page.getByRole('dialog')).toContainText('대화를 삭제하지 못했어요');
   await page.getByRole('button', { name: '닫기' }).click();
   await expect(checkbox).toBeChecked();
-  await expect(page.getByRole('button', { name: '1개 삭제' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: '삭제 1개' })).toBeEnabled();
 });
 
 test('로그아웃 뒤 다른 계정으로 로그인하면 이전 계정 대화를 보여주지 않는다', async ({ page }) => {
@@ -227,7 +227,7 @@ test('삭제 대기 중 계정이 바뀌어도 다른 계정의 같은 ID 대화
   await page.reload();
   await page.getByRole('button', { name: '선택' }).click();
   await page.getByRole('checkbox', { name: new RegExp(otherQuestion) }).check();
-  await page.getByRole('button', { name: '1개 삭제' }).click();
+  await page.getByRole('button', { name: '삭제 1개' }).click();
   await page.getByRole('button', { name: '삭제', exact: true }).click();
 
   await page.goto('/my');
