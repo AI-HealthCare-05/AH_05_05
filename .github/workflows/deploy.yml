@@ -1,0 +1,280 @@
+name: Deploy RxVita (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      backup_confirmed:
+        description: "운영 DB 백업 및 마이그레이션 호환성을 확인했습니다"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rxvita-production
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: main CI 확인 및 빌드
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Reserve daily build tags; deploy keeps the workflow's read-only permissions.
+    permissions:
+      contents: write
+      actions: read
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      version: ${{ steps.version.outputs.result }}
+    steps:
+      - name: main 실행 및 백업 확인
+        env:
+          BACKUP_CONFIRMED: ${{ inputs.backup_confirmed }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main || { echo 'main에서 실행하세요.'; exit 1; }
+          test "$BACKUP_CONFIRMED" = true || { echo 'DB 백업 확인이 필요합니다.'; exit 1; }
+
+      - name: 선택한 main 커밋 체크아웃
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: 동일 커밋의 기존 Python 및 AI CI 성공 확인
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const head = await github.rest.git.getRef({ owner, repo, ref: 'heads/main' });
+            if (head.data.object.sha !== context.sha) {
+              throw new Error('main이 변경되었습니다. 최신 main에서 다시 실행하세요.');
+            }
+            const result = await github.rest.actions.listWorkflowRuns({
+              owner, repo, workflow_id: 'checks.yml', branch: 'main',
+              event: 'push', head_sha: context.sha, per_page: 100
+            });
+            const runs = result.data.workflow_runs
+              .filter(run => run.head_sha === context.sha)
+              .sort((a, b) => b.id - a.id);
+            if (!runs.length || runs[0].status !== 'completed' || runs[0].conclusion !== 'success') {
+              throw new Error('이 커밋의 checks.yml CI가 성공한 후 다시 실행하세요.');
+            }
+
+      - name: 빌드 번호 생성 로직 테스트
+        run: node --test app/tests/deployment/build-version.test.cjs
+
+      - name: 한국 날짜 기준 빌드 번호 예약
+        id: version
+        uses: actions/github-script@v7
+        with:
+          result-encoding: string
+          script: |
+            const allocate = require(`${process.env.GITHUB_WORKSPACE}/scripts/ci/allocate_build_version.cjs`);
+            const version = await allocate({ github, context });
+            core.exportVariable('APP_VERSION', version);
+            core.exportVariable('AI_VERSION', version);
+            core.info(`Reserved version: ${version}`);
+            await core.summary.addHeading('Build version').addRaw(version).write();
+            return version;
+
+      - name: 자동 생성 버전 검증
+        env:
+          DOCKER_USER: ${{ vars.DOCKERHUB_USERNAME }}
+        run: |
+          set -euo pipefail
+          printf 'VALIDATION_ONLY=true\n' | python3 scripts/ci/prepare_deploy_env.py \
+            "$RUNNER_TEMP/version-check.env" "$APP_VERSION" "$AI_VERSION" "$DOCKER_USER"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: 프런트 타입 검사 및 실제 API 모드 빌드
+        working-directory: frontend
+        env:
+          VITE_USE_MOCK: "false"
+          VITE_API_BASE_URL: /api
+          VITE_VAPID_PUBLIC_KEY: ${{ vars.VITE_VAPID_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$VITE_VAPID_PUBLIC_KEY"
+          pnpm install --frozen-lockfile
+          pnpm typecheck
+          pnpm build
+          test -s dist/index.html
+
+      - uses: docker/setup-buildx-action@v3
+      - name: Docker Hub 로그인
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: 기존 이미지 태그 덮어쓰기 차단
+        env:
+          DOCKER_USER: ${{ vars.DOCKERHUB_USERNAME }}
+          DOCKER_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          token="$(curl --fail --silent --show-error \
+            --user "$DOCKER_USER:$DOCKER_TOKEN" --get \
+            --data-urlencode 'service=registry.docker.io' \
+            --data-urlencode "scope=repository:$DOCKER_USER/rxvita:pull" \
+            https://auth.docker.io/token | jq -er '.token')"
+          for tag in "app-$APP_VERSION" "ai-$AI_VERSION"; do
+            status="$(curl --silent --show-error --head --output /dev/null \
+              --write-out '%{http_code}' --header "Authorization: Bearer $token" \
+              --header 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json' \
+              "https://registry-1.docker.io/v2/$DOCKER_USER/rxvita/manifests/$tag")"
+            case "$status" in
+              404) ;;
+              200) echo "이미 존재하는 이미지 태그입니다: $tag. Git 빌드 태그 삭제 여부를 확인하세요."; exit 1 ;;
+              *) echo "태그 확인 실패: HTTP $status. 배포를 중단합니다."; exit 1 ;;
+            esac
+          done
+
+      - name: FastAPI 이미지 빌드 및 push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: app/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ vars.DOCKERHUB_USERNAME }}/rxvita:app-${{ steps.version.outputs.result }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=rxvita-app
+          cache-to: type=gha,mode=max,scope=rxvita-app
+
+      - name: AI worker 이미지 빌드 및 push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ai_worker/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ vars.DOCKERHUB_USERNAME }}/rxvita:ai-${{ steps.version.outputs.result }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=rxvita-ai
+          cache-to: type=gha,mode=max,scope=rxvita-ai
+
+      - name: 배포 파일 묶음 생성 (시크릿 제외)
+        run: |
+          set -euo pipefail
+          mkdir bundle
+          tar -czf bundle/frontend.tar.gz -C frontend/dist .
+          cp infra/docker/docker-compose.prod.yml bundle/docker-compose.yml
+          cp infra/nginx/prod_https.conf bundle/nginx.conf
+          cp scripts/ci/prepare_deploy_env.py scripts/deploy-production.sh bundle/
+          printf '%s\n' "$GITHUB_SHA" > bundle/source-sha
+
+      - uses: actions/upload-artifact@v4
+        id: upload
+        with:
+          name: rxvita-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: bundle/
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy:
+    name: RxVita 승인 후 AWS 반영
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: RxVita
+      url: https://api.rxvita.p-e.kr
+    env:
+      APP_VERSION: ${{ needs.build.outputs.version }}
+      AI_VERSION: ${{ needs.build.outputs.version }}
+      EC2_HOST: ${{ vars.EC2_HOST }}
+      EC2_USER: ${{ vars.EC2_USER }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+      DOCKER_USER: ${{ vars.DOCKERHUB_USERNAME }}
+    steps:
+      - name: 승인 대기 중 main 변경 여부 확인
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          latest="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          test "$latest" = "$GITHUB_SHA" || { echo 'main이 변경되었습니다. 다시 실행하세요.'; exit 1; }
+
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
+          merge-multiple: true
+          path: bundle
+
+      - name: 서버 접속값 검증 및 운영 env 생성
+        env:
+          PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
+        run: |
+          set -euo pipefail
+          [[ "$EC2_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
+          [[ "$EC2_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          test "$DEPLOY_PATH" = /home/ubuntu/rxvita
+          test "$(cat bundle/source-sha)" = "$GITHUB_SHA"
+          printf '%s' "$PROD_ENV_FILE" | python3 bundle/prepare_deploy_env.py \
+            bundle/.env "$APP_VERSION" "$AI_VERSION" "$DOCKER_USER"
+
+      - name: SSH 설정
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_KEY"
+          test -n "$KNOWN_HOSTS"
+          install -d -m 700 ~/.ssh
+          umask 077
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: 업로드 및 배포 실행
+        run: |
+          set -euo pipefail
+          stage="$DEPLOY_PATH/.deploy/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          options=(-i "$HOME/.ssh/deploy_key" -o BatchMode=yes -o StrictHostKeyChecking=yes
+            -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=10)
+          ssh "${options[@]}" "$EC2_USER@$EC2_HOST" \
+            "umask 077; mkdir -p '$stage' && chmod 700 '$DEPLOY_PATH/.deploy' '$stage'"
+          scp "${options[@]}" bundle/.env bundle/docker-compose.yml bundle/nginx.conf \
+            bundle/frontend.tar.gz bundle/deploy-production.sh bundle/source-sha \
+            "$EC2_USER@$EC2_HOST:$stage/"
+          ssh "${options[@]}" "$EC2_USER@$EC2_HOST" \
+            "bash '$stage/deploy-production.sh' '$DEPLOY_PATH' '$stage' '$APP_VERSION' '$AI_VERSION' '$DOCKER_USER' '$GITHUB_SHA'"
+
+      - name: 외부 HTTPS 확인
+        run: |
+          set -euo pipefail
+          for path in /api/openapi.json /login; do
+            curl --fail --silent --show-error --retry 5 --retry-all-errors \
+              --retry-delay 3 --connect-timeout 10 --max-time 30 \
+              "https://api.rxvita.p-e.kr$path" >/dev/null
+          done
+
+      - name: 실행 결과 요약
+        if: always()
+        env:
+          RESULT: ${{ job.status }}
+        run: |
+          printf '### RxVita deployment\n- Result: %s\n- Commit: `%s`\n- App: `%s`\n- AI: `%s`\n' \
+            "$RESULT" "$GITHUB_SHA" "$APP_VERSION" "$AI_VERSION" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Runner의 임시 인증 파일 제거
+        if: always()
+        run: |
+          rm -f -- "$GITHUB_WORKSPACE/bundle/.env" "$HOME/.ssh/deploy_key"
