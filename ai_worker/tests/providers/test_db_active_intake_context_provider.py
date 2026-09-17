@@ -90,6 +90,39 @@ async def test_provider_resolves_strength_suffix_only_to_exact_catalog_name(
     assert getattr(context.medications[0], "interaction_names", []) == expected_names
 
 
+@pytest.mark.parametrize(
+    ("display_name", "catalog_name", "catalog_normalized_name", "expected_names"),
+    [
+        ("아세트아미노펜정500mg", "아세트아미노펜", "아세트아미노펜", ["아세트아미노펜"]),
+        ("이부프로펜캡슐 200mg", "이부프로펜", "이부프로펜", ["이부프로펜"]),
+        ("아세트아미노펜정500mg오타", "아세트아미노펜", "아세트아미노펜", []),
+        ("타이레놀정500mg", "아세트아미노펜", "아세트아미노펜", []),
+        ("아세트아미노펜정/이부프로펜정 500mg", "아세트아미노펜", "아세트아미노펜", []),
+        ("아세트아미노펜정500mg", "브랜드명", "아세트아미노펜", []),
+    ],
+)
+async def test_provider_resolves_single_generic_dosage_form_only_to_exact_catalog_ingredient(
+    initialized_db: None,
+    display_name: str,
+    catalog_name: str,
+    catalog_normalized_name: str,
+    expected_names: list[str],
+) -> None:
+    user = await _create_user(1, "generic-ingredient@example.com")
+    episode = await _create_confirmed_episode(episode_id=100, user=user)
+    await Medication.create(care_episode=episode, name=display_name)
+    await InteractionEntity.create(
+        entity_kind="DRUG",
+        canonical_name=catalog_name,
+        normalized_name=catalog_normalized_name,
+    )
+
+    context = await DbActiveIntakeContextProvider().get_active_context(user_id=user.id, care_episode_id=None)
+
+    assert context.medications[0].name == display_name
+    assert context.medications[0].interaction_names == expected_names
+
+
 async def test_provider_prefers_explicit_medication_links_over_strength_name_fallback(initialized_db: None) -> None:
     user = await _create_user(1, "patient@example.com")
     episode = await _create_confirmed_episode(episode_id=100, user=user)

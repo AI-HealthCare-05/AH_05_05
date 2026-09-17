@@ -13,6 +13,7 @@ from ai_worker.reports.v11_cards import (
     _collect_text_issues,
     _compact_text,
     _fact_index,
+    _is_no_space_compound_boundary,
     _text_issue,
     _validate_plan_structure,
 )
@@ -120,6 +121,7 @@ def _allowed_boundaries(text: str) -> set[int]:
         index
         for index in range(1, len(text))
         if index not in protected
+        and not _is_no_space_compound_boundary(text, index)
         and "가" <= text[index - 1] <= "힣"
         and ("가" <= text[index] <= "힣" or text[index] in "0123456789")
     }

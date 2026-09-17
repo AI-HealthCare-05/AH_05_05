@@ -116,6 +116,15 @@ def test_api_dto_preserves_v11_cards_and_same_email_markdown(
             }
         ],
         "originalTexts": original_texts if original_texts is not None else [],
+        "sources": [
+            {
+                **cards["sources"][0],
+                "quote": None,
+                "chunkId": None,
+                "datasetVersion": None,
+            }
+        ],
+        "sectionStatuses": [],
     }
     values = IntakeReportResult.empty(user_id=1).model_dump()
     values.update(

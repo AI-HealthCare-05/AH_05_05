@@ -339,6 +339,7 @@ class MedicationSearchExecutionPlan(BaseModel):
     approved_therapeutic_class_names: list[str] = Field(default_factory=list)
     approved_rule_status: InteractionRuleLookupStatus = InteractionRuleLookupStatus.NO_APPROVED_RULE
     include_patient_context: bool = False
+    include_all_eligible: bool = False
     context_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     approved_rules_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     limit: int = Field(default=5, ge=1, le=50)

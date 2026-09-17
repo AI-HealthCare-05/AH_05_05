@@ -79,6 +79,16 @@ class CardSource(_CardModel):
     organization: str | None = None
     url: str | None = None
     evidence_level: str = Field(min_length=1)
+    quote: str | None = None
+    chunk_id: str | None = None
+    dataset_version: str | None = None
+
+
+class ReportGuidanceSectionStatus(_CardModel):
+    section_id: Literal["food_drink", "lifestyle", "additional_precautions"]
+    status: Literal["verified", "partial", "unverified"]
+    reason: str = Field(min_length=1)
+    target_item_ids: list[int] = Field(default_factory=list)
 
 
 class OriginalCardText(_CardModel):
@@ -97,6 +107,7 @@ class IntakeReportCards(_CardModel):
     lifestyle: list[LifestyleCard] = Field(default_factory=list)
     sources: list[CardSource] = Field(default_factory=list)
     original_texts: list[OriginalCardText] = Field(default_factory=list)
+    section_statuses: list[ReportGuidanceSectionStatus] = Field(default_factory=list)
 
 
 class IntakeReportEvidenceSelection(_CardModel):

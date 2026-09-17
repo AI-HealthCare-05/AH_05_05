@@ -67,6 +67,48 @@ const report = {
 };
 
 for (const width of [390, 1280]) {
+  test(`RAG guidance preserves cards and shows evidence and partial status at ${width}px`, async ({ page }, testInfo) => {
+    const ragReport = {
+      ...report,
+      reportStatus: 'PARTIAL',
+      cards: {
+        ...report.cards,
+        sectionStatuses: [
+          { sectionId: 'food_drink', status: 'verified', reason: '검색 원문과 안내를 대조했어요.', targetItemIds: [73] },
+          { sectionId: 'additional_precautions', status: 'unverified', reason: '관련 자료를 확인하지 못했어요.', targetItemIds: [71] },
+        ],
+        lifestyle: [...report.cards.lifestyle, {
+          id: 'rag-food', category: '음식·음료', title: '자료에 근거한 추가 안내',
+          summary: '검증된 원문에 해당하는 안내만 표시해요.', action: '제품 설명서를 확인하세요.',
+          relatedItemIds: [73], sourceIds: ['rag-source'],
+        }],
+        sources: [...report.cards.sources, {
+          id: 'rag-source', title: '검색된 참고 문서', organization: '시험 자료',
+          url: 'https://example.com/rag-evidence', evidenceLevel: 'PUBLIC_GUIDE',
+          quote: '시험용 원문: 제품 설명서를 확인하세요. <script>unsafe</script>',
+          chunkId: 'chunk-fixture', datasetVersion: 'fixture-v1',
+        }],
+      },
+    };
+    await page.route('**/api/v1/intake-reports', route => route.fulfill({ json: ragReport }));
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/reports/new?source=medications');
+    await page.getByRole('button', { name: '보고서 생성하기', exact: true }).click();
+    const status = page.getByRole('region', { name: '추가 안내 확인 상태' });
+    await expect(status).toHaveCount(0);
+    await expect(page.getByText('관련 자료를 확인하지 못했어요.', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('status')).toContainText('정보 부족은 안전하다는 뜻이 아니에요.');
+    const guidance = page.locator('#v11-lifestyle article').filter({ hasText: '자료에 근거한 추가 안내' });
+    await guidance.getByText('근거 확인', { exact: true }).click();
+    await expect(guidance.getByRole('link', { name: '검색된 참고 문서' })).toHaveAttribute('href', 'https://example.com/rag-evidence');
+    await expect(guidance.locator('blockquote')).toContainText('<script>unsafe</script>');
+    await expect(guidance.locator('script')).toHaveCount(0);
+    await expect(page.locator('#v11-medications .v11-medicine')).toHaveCount(2);
+    await expect(page.locator('#v11-nutrients')).toContainText('20');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`rag-guidance-${width}.png`), fullPage: true });
+  });
+
   test(`unavailable medicines share one list at ${width}px`, async ({ page }, testInfo) => {
     const grouped = structuredClone(report);
     grouped.cards.medications.push({ ...grouped.cards.medications[0], itemId: 99, productName: '스토엠정', hasInformation: false } as typeof grouped.cards.medications[number]);
@@ -634,8 +676,86 @@ test('v11 groups common actions, collapses long details, and lists sources only 
   await page.screenshot({ path: testInfo.outputPath('v11-grouped-collapsed.png'), fullPage: true });
 });
 
+test('guidance groups interleaved warnings by medicine without dropping details', async ({ page }, testInfo) => {
+  const grouped = structuredClone(report);
+  const base = report.cards.lifestyle[0];
+  const disclaimer = '정확한 제품은 미확정이며, 확인된 성분 공통 안내입니다.';
+  grouped.cards.lifestyle = [
+    { ...base, id: 'ordinary', title: '감마 첫 번째 주의', summary: `${disclaimer} 첫 번째 설명` },
+    { ...base, id: 'rag:precautions:medication:72:one', relatedItemIds: [72], title: '델타 주의', summary: '델타 설명' },
+    { ...base, id: 'rag:precautions:medication:71:two', title: '감마 두 번째 주의', summary: `${disclaimer} 두 번째 설명` },
+    { ...base, id: 'rag:precautions:medication:71:three', title: '감마 세 번째 주의', summary: '세 번째 설명' },
+  ];
+  await page.route('**/api/v1/intake-reports', route => route.fulfill({ json: grouped }));
+  await page.goto('/reports/new?source=medications');
+  await page.getByRole('button', { name: '보고서 생성하기', exact: true }).click();
+  const section = page.locator('#v11-lifestyle');
+  const products = section.locator('.v11-guidance-product');
+  await expect(products).toHaveCount(2);
+  await expect(products.first().getByRole('heading', { level: 3 })).toHaveText('가상 처방약 감마 25mg');
+  await expect(products.first().getByRole('heading', { level: 4 })).toHaveText(['감마 첫 번째 주의', '감마 두 번째 주의', '감마 세 번째 주의']);
+  await expect(products.first()).toContainText('첫 번째 설명');
+  await expect(products.first()).toContainText('두 번째 설명');
+  await expect(products.first()).toContainText('세 번째 설명');
+  await expect(products.last()).toContainText('델타 설명');
+  await expect(section.locator('article')).toHaveCount(2);
+  await expect(products.first().getByText(disclaimer, { exact: true })).toHaveCount(1);
+  expect(await products.first().evaluate(element => {
+    const lastTitle = element.querySelector('h4:last-child');
+    const description = element.querySelector('.v11-guidance-description');
+    return Boolean(lastTitle && description && (lastTitle.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING));
+  })).toBe(true);
+  for (const width of [390, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await section.screenshot({ path: testInfo.outputPath(`medicine-guidance-${width}.png`) });
+  }
+});
+
+test('guidance separates colliding medication and supplement IDs and keeps joint guidance', async ({ page }) => {
+  const grouped = structuredClone(report);
+  grouped.currentStack.push({ ...report.currentStack[2], itemId: 71, productName: '동일 ID 영양제' });
+  const base = report.cards.lifestyle[0];
+  grouped.cards.lifestyle = [
+    { ...base, id: 'rag:precautions:medication:71:a', title: '약 주의' },
+    { ...base, id: 'rag:precautions:supplement:71:b', title: '영양제 주의' },
+    { ...base, id: 'food-drink:71', title: '약 음식 주의' },
+    { ...base, id: 'joint', relatedItemIds: [72, 71], title: '함께 확인' },
+    { ...base, id: 'common', relatedItemIds: [], title: '일반 안내' },
+  ];
+  await page.route('**/api/v1/intake-reports', route => route.fulfill({ json: grouped }));
+  await page.goto('/reports/new?source=medications');
+  await page.getByRole('button', { name: '보고서 생성하기', exact: true }).click();
+  const groups = page.locator('#v11-lifestyle .v11-guidance-product');
+  await expect(groups).toHaveCount(4);
+  await expect(groups.nth(0).locator('h3')).toHaveText('가상 처방약 감마 25mg');
+  await expect(groups.nth(1).locator('h3')).toHaveText('동일 ID 영양제');
+  await expect(groups.nth(0)).toContainText('약 음식 주의');
+  await expect(groups.nth(0)).not.toContainText('동일 ID 영양제');
+  await expect(groups.nth(2).locator('h3')).toHaveText('공통 안내');
+  await expect(groups.nth(3).locator('h3')).toHaveText('공통 안내');
+  await expect(page.locator('#v11-lifestyle article')).toHaveCount(4);
+});
+
+test('product consolidation retains all 25 distinct warnings without a display cap', async ({ page }) => {
+  const grouped = structuredClone(report);
+  grouped.cards.lifestyle = Array.from({ length: 25 }, (_, index) => ({
+    ...report.cards.lifestyle[0], id: `warning-${index}`, title: `주의 ${index + 1}`,
+    summary: `설명 ${index + 1}`, action: `행동 ${index + 1}`,
+  }));
+  await page.route('**/api/v1/intake-reports', route => route.fulfill({ json: grouped }));
+  await page.goto('/reports/new?source=medications');
+  await page.getByRole('button', { name: '보고서 생성하기', exact: true }).click();
+  const section = page.locator('#v11-lifestyle');
+  await expect(section.locator('article')).toHaveCount(1);
+  await expect(section.locator('h4')).toHaveCount(25);
+  await expect(section.locator('.v11-guidance-description p')).toHaveCount(25);
+  await expect(section.locator('.v11-action p')).toHaveCount(25);
+  await expect(section.getByText('설명 25', { exact: true })).toBeVisible();
+});
+
 for (const startsWithGroup of [false, true]) {
-  test(`v11 distinguishes group boundaries from inner dividers (group first: ${startsWithGroup})`, async ({ page }, testInfo) => {
+  test(`v11 consolidates all product guidance without inner cards (timing omitted: ${startsWithGroup})`, async ({ page }, testInfo) => {
     const grouped = structuredClone(report);
     const base = report.cards.lifestyle[0];
     grouped.cards.lifestyle = [
@@ -654,30 +774,14 @@ for (const startsWithGroup of [false, true]) {
     await page.goto('/reports/new?source=medications');
     await page.getByRole('button', { name: '보고서 생성하기', exact: true }).click();
     const section = page.locator('#v11-lifestyle');
-    const groups = section.locator(':scope > .v11-action-group');
-    await expect(groups).toHaveCount(2);
-    await expect(groups.first().locator('.v11-pair')).toHaveCount(4);
-    await expect(groups.last().locator('.v11-pair')).toHaveCount(2);
+    const groups = section.locator('.v11-guidance-product');
+    await expect(groups).toHaveCount(1);
+    await expect(groups.locator('h4')).toHaveCount(grouped.cards.lifestyle.length);
+    await expect(groups.locator('.v11-pair')).toHaveCount(0);
+    await expect(groups.locator('.v11-action p')).toHaveCount(startsWithGroup ? 3 : 4);
+    for (const card of grouped.cards.lifestyle) await expect(groups).toContainText(card.summary);
     for (const width of [320, 1280]) {
       await page.setViewportSize({ width, height: 900 });
-      const lines = await section.evaluate(element => {
-        const groups = element.querySelectorAll(':scope > .v11-action-group');
-        const inner = getComputedStyle(groups[0].querySelectorAll('.v11-pair')[1]);
-        const boundary = getComputedStyle(groups[1]);
-        const following = getComputedStyle(groups[1].nextElementSibling!);
-        return {
-          inner: parseFloat(inner.borderTopWidth), boundary: parseFloat(boundary.borderTopWidth),
-          following: parseFloat(following.borderTopWidth), first: parseFloat(getComputedStyle(groups[0]).borderTopWidth),
-          innerPadding: parseFloat(inner.paddingTop), boundaryPadding: parseFloat(boundary.paddingTop),
-          firstMember: getComputedStyle(groups[0].querySelector('.v11-pair')!).borderTopWidth,
-        };
-      });
-      expect(lines.inner).toBeGreaterThan(0);
-      expect(lines.boundary).toBeGreaterThan(lines.inner);
-      expect(lines.following).toBe(lines.boundary);
-      expect(lines.first).toBe(startsWithGroup ? 0 : lines.boundary);
-      expect(lines.firstMember).toBe('0px');
-      expect(lines.boundaryPadding).toBeGreaterThan(lines.innerPadding);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await section.screenshot({ path: testInfo.outputPath(`group-dividers-${width}.png`) });
     }
@@ -695,7 +799,7 @@ test('v11 renders server-owned cards once, keeps public guidance non-personal, a
     await expect(page.getByText('공개 안내 · 개인 조합 확인 필요', { exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: '영양제끼리 확인할 점' })).toBeVisible();
     await expect(page.getByRole('heading', { name: '비타민 D가 2개 제품에 들어 있어요' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: '생활습관 가이드' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '약·영양제별 주의사항 및 가이드' })).toBeVisible();
     await expect(page.getByRole('heading', { name: '영양제 성분 합계' })).toBeVisible();
     await expect(page.locator('#v11-nutrients .v11-nutrient-notes li')).toHaveText([
       '검색된 영양제의 성분만 합산된 결과예요.',
