@@ -446,7 +446,27 @@ class CannotReactivateWithdrawnError(AppError):
 class InvalidImageError(AppError):
     status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
     code = "INVALID_IMAGE"
-    message = "유효한 JPG 또는 PNG 이미지를 선택해 주세요."
+    message = "사진 파일을 읽을 수 없습니다. 손상되지 않은 사진을 선택해 주세요."
+
+
+class UnsupportedImageFormatError(InvalidImageError):
+    code = "UNSUPPORTED_IMAGE_FORMAT"
+    message = "JPG, PNG, HEIC, HEIF, WebP, BMP, TIFF 형식의 단일 사진을 선택해 주세요."
+
+
+class MultiImageNotSupportedError(InvalidImageError):
+    code = "MULTI_IMAGE_NOT_SUPPORTED"
+    message = "단일 사진만 지원합니다. GIF나 여러 이미지가 포함된 파일은 사용할 수 없습니다."
+
+
+class ImageTooLargeError(InvalidImageError):
+    code = "IMAGE_TOO_LARGE"
+    message = "사진 용량이나 해상도가 너무 큽니다. 50MB 이하의 사진을 선택하거나 해상도를 낮춰 주세요."
+
+
+class ImageConversionError(InvalidImageError):
+    code = "IMAGE_CONVERSION_FAILED"
+    message = "사진을 변환하지 못했습니다. 다른 사진을 선택하거나 JPG 또는 PNG로 저장해 다시 올려 주세요."
 
 
 class OcrProviderConfigError(AppError):

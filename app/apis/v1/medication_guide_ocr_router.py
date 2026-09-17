@@ -105,7 +105,7 @@ CONFIRMED_OCR_RESULT_EXAMPLE = {
                             "file": {
                                 "type": "string",
                                 "format": "binary",
-                                "description": "JPG 또는 PNG 조제약 복약안내 이미지",
+                                "description": "단일 JPG, PNG, HEIC, HEIF, WebP, BMP, TIFF 사진. 서버에서 JPG/PNG로 정규화하며 GIF 및 다중 이미지는 지원하지 않습니다.",
                             }
                         },
                     }

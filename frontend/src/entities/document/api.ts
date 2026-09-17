@@ -50,6 +50,15 @@ function revokePreviewImages(images: OcrPreviewImages): void {
   URL.revokeObjectURL(images.processedImageUrl);
 }
 
+function needsNormalizedOriginal(file: File): boolean {
+  const type = file.type.toLowerCase();
+  const hasNativeExtension = /\.(?:jpe?g|png)$/i.test(file.name);
+  const hasOtherExtension = /\.[^.]+$/i.test(file.name);
+  const hasNativeType = type === 'image/jpeg' || type === 'image/jpg' || type === 'image/png';
+  if (type) return !hasNativeType || (hasOtherExtension && !hasNativeExtension);
+  return !hasNativeExtension;
+}
+
 /** 선택한 사진을 history에 넣지 않고 현재 브라우저 탭의 OCR 검토 세션으로 시작합니다. */
 export function createOcrPreviewSession(file: File): OcrPreviewSessionId {
   const sessionId = createOcrPreviewSessionId();
@@ -63,8 +72,8 @@ export function getOcrPreviewSessionFile(sessionId: OcrPreviewSessionId | null |
 }
 
 /**
- * 원본은 선택 File에서 즉시 만들고 전처리본만 인증 fetch 합니다.
- * 둘 다 준비되기 전에는 세션에 URL을 저장하지 않아 서버 사진 삭제 확인을 보낼 수 없습니다.
+ * JPEG·PNG 원본은 선택 File에서 즉시 만들고, 브라우저가 표시하지 못하는 형식은
+ * 서버가 정상화한 원본을 인증 fetch 합니다. 두 이미지가 준비되기 전에는 서버 사진을 지우지 않습니다.
  */
 export function loadOcrPreviewImages(
   sessionId: OcrPreviewSessionId,
@@ -76,25 +85,36 @@ export function loadOcrPreviewImages(
   if (session.images) return Promise.resolve(session.images);
   if (session.imageRequest) return session.imageRequest;
 
-  let originalImageUrl: string;
-  try {
-    originalImageUrl = URL.createObjectURL(session.file);
-  } catch (error) {
-    return Promise.reject(error);
-  }
-  const request = getOcrProcessedImageUrl(ocrJobId, mockProcessedImageUrl)
-    .then((processedImageUrl) => {
-      const images = { originalImageUrl, processedImageUrl };
+  const originalRequest = needsNormalizedOriginal(session.file)
+    ? getOcrOriginalImageUrl(ocrJobId, mockProcessedImageUrl)
+    : (() => {
+      try {
+        return Promise.resolve(URL.createObjectURL(session.file));
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    })();
+  const processedRequest = getOcrProcessedImageUrl(ocrJobId, mockProcessedImageUrl);
+  const request = Promise.allSettled([originalRequest, processedRequest])
+    .then(([originalResult, processedResult]) => {
+      if (originalResult.status === 'rejected') {
+        if (processedResult.status === 'fulfilled') URL.revokeObjectURL(processedResult.value);
+        throw originalResult.reason;
+      }
+      if (processedResult.status === 'rejected') {
+        URL.revokeObjectURL(originalResult.value);
+        throw processedResult.reason;
+      }
+      const images = {
+        originalImageUrl: originalResult.value,
+        processedImageUrl: processedResult.value,
+      };
       if (session.released || ocrPreviewSessions.get(sessionId) !== session) {
         revokePreviewImages(images);
         return null;
       }
       session.images = images;
       return images;
-    })
-    .catch((error: unknown) => {
-      URL.revokeObjectURL(originalImageUrl);
-      throw error;
     })
     .finally(() => {
       session.imageRequest = undefined;
@@ -129,6 +149,15 @@ export function getOcrProcessedImageUrl(ocrJobId: string, mockImageUrl: string):
     ? Promise.resolve(mockImageUrl)
     : http
       .getBlob(`/v1/ocr/jobs/${encodeURIComponent(ocrJobId)}/processed-image`)
+      .then((blob) => URL.createObjectURL(blob));
+}
+
+/** 브라우저가 렌더하지 못하는 원본은 서버가 JPEG·PNG로 정상화한 바이트를 인증 fetch 합니다. */
+export function getOcrOriginalImageUrl(ocrJobId: string, mockImageUrl: string): Promise<string> {
+  return USE_MOCK
+    ? Promise.resolve(mockImageUrl)
+    : http
+      .getBlob(`/v1/ocr/jobs/${encodeURIComponent(ocrJobId)}/image`)
       .then((blob) => URL.createObjectURL(blob));
 }
 
