@@ -98,17 +98,18 @@ const idempotencyKey = `ocr-${crypto.randomUUID()}`;
 
 | 필드 | 타입 | 필수 | 제약 |
 |---|---|---:|---|
-| `file` | binary | O | JPG 또는 PNG 한 장 |
+| `file` | binary | O | JPG, PNG, HEIC/HEIF, WebP, BMP, 단일 TIFF 사진. MPO는 대표 사진만 처리 |
 
 파일 검증 규칙:
 
-- 허용 MIME: `image/jpeg`, `image/png`
-- 확장자, MIME, 실제 파일 시그니처가 일치해야 한다.
+- 확장자와 요청 MIME보다 실제 디코딩 형식을 우선한다. 확장자가 HEIC여도 실제 내용이 지원되는 MPO이면 처리한다.
+- 필요한 경우 회전·색상 모드 보정 후 JPEG/PNG로 정규화한다. 결과 바이트·MIME·파일명은 정규화된 형식에 맞춘다.
 - 파일 최대 크기: 50 MiB
 - multipart 전체 최대 크기: 51 MiB
-- 최대 가로·세로: 각각 10,000px
-- 최대 디코딩 픽셀: 40,000,000px
-- 빈 파일, 손상된 이미지, 다른 형식은 허용하지 않는다.
+- 원본은 한 변 16,000px 및 64,000,000픽셀 이하이며, 정규화 결과는 한 변 10,000px 및 40,000,000픽셀 이하로 비율을 유지해 축소한다. 결과 바이트도 50 MiB 이하여야 한다.
+- GIF(정지 포함), 다중 페이지 TIFF, 다중 사진 HEIF, 애니메이션 WebP/APNG는 거절한다. HEIF 보조·깊이·썸네일은 별도 사진으로 취급하지 않는다.
+- MPO는 첫 대표 프레임만 JPEG로 재인코딩하며 보조 프레임과 MPF 메타데이터를 전달하지 않는다.
+- 빈 파일, 손상된 이미지, 지원하지 않는 형식은 허용하지 않는다.
 
 ### 성공 응답
 
@@ -140,9 +141,13 @@ const ocrJobId = response.documentIds[0];
 |---:|---|---|
 | 401 | `AUTHENTICATION_REQUIRED`, `INVALID_TOKEN` | 인증 토큰 없음 또는 잘못된 토큰 |
 | 409 | `IDEMPOTENCY_CONFLICT` | 같은 키로 다른 파일을 업로드 |
-| 413 | `OCR_UPLOAD_TOO_LARGE` | multipart 요청 전체가 51 MiB 초과 |
+| 413 | `OCR_UPLOAD_TOO_LARGE` | multipart 요청 전체가 51 MiB 또는 파일이 50 MiB 초과 |
 | 422 | `VALIDATION_ERROR` | 헤더 또는 multipart 형식 검증 실패 |
-| 422 | `INVALID_IMAGE` | 파일 형식, 실제 내용, 크기, 해상도 또는 디코딩 검증 실패 |
+| 422 | `INVALID_IMAGE` | 빈 파일, 손상 또는 디코딩 검증 실패 |
+| 422 | `UNSUPPORTED_IMAGE_FORMAT` | 지원하지 않는 실제 이미지 형식 |
+| 422 | `MULTI_IMAGE_NOT_SUPPORTED` | GIF 또는 지원하지 않는 다중 이미지 |
+| 422 | `IMAGE_TOO_LARGE` | 원본 해상도 또는 정규화 결과 크기 제한 초과 |
+| 422 | `IMAGE_CONVERSION_FAILED` | 이미지 정규화·변환 실패 |
 | 503 | `OCR_QUEUE_UNAVAILABLE` | 임시 파일 저장 또는 Redis/ARQ 대기열 등록 실패 |
 | 504 | `API_TIMEOUT` | 업로드 처리 시간이 10초를 초과 |
 
@@ -327,7 +332,7 @@ if (ocrStatus === 'queued' || ocrStatus === 'processing') {
 | 인증 | Bearer 필수 |
 | 성공 상태 | `200 OK` |
 | 응답 형식 | `image/jpeg` 또는 `image/png` binary |
-| 설명 | OCR 검토 화면과 저장 완료 기록에서 사용할 원본 이미지를 반환한다. |
+| 설명 | 임시 이미지가 존재하는 동안 검토용 전처리 전 이미지를 반환한다. HEIC/MPO 등은 정규화된 JPEG/PNG이며 업로드 원본 바이트와 다를 수 있다. 저장 완료 후 사진 보관을 보장하지 않는다. |
 
 ### Path Parameter
 
@@ -558,7 +563,7 @@ QUEUED / PROCESSING
 1. `/api/v1/auth/login`으로 로그인하여 access token을 받는다.
 2. Swagger 우측 상단 `Authorize`에 access token을 입력한다.
 3. **1번 API** `POST /api/v1/ocr`를 실행한다.
-4. `Idempotency-Key`에 `ocr-`로 시작하는 UUID를 입력하고 JPG/PNG 한 장을 선택한다.
+4. `Idempotency-Key`에 `ocr-`로 시작하는 UUID를 입력하고 지원 형식의 사진 한 장을 선택한다.
 5. 응답의 `documentIds[0]`을 복사한다.
 6. **2번 API** `GET /api/v1/ocr/jobs/{ocrJobId}`를 `queued` 또는 `processing` 동안 반복 실행한다.
 7. `ready_for_review`가 되면 `medications` 전체를 확인한다.

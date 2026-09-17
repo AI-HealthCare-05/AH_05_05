@@ -4,6 +4,8 @@
 
 ## 동작과 경계
 
+후속 보완: MPO 대표 프레임 처리와 조건부 표 재시도가 추가됐다. 최신 수용 기준은 [OCR 사진 입력 요구사항](input-requirements.md), 외부 계약은 [API 명세](../medication-guide-ocr-api-spec-v1.md)를 따른다. 아래 검증 기록은 최초 정규화 작업 당시의 범위다.
+
 - 단일 HEIC/HEIF, WebP, BMP, TIFF를 서버에서 JPEG로 변환한다. 알파 채널이 있으면 PNG를 사용한다.
 - 정상 JPEG/PNG는 재압축하지 않는다. 회전·해상도·색상 모드 보정이 필요한 경우에만 다시 인코딩하며 PNG는 PNG로 유지한다.
 - GIF는 정지/애니메이션 모두 거절한다. 다중 이미지 HEIF, 다중 페이지 TIFF, 애니메이션 WebP/APNG도 첫 장만 사용하지 않고 거절한다. HEIF 썸네일·깊이·보조 데이터는 최상위 사진 목록과 구분한다.
