@@ -4211,7 +4211,12 @@ async def test_execute_records_safe_stage_summaries_without_raw_content() -> Non
     assert llm_outputs["fallback_reason"] is None
     assert llm_outputs["declared_section_types"] == []
     # 항목을 지정하지 않은 전반 설명 질문이라 확보한 근거가 그대로 covered가 된다.
-    assert llm_outputs["covered_section_types"] == ["FUNCTION", "DAILY_INTAKE", "CAUTION"]
+    assert llm_outputs["covered_section_types"] == [
+        "FUNCTION",
+        "DAILY_INTAKE",
+        "CAUTION",
+        "ADVERSE_EVENT",
+    ]
     assert len(llm_outputs["draft_answer_hash"]) == 64
     assert len(llm_outputs["generated_answer_hash"]) == 64
 

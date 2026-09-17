@@ -548,23 +548,6 @@ class OpenAIMedicationAnswerGenerator:
         return None
 
     @classmethod
-    def _comparable_sections(
-        cls,
-        sections: list[KnowledgeSectionType] | None,
-    ) -> set[KnowledgeSectionType]:
-        """근거 대조용으로 섹션 이름을 맞춘다.
-
-        커버리지는 이상반응을 주의사항 근거에 포함해 CAUTION으로 센다. 답변이 같은 근거를
-        ADVERSE_EVENT로 선언하면 이름만 달라 대조에서 탈락하므로 여기서 맞춘다.
-        프롬프트 `[형식]`도 화면의 이상반응을 CAUTION에 대응시킨다.
-        """
-
-        return {
-            KnowledgeSectionType.CAUTION if section is KnowledgeSectionType.ADVERSE_EVENT else section
-            for section in sections or []
-        }
-
-    @classmethod
     def _grounding_failure_reason(
         cls,
         *,
@@ -577,9 +560,7 @@ class OpenAIMedicationAnswerGenerator:
         if (
             not allow_uncovered_adverse_case_report
             and covered_section_types is not None
-            and not cls._comparable_sections(declared_section_types).issubset(
-                cls._comparable_sections(covered_section_types)
-            )
+            and not set(declared_section_types or []).issubset(covered_section_types)
         ):
             return MedicationAnswerFallbackReason.UNSUPPORTED_EVIDENCE_SECTION
         if cls._omits_interaction_overview(draft_answer=draft_answer, generated_answer=generated_answer):

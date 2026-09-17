@@ -242,3 +242,33 @@ def test_evaluate_accepts_approved_rule_for_requested_pair() -> None:
     assert coverage.covered_section_types == [KnowledgeSectionType.INTERACTION]
     assert coverage.missing_section_types == []
     assert coverage.verified_interaction_pair_keys == [requested_pair_key]
+
+
+def test_adverse_event_is_covered_only_when_adverse_reactions_has_evidence() -> None:
+    """이상반응은 주의사항 근거에 묶여 있지만 자료가 없으면 확보로 세지 않는다.
+
+    묶어서 세면 이상반응 자료가 없는 제품에서 `🚨 **이상반응**` 섹션이 근거 검증을 통과한다.
+    """
+
+    evaluator = MedicationEvidenceCoverageEvaluator()
+    plan = build_plan()
+
+    without_adverse = evaluator.evaluate(
+        query_plan=plan,
+        guide_lookup=build_guide(precautions="정해진 용법을 지킵니다."),
+        rules=[],
+        chunks=[],
+    )
+    with_adverse = evaluator.evaluate(
+        query_plan=plan,
+        guide_lookup=build_guide(
+            precautions="정해진 용법을 지킵니다.",
+            adverse_reactions="드물게 발진이 나타날 수 있습니다.",
+        ),
+        rules=[],
+        chunks=[],
+    )
+
+    assert KnowledgeSectionType.CAUTION in without_adverse.covered_section_types
+    assert KnowledgeSectionType.ADVERSE_EVENT not in without_adverse.covered_section_types
+    assert KnowledgeSectionType.ADVERSE_EVENT in with_adverse.covered_section_types

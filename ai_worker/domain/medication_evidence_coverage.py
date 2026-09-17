@@ -20,6 +20,7 @@ class MedicationEvidenceCoverageEvaluator:
         KnowledgeSectionType.FUNCTION,
         KnowledgeSectionType.DAILY_INTAKE,
         KnowledgeSectionType.CAUTION,
+        KnowledgeSectionType.ADVERSE_EVENT,
         KnowledgeSectionType.INTERACTION,
     )
     _EMPTY_VALUES = {
@@ -122,6 +123,10 @@ class MedicationEvidenceCoverageEvaluator:
                 )
             ):
                 available.add(KnowledgeSectionType.CAUTION)
+            # 이상반응은 주의사항 근거에 포함되지만, 근거가 실제로 있을 때만 확보로 센다.
+            # 함께 묶으면 이상반응 자료가 없는 제품에서 이상반응 섹션이 통과한다.
+            if self._has_value(guide.adverse_reactions):
+                available.add(KnowledgeSectionType.ADVERSE_EVENT)
         if any(
             self._has_value(value)
             for guides in guide_lookup.form_caution_guides.values()
