@@ -75,6 +75,8 @@ class OpenAIMedicationAnswerGenerator:
     _INTERACTION_OVERVIEW_HEADERS = ("🧬 **약과 상호작용**", "🍗 **그 외 상호작용**")
     _MISSING_EVIDENCE_LINE_PATTERN = re.compile(r"확인하지\s*못|(?:근거|자료|정보)[^.!?\n]{0,30}없")
     _CAUTION_SECTION_HEADER = "⚠️ **주의사항**"
+    # 안내와 확인 경로는 근거를 주장하지 않으므로 근거 부재 답변에서도 쓸 수 있다.
+    _NOTICE_SECTION_ICONS = frozenset({"✉️", "📭"})
     _MAX_BULLET_EOJEOLS = 10
     _MAX_BULLET_CHARACTERS = 100
     _MAX_COMPACT_ANSWER_CHARACTERS = 1_200
@@ -207,6 +209,7 @@ class OpenAIMedicationAnswerGenerator:
         covered_section_types = (
             result.evidence_coverage.covered_section_types if result.evidence_coverage is not None else None
         )
+        evidence_gap_guidance = self._is_evidence_gap_guidance(result)
         compacted_adverse_case_report = False
         try:
             payload = await self._invoke_chain(
@@ -225,6 +228,7 @@ class OpenAIMedicationAnswerGenerator:
                 generated_answer=generated_answer,
                 declared_section_types=payload.section_types,
                 covered_section_types=covered_section_types,
+                evidence_gap_guidance=evidence_gap_guidance,
             )
             # 짧은 요약이어도 섹션 선언이 틀리면 한 번 보정한다.
             # 최종 근거 검증은 그대로 유지하며, 형식 보정과 호출 예산을 공유한다.
@@ -274,6 +278,7 @@ class OpenAIMedicationAnswerGenerator:
                 declared_section_types=payload.section_types,
                 covered_section_types=covered_section_types,
                 allow_uncovered_adverse_case_report=compacted_adverse_case_report,
+                evidence_gap_guidance=evidence_gap_guidance,
             )
         )
         if fallback_reason is not None:
@@ -540,6 +545,17 @@ class OpenAIMedicationAnswerGenerator:
         return None
 
     @classmethod
+    def _evidence_section_headers(cls, answer: str) -> set[str]:
+        """근거를 주장하는 소제목만 모은다. 안내·확인 경로 소제목은 제외한다."""
+
+        headers: set[str] = set()
+        for line in answer.splitlines():
+            match = cls._SECTION_HEADER_PATTERN.match(line)
+            if match is not None and match.group("icon") not in cls._NOTICE_SECTION_ICONS:
+                headers.add(line.strip())
+        return headers
+
+    @classmethod
     def _grounding_failure_reason(
         cls,
         *,
@@ -548,7 +564,15 @@ class OpenAIMedicationAnswerGenerator:
         declared_section_types: list[KnowledgeSectionType] | None = None,
         covered_section_types: list[KnowledgeSectionType] | None = None,
         allow_uncovered_adverse_case_report: bool = False,
+        evidence_gap_guidance: bool = False,
     ) -> MedicationAnswerFallbackReason | None:
+        # 근거 부재 안내는 안내 문구와 확인 경로만 정리하면 된다. 초안에 없던 근거 소제목이
+        # 생기면 조회하지 못한 내용을 채워 넣은 것이므로 초안을 그대로 쓴다.
+        # 선언된 section_types가 비어 있어도 본문에는 소제목이 생길 수 있어 본문을 본다.
+        if evidence_gap_guidance and (
+            cls._evidence_section_headers(generated_answer) - cls._evidence_section_headers(draft_answer)
+        ):
+            return MedicationAnswerFallbackReason.UNSUPPORTED_EVIDENCE_SECTION
         if (
             not allow_uncovered_adverse_case_report
             and covered_section_types is not None
