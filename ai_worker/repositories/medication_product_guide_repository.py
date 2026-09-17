@@ -7,6 +7,15 @@ from ai_worker.schemas.medication_chat import (
 )
 from app.models.interactions import MedicationProductGuide
 
+# 공공자료 적재 과정에서 숫자 사이의 쉼표가 `|`로 바뀐 값이 있다(`4|000mg`).
+# `|`는 조항 구분자로도 쓰이므로 세 자리 묶음일 때만 쉼표로 되돌린다.
+# ai_worker의 모든 소비자가 이 저장소를 지나므로 읽는 지점에서 한 번만 정리한다.
+_NUMERIC_SEPARATOR = re.compile(r"(?<=\d)\|(?=\d{3}(?:\D|$))")
+
+
+def _restore_numeric_separator(value: str) -> str:
+    return _NUMERIC_SEPARATOR.sub(",", value)
+
 
 class DbMedicationProductGuideRepository:
     _INGREDIENT_SUFFIX = re.compile(r"\(([^()]+)\)\s*$")
@@ -174,16 +183,17 @@ class DbMedicationProductGuideRepository:
     def _to_fact(
         guide: MedicationProductGuide,
     ) -> MedicationGuideFact:
+        restore = _restore_numeric_separator
         return MedicationGuideFact(
             medication_guide_id=guide.id,
             item_seq=guide.item_seq,
             product_name=guide.product_name,
             manufacturer_name=guide.manufacturer_name,
-            efficacy=guide.efficacy,
-            usage_instructions=guide.usage_instructions,
-            pre_use_warning=guide.pre_use_warning,
-            precautions=guide.precautions,
-            drug_food_interactions=guide.drug_food_interactions,
-            adverse_reactions=guide.adverse_reactions,
-            storage_instructions=guide.storage_instructions,
+            efficacy=restore(guide.efficacy),
+            usage_instructions=restore(guide.usage_instructions),
+            pre_use_warning=restore(guide.pre_use_warning),
+            precautions=restore(guide.precautions),
+            drug_food_interactions=restore(guide.drug_food_interactions),
+            adverse_reactions=restore(guide.adverse_reactions),
+            storage_instructions=restore(guide.storage_instructions),
         )

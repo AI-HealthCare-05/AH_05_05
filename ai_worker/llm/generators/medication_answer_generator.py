@@ -48,8 +48,10 @@ class OpenAIMedicationAnswerGenerator:
             MedicationChatSourceKind.PUBLIC_KNOWLEDGE,
         }
     )
+    # 단위 집합은 프롬프트의 용량 가림 패턴과 같아야 한다. 여기에만 없는 단위가 있으면
+    # 그 단위의 환각 용량(예: `5,000IU` → `10,000IU`)을 검증이 놓친다.
     _DOSAGE_TOKEN_PATTERN = re.compile(
-        r"\d+(?:[.,]\d+)?\s*(?:mg|mcg|μg|㎍|g|mL|ml|정|캡슐|포|회|일|시간|%)",
+        r"\d+(?:[.,]\d+)?\s*(?:mg|mcg|μg|㎍|g|mL|ml|IU|mEq|밀리그램|그램|밀리리터|국제단위|정|캡슐|포|회|일|시간|%)",
         re.IGNORECASE,
     )
     _SAFETY_ASSERTION_PATTERN = re.compile(
@@ -189,6 +191,14 @@ class OpenAIMedicationAnswerGenerator:
                 draft_hash=draft_hash,
                 reason=MedicationAnswerFallbackReason.CLARIFICATION_REQUIRED,
             )
+        # 근거 부재 안내는 이미 최종 형식이고 보탤 사실이 없다. 재작성을 맡기면
+        # 조회하지 못한 내용을 채워 넣을 자리만 생기므로 초안을 그대로 쓴다.
+        if self._is_evidence_gap_guidance(result):
+            return self._skipped_outcome(
+                result,
+                draft_hash=draft_hash,
+                reason=MedicationAnswerFallbackReason.EVIDENCE_GAP_NOTICE,
+            )
         if not result.sources and not self._allows_no_source_llm_guidance(result):
             return self._skipped_outcome(
                 result,
@@ -253,19 +263,26 @@ class OpenAIMedicationAnswerGenerator:
                 "약·영양제 챗봇 답변 생성에 실패했습니다.",
                 reason_code=MedicationAnswerFallbackReason.CLIENT_ERROR.value,
             ) from error
-        if self._must_preserve_official_warning(
+        # 공식 경고문을 지키려고 초안을 되돌린 경우도 초안이 그대로 나간 것이다.
+        # 상태를 재작성 성공으로 남기면 초안 노출률이 실제보다 낮게 집계된다.
+        preserved_official_warning = self._must_preserve_official_warning(
             context=context,
             result=result,
             generated_answer=generated_answer,
-        ):
+        )
+        if preserved_official_warning:
             generated_answer = result.answer
         generated_hash = self._answer_hash(generated_answer)
-        fallback_reason = self._grounding_failure_reason(
-            draft_answer=result.answer,
-            generated_answer=generated_answer,
-            declared_section_types=payload.section_types,
-            covered_section_types=covered_section_types,
-            allow_uncovered_adverse_case_report=compacted_adverse_case_report,
+        fallback_reason = (
+            MedicationAnswerFallbackReason.OFFICIAL_WARNING_PRESERVED
+            if preserved_official_warning
+            else self._grounding_failure_reason(
+                draft_answer=result.answer,
+                generated_answer=generated_answer,
+                declared_section_types=payload.section_types,
+                covered_section_types=covered_section_types,
+                allow_uncovered_adverse_case_report=compacted_adverse_case_report,
+            )
         )
         if fallback_reason is not None:
             fallback_answer = self._compact_unrepaired_adverse_case_report(
@@ -552,13 +569,21 @@ class OpenAIMedicationAnswerGenerator:
             draft_answer
         ):
             return MedicationAnswerFallbackReason.UNSUPPORTED_SAFETY_ASSERTION
-        draft_dosages = {token.casefold().replace(" ", "") for token in cls._DOSAGE_TOKEN_PATTERN.findall(draft_answer)}
-        generated_dosages = {
-            token.casefold().replace(" ", "") for token in cls._DOSAGE_TOKEN_PATTERN.findall(generated_answer)
-        }
+        draft_dosages = cls._dosage_tokens(draft_answer)
+        generated_dosages = cls._dosage_tokens(generated_answer)
         if not generated_dosages.issubset(draft_dosages):
             return MedicationAnswerFallbackReason.GENERATED_DOSAGE_NOT_IN_DRAFT
         return None
+
+    @classmethod
+    def _dosage_tokens(cls, text: str) -> set[str]:
+        """공백을 없앤 뒤 용량을 추출한다.
+
+        추출 후에 공백을 지우면 `4, 000mg`처럼 띄어 쓰인 수치를 정규식이 통째로
+        놓쳐 초안과 생성문의 토큰이 어긋난다. 정규화가 먼저 와야 한다.
+        """
+
+        return {token.casefold() for token in cls._DOSAGE_TOKEN_PATTERN.findall(re.sub(r"\s+", "", text))}
 
     @classmethod
     def _omits_interaction_overview(cls, *, draft_answer: str, generated_answer: str) -> bool:
@@ -679,15 +704,18 @@ class OpenAIMedicationAnswerGenerator:
 
     @staticmethod
     def _is_evidence_gap_guidance(result: MedicationChatResult) -> bool:
-        """근거 부재 안내는 새 의학 주장을 만들지 않는 범위에서만 LLM이 정리한다."""
+        """근거 부재 안내다. 초안이 이미 최종 형식이라 LLM 재작성을 거치지 않는다."""
 
         return MedicationChatReasonCode.IN_SCOPE_NO_EVIDENCE.value in result.safety_reason_codes
 
     @classmethod
     def _allows_no_source_llm_guidance(cls, result: MedicationChatResult) -> bool:
-        """근거 부재 안내와 저위험 일반 영양 안내만 출처 없이 LLM 정리를 허용한다."""
+        """저위험 일반 영양 안내만 출처 없이 LLM 정리를 허용한다.
 
-        return cls._is_evidence_gap_guidance(result) or (
+        근거 부재 안내는 앞에서 이미 걸러지므로 여기까지 오지 않는다.
+        """
+
+        return (
             cls._GENERAL_SUPPLEMENT_GUIDANCE_REASON_CODE in result.safety_reason_codes
             and result.route == MedicationChatRoute.SUPPLEMENT_GUIDE
             and result.risk_decision is not None

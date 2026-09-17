@@ -2460,7 +2460,10 @@ async def test_active_medication_interaction_without_approved_rule_states_uncert
     ).execute(build_request("현재 먹는 두 약 사이에 상호작용이 있어?"))
 
     assert "☑️ **확인하지 못한 조합**" not in result.answer
-    assert "근거를 확인하지 못한 항목" in result.answer
+    # 이 초안은 LLM 재작성을 거치지 않으므로 규약 소제목과 안전 문구를 갖춰 나간다.
+    assert "✉️ **안내사항**" in result.answer
+    assert "상호작용: 현재 근거에서 확인하지 못했습니다." in result.answer
+    assert "확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다." in result.answer
 
 
 async def test_harmful_request_is_blocked_before_rag() -> None:
@@ -3411,7 +3414,8 @@ async def test_execute_distinguishes_in_scope_question_without_evidence() -> Non
     assert result.safety_status == SafetyStatus.RESTRICTED
     assert result.safety_reason_codes == ["IN_SCOPE_NO_EVIDENCE"]
     assert "✉️ **안내사항**" in result.answer
-    assert "📭 **공식 확인 경로**" not in result.answer
+    # 확인처는 코드가 정한다. LLM이 기관 이름을 만들면 없는 출처가 생긴다.
+    assert "📭 **공식 확인 경로**" in result.answer
     assert "의료진·약사에게 확인할 내용" not in result.answer
     assert "안전한 조합" not in result.answer
 
