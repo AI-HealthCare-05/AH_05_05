@@ -100,6 +100,22 @@ def test_assembler_prioritizes_approved_interaction_rules() -> None:
     assert draft.executive_summary.interaction_check_count == 1
 
 
+def test_assembler_preserves_confirmed_medication_ingredient_aliases() -> None:
+    context = _context_with_active_intakes()
+    context.medications[0].interaction_names = [" 와파린정 ", "와파린", "아세트아미노펜", "", "와파린"]
+
+    draft = IntakeReportAssembler().assemble(
+        context=context,
+        guide_lookups=[],
+        approved_rules=[],
+        knowledge_chunks=[],
+        rag_available=True,
+    )
+
+    assert draft.current_stack[0].ingredient_aliases == ["와파린", "아세트아미노펜"]
+    assert draft.current_stack[0].product_name == "와파린정"
+
+
 def test_assembler_marks_missing_amount_without_total() -> None:
     context = _context_with_active_intakes()
     context.supplements[0].dose_amount = ""

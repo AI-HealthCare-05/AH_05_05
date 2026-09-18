@@ -90,6 +90,39 @@ async def test_provider_resolves_strength_suffix_only_to_exact_catalog_name(
     assert getattr(context.medications[0], "interaction_names", []) == expected_names
 
 
+@pytest.mark.parametrize(
+    ("display_name", "catalog_name", "catalog_normalized_name", "expected_names"),
+    [
+        ("아세트아미노펜정500mg", "아세트아미노펜", "아세트아미노펜", ["아세트아미노펜"]),
+        ("이부프로펜캡슐 200mg", "이부프로펜", "이부프로펜", ["이부프로펜"]),
+        ("아세트아미노펜정500mg오타", "아세트아미노펜", "아세트아미노펜", []),
+        ("타이레놀정500mg", "아세트아미노펜", "아세트아미노펜", []),
+        ("아세트아미노펜정/이부프로펜정 500mg", "아세트아미노펜", "아세트아미노펜", []),
+        ("아세트아미노펜정500mg", "브랜드명", "아세트아미노펜", []),
+    ],
+)
+async def test_provider_resolves_single_generic_dosage_form_only_to_exact_catalog_ingredient(
+    initialized_db: None,
+    display_name: str,
+    catalog_name: str,
+    catalog_normalized_name: str,
+    expected_names: list[str],
+) -> None:
+    user = await _create_user(1, "generic-ingredient@example.com")
+    episode = await _create_confirmed_episode(episode_id=100, user=user)
+    await Medication.create(care_episode=episode, name=display_name)
+    await InteractionEntity.create(
+        entity_kind="DRUG",
+        canonical_name=catalog_name,
+        normalized_name=catalog_normalized_name,
+    )
+
+    context = await DbActiveIntakeContextProvider().get_active_context(user_id=user.id, care_episode_id=None)
+
+    assert context.medications[0].name == display_name
+    assert context.medications[0].interaction_names == expected_names
+
+
 async def test_provider_prefers_explicit_medication_links_over_strength_name_fallback(initialized_db: None) -> None:
     user = await _create_user(1, "patient@example.com")
     episode = await _create_confirmed_episode(episode_id=100, user=user)
@@ -288,6 +321,76 @@ async def test_provider_uses_confirmed_episode_period_before_stale_medication_da
     ).get_active_context(user_id=user.id, care_episode_id=None)
 
     assert [item.name for item in context.medications] == ["최근 처방인데 약별 날짜가 오래된 약"]
+
+
+@pytest.mark.asyncio
+async def test_report_provider_includes_all_medications_from_active_confirmed_episodes(
+    initialized_db: None,
+) -> None:
+    user = await _create_user(1, "report-medications@example.com")
+    other = await _create_user(2, "other-report-medications@example.com")
+    active_episode = await _create_confirmed_episode(
+        episode_id=100,
+        user=user,
+        medication_start_date=date(2026, 9, 10),
+        medication_days=30,
+    )
+    completed_episode = await _create_confirmed_episode(
+        episode_id=200,
+        user=user,
+        status=CareEpisodeStatus.COMPLETED,
+    )
+    cancelled_episode = await _create_confirmed_episode(
+        episode_id=250,
+        user=user,
+        status=CareEpisodeStatus.CANCELLED,
+    )
+    unconfirmed_episode = await CareEpisode.create(
+        id=275,
+        user=user,
+        title="미확정 약봉투",
+        status=CareEpisodeStatus.ACTIVE,
+    )
+    other_episode = await _create_confirmed_episode(episode_id=300, user=other)
+
+    await Medication.create(
+        id=10,
+        care_episode=active_episode,
+        name="현재 복용 약",
+        prescribed_at=date(2026, 9, 1),
+        days=30,
+    )
+    await Medication.create(
+        id=20,
+        care_episode=active_episode,
+        name="이미 끝난 약",
+        prescribed_at=date(2026, 7, 1),
+        days=3,
+    )
+    await Medication.create(
+        id=30,
+        care_episode=active_episode,
+        name="미래 처방 약",
+        prescribed_at=date(2026, 10, 1),
+        days=5,
+    )
+    await Medication.create(id=40, care_episode=active_episode, name="복용일 없는 약")
+    await Medication.create(id=50, care_episode=completed_episode, name="완료 에피소드 약")
+    await Medication.create(id=55, care_episode=cancelled_episode, name="취소 에피소드 약")
+    await Medication.create(id=57, care_episode=unconfirmed_episode, name="미확정 에피소드 약")
+    await Medication.create(id=60, care_episode=other_episode, name="다른 사용자 약")
+
+    context = await DbActiveIntakeContextProvider(
+        today_provider=lambda: date(2026, 9, 16),
+        include_all_episode_medications=True,
+    ).get_active_context(user_id=user.id, care_episode_id=None)
+
+    assert [item.name for item in context.medications] == [
+        "현재 복용 약",
+        "이미 끝난 약",
+        "미래 처방 약",
+        "복용일 없는 약",
+    ]
 
 
 @pytest.mark.asyncio

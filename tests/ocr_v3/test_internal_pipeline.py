@@ -563,6 +563,9 @@ def test_leading_symbols_do_not_change_medication_name_or_raw_evidence(prefix: s
         ("→가나정10/20mg", "가나정10/20mg"),
         ("!가나크림0.1%", "가나크림0.1%"),
         ("!?!", ""),
+        ("실온보관 *가나캡슐(성분명)", "가나캡슐"),
+        ("(냉장보관) *가나정", "가나정"),
+        ("실온보관정", "실온보관정"),
     ],
 )
 def test_name_prefix_cleanup_preserves_printed_suffix_and_internal_characters(printed_name: str, expected: str) -> None:

@@ -25,6 +25,10 @@ from ai_worker.rag.vectorstores.qdrant_hybrid_knowledge_store import (
 )
 from ai_worker.rag.vectorstores.qdrant_knowledge_store import QdrantKnowledgeStore
 from ai_worker.reports.nutrients import load_report_nutrients
+from ai_worker.reports.report_rag_pipeline import (
+    RagIntakeReportCardsGenerator,
+    build_openai_report_rag_pipeline,
+)
 from ai_worker.repositories.interaction_rule_repository import (
     DbInteractionRuleRepository,
 )
@@ -85,8 +89,36 @@ def build_intake_report_core_service(
             search_mode=settings.KNOWLEDGE_SEARCH_MODE,
             **vector_store_kwargs,
         )
+    knowledge_retriever = MedicationKnowledgeRetriever(
+        embedding_provider=embedding_provider,
+        vector_store=vector_store,
+        dataset_version=settings.KNOWLEDGE_DATASET_VERSION,
+        min_similarity_score=settings.RAG_MIN_SIMILARITY_SCORE,
+    )
+    base_generator = OpenAIIntakeReportCardsGenerator(
+        model=settings.OPENAI_CHAT_MODEL,
+        api_key=settings.OPENAI_API_KEY,
+        enable_plain_language=False,
+        # A complete evidence-locked card plan is longer than a chat reply.
+        timeout_seconds=max(settings.OPENAI_TIMEOUT_SECONDS, 75.0),
+        max_retries=settings.OPENAI_MAX_RETRIES,
+        include_fixed_lifestyle_guidance=not settings.INTAKE_REPORT_RAG_ENABLED,
+    )
+    generator = (
+        RagIntakeReportCardsGenerator(
+            pipeline=build_openai_report_rag_pipeline(
+                retriever=knowledge_retriever,
+                dataset_version=settings.KNOWLEDGE_DATASET_VERSION,
+                model=settings.OPENAI_CHAT_MODEL,
+                api_key=settings.OPENAI_API_KEY,
+            ),
+            base_generator=base_generator,
+        )
+        if settings.INTAKE_REPORT_RAG_ENABLED
+        else base_generator
+    )
     use_case = GenerateIntakeReportUseCase(
-        context_provider=DbActiveIntakeContextProvider(),
+        context_provider=DbActiveIntakeContextProvider(include_all_episode_medications=True),
         guide_repository=ReportMedicationGuideRepository(
             candidate_selector=OpenAIMedicationCandidateSelector(
                 model=settings.OPENAI_CHAT_MODEL,
@@ -97,22 +129,8 @@ def build_intake_report_core_service(
         interaction_rule_repository=DbInteractionRuleRepository(
             active_dataset_version=settings.INTERACTION_RULE_DATASET_VERSION,
         ),
-        knowledge_retriever=MedicationKnowledgeRetriever(
-            embedding_provider=embedding_provider,
-            vector_store=vector_store,
-            dataset_version=settings.KNOWLEDGE_DATASET_VERSION,
-            min_similarity_score=settings.RAG_MIN_SIMILARITY_SCORE,
-        ),
-        generator=OpenAIIntakeReportCardsGenerator(
-            model=settings.OPENAI_CHAT_MODEL,
-            api_key=settings.OPENAI_API_KEY,
-            enable_plain_language=False,
-            # A complete evidence-locked card plan is longer than a chat reply.
-            # Keep the generator's overall 90s budget while allowing one full
-            # response instead of repeatedly cancelling it at the chat timeout.
-            timeout_seconds=max(settings.OPENAI_TIMEOUT_SECONDS, 75.0),
-            max_retries=settings.OPENAI_MAX_RETRIES,
-        ),
+        knowledge_retriever=knowledge_retriever,
+        generator=generator,
         tracer=report_tracer,
         nutrient_loader=load_report_nutrients,
     )

@@ -623,6 +623,59 @@ async def test_report_known_ingredient_conflict_blocks_typo_connection(initializ
     assert result.guide is None
 
 
+@pytest.mark.parametrize(
+    "query,catalog_names,unsafe_candidate",
+    [
+        (
+            "세티리진정10mg",
+            ["세티진정(세티리진염산염)", "티파딘정10mg(파모티딘)"],
+            "티파딘정10mg(파모티딘)",
+        ),
+        (
+            "파모티딘정20mg",
+            ["파모큐정(파모티딘)", "아모틴정10mg(파모티딘)"],
+            "아모틴정10mg(파모티딘)",
+        ),
+        (
+            "라베뉴정10/500",
+            ["나나정500밀리그램(아세트아미노펜)"],
+            "나나정500밀리그램(아세트아미노펜)",
+        ),
+    ],
+)
+def test_report_candidate_filter_rejects_incompatible_ingredient_strength_or_form(
+    query,
+    catalog_names,
+    unsafe_candidate,
+):
+    """후보 표시는 성분·용량·제형 경계를 넘지 않는다."""
+
+    from ai_worker.repositories.report_medication_guide_repository import ReportMedicationGuideRepository
+    from ai_worker.schemas.medication_search import (
+        MedicationCatalogEntry,
+        MedicationQueryEntitySource,
+        MedicationQueryEntityType,
+    )
+
+    entries = [
+        MedicationCatalogEntry(
+            canonical_name=name,
+            entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+            source=MedicationQueryEntitySource.RDBMS,
+        )
+        for name in catalog_names
+    ]
+
+    assert (
+        ReportMedicationGuideRepository._safe_candidate_names(
+            query,
+            [unsafe_candidate],
+            entries,
+        )
+        == []
+    )
+
+
 async def test_report_rechecks_dominance_after_catalog_changes(initialized_db):
     repository = _report_repository()
     await _create_guide("100", "타이레놀정500밀리그람")

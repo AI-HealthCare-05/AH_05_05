@@ -412,7 +412,7 @@ export function MedicationNoteFormPage() {
           else navigate(enteredFromHome ? '/home' : '/medications/notes', { replace: true });
         }}
       />
-      <main className="flex flex-1 flex-col gap-5 overflow-y-auto px-page-x py-5">
+      <main className="flex min-w-0 max-w-full flex-1 flex-col gap-5 overflow-x-clip overflow-y-auto px-page-x py-5">
         {initialLoadError ? (
           <div className="flex flex-col items-start gap-3">
             <p role="alert" className="text-sm text-danger-strong">
@@ -450,7 +450,7 @@ export function MedicationNoteFormPage() {
                   value={form.recordId}
                   onChange={(event) => chooseOverview(event.target.value)}
                   disabled={editing || episodes === null}
-                  className="rx-input h-control min-w-0 max-w-full w-full rounded-input border border-input bg-card px-3.5 text-[length:var(--text-control)] font-normal text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted-bg disabled:text-disabled-foreground"
+                  className="rx-input h-control min-w-0 max-w-full w-full rounded-input border border-input bg-card px-3.5 text-base font-normal text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted-bg disabled:text-disabled-foreground"
                 >
                   <option value="">처방을 선택해주세요</option>
                   {episodes?.map((episode) => (
@@ -473,7 +473,7 @@ export function MedicationNoteFormPage() {
                 value={form.takenAt}
                 onChange={(event) => setField('takenAt', event.target.value)}
                 disabled={episodes === null || saving}
-                inputClassName="min-w-0 max-w-full"
+                inputClassName="min-w-0 max-w-full text-base"
               />
 
               <label className="flex flex-col gap-1 text-sm font-bold text-foreground">

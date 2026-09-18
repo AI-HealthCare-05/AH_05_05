@@ -22,6 +22,8 @@ frontend/package-lock.json
 
 # Local attachments, package cache, and generated deliverables (not app sources)
 /.codex-remote-attachments/
+/.context/
+/.claude/
 /.pnpm-store/
 /output/
 /test-artifacts/
