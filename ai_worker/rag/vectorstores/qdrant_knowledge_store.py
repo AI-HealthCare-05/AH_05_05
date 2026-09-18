@@ -134,15 +134,20 @@ class QdrantKnowledgeStore:
         """운영 `search`와 동일한 query/filter로 raw·refined 후보를 함께 관측한다."""
         self._validate_vectors([query_vector])
         await self._validate_existing_collection()
-        candidate_limit = min(
-            self._MAX_SEARCH_CANDIDATES,
-            search_query.limit * 4,
+        candidate_limit = (
+            search_query.limit
+            if search_query.exhaustive
+            else min(
+                self._MAX_SEARCH_CANDIDATES,
+                search_query.limit * 4,
+            )
         )
         response = await self._client.query_points(
             collection_name=self._collection_name,
             query=query_vector,
             query_filter=self._build_filter(search_query),
             limit=candidate_limit,
+            offset=search_query.offset,
             with_payload=True,
             with_vectors=False,
         )
@@ -156,10 +161,16 @@ class QdrantKnowledgeStore:
             )
             if result is not None:
                 raw_results.append(result)
-        refined_results = KnowledgeSearchResultRefiner.refine(
-            raw_results,
-            query=search_query.query,
-            limit=search_query.limit,
+        if search_query.exhaustive and response.points and not raw_results:
+            raise RuntimeError("exhaustive Knowledge search received a nonempty page with no valid payloads.")
+        refined_results = (
+            raw_results
+            if search_query.exhaustive
+            else KnowledgeSearchResultRefiner.refine(
+                raw_results,
+                query=search_query.query,
+                limit=search_query.limit,
+            )
         )
         return QdrantKnowledgeSearchTrace(
             raw_results=raw_results,

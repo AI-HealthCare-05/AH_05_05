@@ -6,6 +6,12 @@ import { Button, Card, Header, ImageViewer, RegistrationProgress } from '@/share
 import { GuidedCamera } from './GuidedCamera';
 
 const GUIDE_ITEMS = ['병원명', '조제일', '약품명·함량', '1회 투약량·횟수·일수'] as const;
+const IMAGE_ACCEPT =
+  'image/jpeg,image/png,image/heic,image/heif,image/webp,image/bmp,image/tiff,.jpg,.jpeg,.png,.heic,.heif,.webp,.bmp,.tif,.tiff';
+
+function isGif(file: File): boolean {
+  return file.type.toLowerCase() === 'image/gif' || file.name.toLowerCase().endsWith('.gif');
+}
 
 export function DocumentUploadPage() {
   const navigate = useNavigate();
@@ -13,6 +19,8 @@ export function DocumentUploadPage() {
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewUnavailable, setPreviewUnavailable] = useState(false);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
   const [imageViewerOpen, setImageViewerOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const closeCamera = useCallback(() => setCameraOpen(false), []);
@@ -35,9 +43,20 @@ export function DocumentUploadPage() {
     return () => URL.revokeObjectURL(nextUrl);
   }, [file]);
 
+  function selectFile(selected: File | null) {
+    setSelectionError(null);
+    setPreviewUnavailable(false);
+    setImageViewerOpen(false);
+    if (selected && isGif(selected)) {
+      setFile(null);
+      setSelectionError('GIF는 지원하지 않아요. 한 장의 사진을 선택해주세요.');
+    } else if (selected) {
+      setFile(selected);
+    }
+  }
+
   function handleSelect(event: ChangeEvent<HTMLInputElement>) {
-    const selected = event.target.files?.[0] ?? null;
-    if (selected) setFile(selected);
+    selectFile(event.target.files?.[0] ?? null);
     event.target.value = '';
   }
 
@@ -52,7 +71,7 @@ export function DocumentUploadPage() {
       <Header title="약봉투 등록" onBack={() => navigate(-1)} />
       {cameraOpen && <GuidedCamera
         onClose={closeCamera}
-        onCapture={(captured) => { setFile(captured); closeCamera(); }}
+        onCapture={(captured) => { selectFile(captured); closeCamera(); }}
         onNativeCamera={() => { closeCamera(); cameraInputRef.current?.click(); }}
         onGallery={() => { closeCamera(); galleryInputRef.current?.click(); }}
       />}
@@ -60,7 +79,7 @@ export function DocumentUploadPage() {
         ref={cameraInputRef}
         className="sr-only"
         type="file"
-        accept="image/jpeg,image/png"
+        accept={IMAGE_ACCEPT}
         capture="environment"
         onChange={handleSelect}
         aria-label="카메라로 약봉투 촬영"
@@ -69,7 +88,7 @@ export function DocumentUploadPage() {
         ref={galleryInputRef}
         className="sr-only"
         type="file"
-        accept="image/jpeg,image/png"
+        accept={IMAGE_ACCEPT}
         onChange={handleSelect}
         aria-label="갤러리에서 약봉투 선택"
       />
@@ -88,18 +107,29 @@ export function DocumentUploadPage() {
               </p>
             </div>
             <div className="relative overflow-hidden rounded-card bg-muted-bg shadow-card">
-              <button
-                type="button"
-                aria-label="선택한 약봉투 크게 보기"
-                className="block w-full cursor-zoom-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                onClick={() => setImageViewerOpen(true)}
-              >
-                <img
-                  src={previewUrl}
-                  alt="선택한 약봉투 미리보기"
-                  className="aspect-[4/3] w-full object-contain"
-                />
-              </button>
+              {previewUnavailable ? (
+                <div className="flex aspect-[4/3] flex-col items-center justify-center gap-2 px-6 text-center">
+                  <ImageIcon aria-hidden className="size-10 text-muted-foreground" />
+                  <p className="text-sm font-bold text-foreground">미리보기를 표시할 수 없어요</p>
+                  <p className="text-sm text-muted-foreground">
+                    이 브라우저에서는 미리보기를 지원하지 않아요. 사진은 그대로 등록할 수 있어요.
+                  </p>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  aria-label="선택한 약봉투 크게 보기"
+                  className="block w-full cursor-zoom-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  onClick={() => setImageViewerOpen(true)}
+                >
+                  <img
+                    src={previewUrl}
+                    alt="선택한 약봉투 미리보기"
+                    className="aspect-[4/3] w-full object-contain"
+                    onError={() => setPreviewUnavailable(true)}
+                  />
+                </button>
+              )}
               <button
                 type="button"
                 className="absolute right-3 bottom-3 flex min-h-touch items-center gap-2 rounded-pill bg-foreground/80 px-4 text-sm font-bold text-card"
@@ -109,12 +139,14 @@ export function DocumentUploadPage() {
                 다시 선택
               </button>
             </div>
-            <ImageViewer
-              open={imageViewerOpen}
-              src={previewUrl}
-              title="선택한 약봉투 크게 보기"
-              onOpenChange={setImageViewerOpen}
-            />
+            {!previewUnavailable && (
+              <ImageViewer
+                open={imageViewerOpen}
+                src={previewUrl}
+                title="선택한 약봉투 크게 보기"
+                onOpenChange={setImageViewerOpen}
+              />
+            )}
             <p className="text-sm text-muted-foreground">
               {file.name} · {formatFileSize(file.size)}
             </p>
@@ -169,7 +201,14 @@ export function DocumentUploadPage() {
                 <ImageIcon aria-hidden className="mr-2 size-5" />
                 갤러리에서 선택
               </Button>
-              <p className="text-center text-sm text-disabled-foreground">JPG · PNG · 한 장</p>
+              {selectionError && (
+                <p role="alert" className="text-center text-sm font-medium text-destructive">
+                  {selectionError}
+                </p>
+              )}
+              <p className="text-center text-sm text-disabled-foreground">
+                JPG · PNG · HEIC · HEIF · WebP · BMP · TIFF · 한 장
+              </p>
             </div>
           </>
         )}

@@ -1861,3 +1861,36 @@ async def test_entity_filter_does_not_link_an_unmapped_english_name() -> None:
     plan = MedicationKnowledgeQueryBuilder().build("와파린 상호작용 알려줘")
 
     assert MedicationKnowledgeRetriever._matches_query_target(chunk, plan=plan) is False
+
+
+async def test_exhaustive_search_returns_every_ranked_eligible_chunk_without_caps() -> None:
+    class ExhaustiveStore(FakeKnowledgeStore):
+        async def search(self, *, query_vector, search_query):
+            self.queries.append(search_query)
+            if search_query.ingredient_names and search_query.offset == 0:
+                return candidates
+            return []
+
+    candidates = [
+        build_chunk(
+            0.90 - index * 0.01,
+            chunk_id=marker * 64,
+            ingredient_names=["비타민 D"],
+            document_id="paper-a" if index < 3 else "paper-b",
+        )
+        for index, marker in enumerate(("a", "b", "c", "d"))
+    ]
+    store = ExhaustiveStore([])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v1",
+        min_similarity_score=0.65,
+    )
+    execution_plan = build_execution_plan("비타민 D 주의사항", limit=1).model_copy(
+        update={"include_all_eligible": True}
+    )
+
+    results = await retriever.search(execution_plan=execution_plan)
+
+    assert [result.chunk_id for result in results] == [candidate.chunk_id for candidate in candidates]

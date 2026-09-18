@@ -236,6 +236,58 @@ async def test_search_collapses_semantically_identical_chunks_before_limit() -> 
         await client.close()
 
 
+async def test_exhaustive_search_returns_raw_page_without_refiner_clipping() -> None:
+    client = AsyncQdrantClient(location=":memory:")
+    store = QdrantKnowledgeStore(
+        client=client,
+        collection_name="knowledge_release",
+        vector_size=3,
+    )
+
+    try:
+        await store.create_release_collection()
+        chunks = [
+            build_chunk(
+                "a",
+                content="성분: 비타민 B6\n기능: 단백질 대사에 필요",
+                title="비타민 B6",
+                document_id="source-b",
+                ingredient_names=["비타민 B6"],
+                section_type=KnowledgeSectionType.FUNCTION,
+            ),
+            build_chunk(
+                "b",
+                content="성분: 비타민 B6 기능: 단백질 대사에 필요",
+                title="비타민 B6",
+                document_id="source-a",
+                ingredient_names=["비타민 B6"],
+                section_type=KnowledgeSectionType.FUNCTION,
+            ),
+        ]
+        await store.upsert_chunks(
+            chunks,
+            [[1.0, 0.0, 0.0], [0.999, 0.001, 0.0]],
+        )
+
+        results = await store.search(
+            query_vector=[1.0, 0.0, 0.0],
+            search_query=KnowledgeSearchQuery(
+                query="비타민 B6 기능",
+                dataset_version="knowledge-pilot-v1",
+                ingredient_names=["비타민 B6"],
+                limit=50,
+                exhaustive=True,
+            ),
+        )
+
+        assert [result.metadata.document_id for result in results] == [
+            "source-b",
+            "source-a",
+        ]
+    finally:
+        await client.close()
+
+
 async def test_search_with_trace_preserves_raw_candidates_before_refining() -> None:
     client = AsyncQdrantClient(location=":memory:")
     store = QdrantKnowledgeStore(
@@ -597,6 +649,79 @@ async def test_search_validates_collection_only_once() -> None:
     assert client.exists_calls == 1
     assert client.get_calls == 1
     assert client.query_calls == 2
+
+
+async def test_search_forwards_pagination_offset_to_qdrant() -> None:
+    class OffsetRecordingClient:
+        def __init__(self) -> None:
+            self.query_kwargs = None
+
+        async def collection_exists(self, collection_name: str) -> bool:
+            return True
+
+        async def get_collection(self, collection_name: str):
+            return SimpleNamespace(
+                config=SimpleNamespace(
+                    params=SimpleNamespace(vectors=models.VectorParams(size=3, distance=models.Distance.COSINE))
+                )
+            )
+
+        async def query_points(self, **kwargs):
+            self.query_kwargs = kwargs
+            return SimpleNamespace(points=[])
+
+    client = OffsetRecordingClient()
+    store = QdrantKnowledgeStore(
+        client=client,
+        collection_name="knowledge_release",
+        vector_size=3,
+    )
+
+    await store.search(
+        query_vector=[1.0, 0.0, 0.0],
+        search_query=KnowledgeSearchQuery(
+            query="마그네슘 기능",
+            dataset_version="knowledge-pilot-v1",
+            limit=50,
+            offset=100,
+            exhaustive=True,
+        ),
+    )
+
+    assert client.query_kwargs["offset"] == 100
+
+
+async def test_exhaustive_search_fails_closed_on_nonempty_malformed_page() -> None:
+    class MalformedPageClient:
+        async def collection_exists(self, collection_name: str) -> bool:
+            return True
+
+        async def get_collection(self, collection_name: str):
+            return SimpleNamespace(
+                config=SimpleNamespace(
+                    params=SimpleNamespace(vectors=models.VectorParams(size=3, distance=models.Distance.COSINE))
+                )
+            )
+
+        async def query_points(self, **kwargs):
+            return SimpleNamespace(points=[SimpleNamespace(id="malformed", score=0.9, payload={})])
+
+    store = QdrantKnowledgeStore(
+        client=MalformedPageClient(),
+        collection_name="knowledge_release",
+        vector_size=3,
+    )
+
+    with pytest.raises(RuntimeError, match="exhaustive.*payload"):
+        await store.search(
+            query_vector=[1.0, 0.0, 0.0],
+            search_query=KnowledgeSearchQuery(
+                query="마그네슘 기능",
+                dataset_version="knowledge-pilot-v1",
+                limit=50,
+                exhaustive=True,
+            ),
+        )
 
 
 async def test_rejects_collection_with_different_distance() -> None:

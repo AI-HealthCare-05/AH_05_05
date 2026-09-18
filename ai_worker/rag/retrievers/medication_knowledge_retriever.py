@@ -24,7 +24,10 @@ from ai_worker.rag.retrievers.medication_knowledge_eligibility import (
 from ai_worker.rag.retrievers.medication_knowledge_ranking import (
     MedicationKnowledgeRankingPolicy,
 )
-from ai_worker.rag.retrievers.parent_context_resolver import ParentContextResolver
+from ai_worker.rag.retrievers.parent_context_resolver import (
+    ParentContextResolution,
+    ParentContextResolver,
+)
 from ai_worker.schemas.knowledge import (
     KnowledgeDocumentType,
     KnowledgeRetrievalResult,
@@ -187,16 +190,24 @@ class MedicationKnowledgeRetriever:
             candidates.eligible,
             plan=plan,
         )
-        selected = self._ranking_policy.select_diverse(
-            ranked,
-            plan=plan,
-            limit=execution_plan.limit,
-        )
-        parent_context = self._parent_context_resolver.resolve(
-            children=selected,
-            candidates=candidates.eligible,
-            query_plan=plan,
-        )
+        if execution_plan.include_all_eligible:
+            parent_context = ParentContextResolution(
+                chunks=ranked,
+                child_count=len(ranked),
+                attached_parent_count=0,
+                rejected_parent_mismatch_count=0,
+            )
+        else:
+            selected = self._ranking_policy.select_diverse(
+                ranked,
+                plan=plan,
+                limit=execution_plan.limit,
+            )
+            parent_context = self._parent_context_resolver.resolve(
+                children=selected,
+                candidates=candidates.eligible,
+                query_plan=plan,
+            )
         diagnostics = self._diagnostics_builder.build(
             results=candidates.results,
             observations=candidates.observations,

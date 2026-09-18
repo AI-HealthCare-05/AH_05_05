@@ -30,9 +30,18 @@ def build_plan(
 def test_execution_plan_preserves_question_signals_without_context_or_rules() -> None:
     plan = build_plan()
 
+    assert plan.include_all_eligible is False
     assert plan.medication_names == ["와파린"]
     assert plan.supplement_names == ["비타민 K"]
     assert plan.interaction_pair_keys == plan.query_plan.interaction_pair_keys
+
+
+def test_execution_plan_can_opt_in_to_all_eligible_candidates() -> None:
+    ordinary_plan = build_plan()
+    plan = ordinary_plan.model_copy(update={"include_all_eligible": True})
+
+    assert plan.include_all_eligible is True
+    assert plan.execution_plan_hash != ordinary_plan.execution_plan_hash
 
 
 def test_execution_plan_augments_question_signals_with_context_and_rules() -> None:

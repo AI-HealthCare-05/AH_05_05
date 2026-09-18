@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+import pytest
 from qdrant_client.http import models
 
 from ai_worker.rag.vectorstores.qdrant_hybrid_knowledge_store import (
@@ -204,10 +205,84 @@ async def test_hybrid_search_prefetches_dense_and_bm25_then_uses_rrf() -> None:
     assert prefetch[0].limit == 20
     assert prefetch[1].query.options == {"tokenizer": "multilingual"}
     assert hybrid_query["query"].fusion == models.Fusion.RRF
+    assert hybrid_query["offset"] == 0
     assert dense_query["query"] == [1.0, 0.0, 0.0]
     assert dense_query["using"] == "dense"
+    assert dense_query["limit"] == 20
+    assert dense_query["offset"] == 0
     assert results[0].search_mode == KnowledgeSearchMode.HYBRID
     assert results[0].dense_similarity_score == 0.72
+
+
+async def test_exhaustive_hybrid_search_uses_stable_full_filtered_candidate_pool() -> None:
+    class ExhaustiveHybridClient(HybridConfidenceRecordingClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.count_kwargs = None
+
+        async def count(self, **kwargs):
+            self.count_kwargs = kwargs
+            return SimpleNamespace(count=123)
+
+    client = ExhaustiveHybridClient()
+    store = QdrantHybridKnowledgeStore(
+        client=client,
+        collection_name="knowledge_hybrid",
+        vector_size=3,
+        search_mode=KnowledgeSearchMode.HYBRID,
+    )
+    await store.create_release_collection()
+
+    await store.search(
+        query_vector=[1.0, 0.0, 0.0],
+        search_query=KnowledgeSearchQuery(
+            query="마그네슘 기능",
+            dataset_version="knowledge-hybrid-v1",
+            limit=50,
+            offset=50,
+            exhaustive=True,
+        ),
+    )
+
+    hybrid_query, dense_query = client.query_calls
+    assert client.count_kwargs["exact"] is True
+    assert client.count_kwargs["count_filter"] == hybrid_query["query_filter"]
+    assert [prefetch.limit for prefetch in hybrid_query["prefetch"]] == [123, 123]
+    assert all(prefetch.filter == hybrid_query["query_filter"] for prefetch in hybrid_query["prefetch"])
+    assert hybrid_query["limit"] == 50
+    assert hybrid_query["offset"] == 50
+    assert dense_query["limit"] == 123
+    assert dense_query["offset"] == 0
+
+
+async def test_exhaustive_hybrid_search_fails_closed_on_nonempty_malformed_page() -> None:
+    class MalformedHybridClient(HybridConfidenceRecordingClient):
+        async def count(self, **kwargs):
+            return SimpleNamespace(count=1)
+
+        async def query_points(self, **kwargs):
+            self.query_calls.append(kwargs)
+            return SimpleNamespace(points=[SimpleNamespace(id="malformed", score=0.9, payload={})])
+
+    client = MalformedHybridClient()
+    store = QdrantHybridKnowledgeStore(
+        client=client,
+        collection_name="knowledge_hybrid",
+        vector_size=3,
+        search_mode=KnowledgeSearchMode.HYBRID,
+    )
+    await store.create_release_collection()
+
+    with pytest.raises(RuntimeError, match="exhaustive.*payload"):
+        await store.search(
+            query_vector=[1.0, 0.0, 0.0],
+            search_query=KnowledgeSearchQuery(
+                query="마그네슘 기능",
+                dataset_version="knowledge-hybrid-v1",
+                limit=50,
+                exhaustive=True,
+            ),
+        )
 
 
 async def test_bm25_search_uses_sparse_vector_without_dense_threshold_semantics() -> None:

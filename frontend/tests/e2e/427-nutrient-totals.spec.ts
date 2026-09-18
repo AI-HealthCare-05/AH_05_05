@@ -105,8 +105,10 @@ test('기준 정보와 합산 제외 범위를 확정 문구로 안내한다', a
   await page.goto('/dev/supplements');
 
   await expect(
-    page.getByText('2025 한국인 영양소 섭취기준 · 만 26세 남성', { exact: true }),
+    page.getByText(/합계 기준: 2025 한국인 영양소 섭취기준/),
   ).toBeVisible();
+  await expect(page.getByText('만 26세', { exact: true })).toBeVisible();
+  await expect(page.getByText('남성', { exact: true })).toBeVisible();
   await expect(
     page.getByText('검색된 영양제의 성분만 합산된 결과예요.', { exact: true }),
   ).toBeVisible();
