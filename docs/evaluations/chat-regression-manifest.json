@@ -1,0 +1,98 @@
+{
+  "schema_version": "chat-evaluation-v1",
+  "dataset_version": "chat-regression-v1",
+  "description": "feature/530에서 고친 결함이 이후 수정으로 되돌아가지 않는지 확인하는 회귀 고정셋. 각 케이스는 고친 결함 하나에 대응하며, required/forbidden_answer_markers가 그 결함의 재발을 직접 잡는다.",
+  "usage_notes": [
+    "단위 테스트로 결정론적으로 고정할 수 있는 것은 여기에 넣지 않는다. 이 셋은 LLM 응답에 의존하는 e2e 동작만 담는다.",
+    "상호작용 조회 범위 안내는 test_active_medication_interaction_without_approved_rule_states_uncertainty가 고정한다.",
+    "이상반응 근거 없는 섹션 차단은 test_adverse_event_is_covered_only_when_adverse_reactions_has_evidence가 고정한다.",
+    "사용자 등록 복약정보가 필요하다. 케이스마다 preconditions를 확인하고 실행한다.",
+    "실행기는 care_episode_id를 넘기지 않는다. 넘기면 route가 ACTIVE_INTAKE로 바뀌어 기대 경로와 어긋난다.",
+    "항목을 지정하지 않은 질문의 근거 확보는 이 셋으로 표현할 수 없다. 관측 섹션이 interpretation.requested_section_types이고 그 값이 비는 것이 결함의 정의이기 때문이다. test_unspecified_request_covers_available_guide_sections가 대신 고정한다.",
+    "기대값은 반복 관측으로 안정성을 확인한 것만 넣는다. 단일 실행으로 고정하면 회귀가 아닌 변동을 회귀로 잡는다."
+  ],
+  "max_case_latency_ms": 30000.0,
+  "cases": [
+    {
+      "query_id": "REG-01-dosage-separator",
+      "category": "RDB_ONLY",
+      "question": "타이레놀 주의사항 알려줘",
+      "preconditions": [
+        "MedicationProductGuide에 타이레놀정500밀리그람(아세트아미노펜)이 적재되어 있다",
+        "해당 행의 pre_use_warning에 공공자료 손상 표기 `4|000mg`이 남아 있다"
+      ],
+      "expected": {
+        "route": "MEDICATION_GUIDE",
+        "intent_tags": [
+          "제품 주의사항 조회"
+        ],
+        "question_intent": "MEDICATION_GUIDE",
+        "normalized_entities": [
+          {
+            "entity_type": "PRODUCT_NAME",
+            "canonical_name": "타이레놀정500밀리그람(아세트아미노펜)"
+          }
+        ],
+        "section_types": [
+          "CAUTION"
+        ],
+        "required_source_kinds": [
+          "MEDICATION_GUIDE"
+        ],
+        "safety_status": "SAFE",
+        "require_langsmith_trace": false,
+        "answer_requirements": [
+          "공공자료 적재 과정에서 깨진 천 단위 구분자가 복원된 상태로 표시된다",
+          "깨진 표기 자체는 공백 정규화로 구분되지 않아 저장소 단위 테스트가 함께 고정한다",
+          "등록 복약정보 섹션 포함 여부는 실행마다 달라 기대값으로 고정하지 않는다"
+        ],
+        "forbidden_claims": [
+          "원문에 없는 용량을 만들어 안내하지 않는다"
+        ],
+        "required_answer_markers": [
+          "4,000mg"
+        ],
+        "forbidden_answer_markers": [
+          "4|000mg"
+        ]
+      }
+    },
+    {
+      "query_id": "REG-02-evidence-gap-notice",
+      "category": "NO_SOURCE",
+      "question": "노니 분말의 효능이 뭐야?",
+      "preconditions": [
+        "노니 분말에 대응하는 제품 가이드와 검색 근거가 없다"
+      ],
+      "expected": {
+        "route": "RESTRICTED",
+        "intent_tags": [
+          "근거 부재 안내"
+        ],
+        "question_intent": "MEDICATION_GUIDE",
+        "normalized_entities": [],
+        "section_types": [],
+        "required_source_kinds": [],
+        "safety_status": "RESTRICTED",
+        "require_langsmith_trace": false,
+        "answer_requirements": [
+          "무엇을 찾지 못했는지 질문을 인용해 밝힌다",
+          "확인되지 않은 것이 안전하다는 뜻이 아님을 남긴다",
+          "공인 확인처를 코드가 정한 값으로 안내한다"
+        ],
+        "forbidden_claims": [
+          "조회하지 못한 제품의 효능·주의사항을 만들어 답하지 않는다"
+        ],
+        "required_answer_markers": [
+          "확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다",
+          "📭 **공식 확인 경로**"
+        ],
+        "forbidden_answer_markers": [
+          "⚠️ **주의사항**",
+          "🚨 **이상반응**",
+          "✅ **효능**"
+        ]
+      }
+    }
+  ]
+}

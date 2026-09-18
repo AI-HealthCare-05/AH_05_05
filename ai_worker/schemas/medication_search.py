@@ -258,6 +258,13 @@ class MedicationKnowledgeQueryPlan(BaseModel):
     )
     interaction_types: list[InteractionPairType] = Field(default_factory=list)
     interaction_pair_keys: list[str] = Field(default_factory=list)
+    # 질문이 요청하지 않았지만 등록 복약정보와 대조하려고 만든 쌍.
+    # `interaction_pairs`와 절대 합치지 않는다. 합치면 질문이 상호작용 질문으로
+    # 재분류되고(경로·제품 조회·답변 구성 변경), EXACT_PAIR 티어와 유사도 임계
+    # 우회까지 함께 켜진다. 이 쌍은 별도 검색 패스에서만 쓴다.
+    crosscheck_pairs: list[MedicationInteractionQueryPair] = Field(
+        default_factory=list,
+    )
     interaction_overview: bool = False
     medication_product_lookup_names: list[str] = Field(default_factory=list)
     has_medication_product_cue: bool = False
@@ -274,6 +281,10 @@ class MedicationKnowledgeQueryPlan(BaseModel):
                 normalized.append(candidate)
                 seen.add(key)
         return normalized
+
+    @property
+    def crosscheck_pair_keys(self) -> list[str]:
+        return list(dict.fromkeys(pair.pair_key for pair in self.crosscheck_pairs))
 
     @property
     def query_plan_hash(self) -> str:
