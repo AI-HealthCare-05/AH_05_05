@@ -514,7 +514,7 @@ export function SupplementsPage({
                   {profileResolved && !hasStandardProfile && (
                     <button
                       type="button"
-                      className="mt-2 flex min-h-touch items-center justify-between gap-3 rounded-control bg-card px-4 py-3 text-left text-sm font-bold text-foreground shadow-card"
+                      className="mt-2 flex min-h-touch items-center justify-between gap-3 rounded-control bg-card px-4 py-3 text-left text-sm font-bold text-foreground shadow-white-action"
                       onClick={() =>
                         navigate(
                           location.pathname.startsWith('/dev/') ? '/dev/my/profile' : '/my/profile',

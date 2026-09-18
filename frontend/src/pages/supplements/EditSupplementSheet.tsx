@@ -158,7 +158,7 @@ export function EditSupplementSheet({
                   setSlots([...supplement.slots]);
                   setDoseEditOpen(true);
                 }}
-                className="flex min-h-touch w-full items-center justify-between gap-3 rounded-card border border-border bg-card p-4 text-left font-bold text-foreground shadow-card"
+                className="flex min-h-touch w-full items-center justify-between gap-3 rounded-card border border-border bg-card p-4 text-left font-bold text-foreground shadow-white-action"
               >
                 <span>복용 정보 수정</span>
                 <DrawnChevron direction="right" className="size-5 shrink-0 text-muted-foreground" />
