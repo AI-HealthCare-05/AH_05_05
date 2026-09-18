@@ -756,6 +756,10 @@ class OpenAIMedicationAnswerGenerator:
                 icon = section_header.group("icon")
                 title = section_header.group("title").strip()
                 subtitle = section_header.group("subtitle") or ""
+                # 목록 바로 다음 줄에 소제목이 오면 마크다운이 그 항목의 연속으로 읽어
+                # 소제목이 들여쓰기된다. 섹션 사이 빈 줄을 여기서 보장한다.
+                if normalized_lines and normalized_lines[-1].strip():
+                    normalized_lines.append("")
                 normalized_lines.append(f"{icon} **{title}** {subtitle}".rstrip())
                 if cls._INTERACTION_SECTION_TITLE in title:
                     interaction_lines = []

@@ -734,7 +734,9 @@ def test_generator_keeps_combined_food_interaction_heading_at_top_level() -> Non
 
     lines = answer.splitlines()
     food_heading_index = lines.index("🔁 **음식 상호작용** **주의가 필요한 조합**")
-    assert lines[food_heading_index - 1].startswith("- 메나테트레논")
+    # 목록 바로 다음 줄이면 마크다운이 그 항목의 연속으로 읽어 소제목이 들여쓰기된다.
+    assert lines[food_heading_index - 1] == ""
+    assert lines[food_heading_index - 2].startswith("- 메나테트레논")
     food_bullets = [line for line in lines[food_heading_index + 1 :] if line.strip()]
     assert food_bullets[0].startswith("- 녹차, 홍차, 우롱차:")
 
