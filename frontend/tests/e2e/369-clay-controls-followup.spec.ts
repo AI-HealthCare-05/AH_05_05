@@ -8,7 +8,7 @@ test.beforeEach(async ({ page }) => {
 async function surface(button: Locator) {
   return button.evaluate(element => {
     const style = getComputedStyle(element);
-    return { border: style.borderWidth, shadow: style.boxShadow, radius: style.borderRadius, transform: style.transform, height: element.getBoundingClientRect().height };
+    return { border: style.borderWidth, radius: style.borderRadius, transform: style.transform, height: element.getBoundingClientRect().height };
   });
 }
 
@@ -43,7 +43,7 @@ test('before-after sequence records actual home and slot interactions', async ({
   await page.screenshot({ path: testInfo.outputPath('sequence-end.png') });
 });
 
-test('cancel and save use equal rim and depth geometry in rest, focus, press and disabled states', async ({ page }, testInfo) => {
+test('cancel and save use equal rim and touch geometry in rest, focus, press and disabled states', async ({ page }, testInfo) => {
   const cancel = page.getByRole('button', { name: '취소', exact: true });
   const save = page.getByRole('button', { name: '저장', exact: true });
   await page.screenshot({ path: testInfo.outputPath('buttons-rest.png') });

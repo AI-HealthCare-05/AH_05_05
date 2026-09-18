@@ -1119,7 +1119,7 @@ function OcrEnvelopeImageViewer({
           </div>
           <DialogClose
             aria-label="닫기"
-            className="absolute right-0 top-0 flex size-12 items-center justify-center rounded-full bg-white text-slate-900 shadow-lg transition-colors hover:bg-slate-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
+            className="absolute right-0 top-0 flex size-12 items-center justify-center rounded-full bg-white text-slate-900 shadow-white-action transition-colors hover:bg-slate-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
           >
             <X className="size-7" strokeWidth={2.5} aria-hidden />
           </DialogClose>
