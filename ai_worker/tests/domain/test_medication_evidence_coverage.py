@@ -395,3 +395,29 @@ def test_crosscheck_pairs_do_not_change_requested_section_coverage() -> None:
 
     assert coverage.requested_section_types == [KnowledgeSectionType.FUNCTION]
     assert coverage.verified_interaction_pair_keys == []
+
+
+def test_verified_crosscheck_lets_the_answer_mention_the_interaction() -> None:
+    """확보 목록에 없으면 재작성이 초안의 대조 결과를 지운다."""
+    coverage = MedicationEvidenceCoverageEvaluator().evaluate(
+        query_plan=build_crosscheck_plan(),
+        guide_lookup=build_guide(),
+        rules=[],
+        chunks=[],
+        crosscheck_chunks=[build_interaction_chunk(pair_keys=[calcium_iron_pair_key()])],
+    )
+
+    assert KnowledgeSectionType.INTERACTION in coverage.covered_section_types
+    assert coverage.missing_section_types == []
+
+
+def test_unverified_crosscheck_does_not_widen_covered_sections() -> None:
+    coverage = MedicationEvidenceCoverageEvaluator().evaluate(
+        query_plan=build_crosscheck_plan(),
+        guide_lookup=build_guide(),
+        rules=[],
+        chunks=[],
+        crosscheck_chunks=[],
+    )
+
+    assert KnowledgeSectionType.INTERACTION not in coverage.covered_section_types

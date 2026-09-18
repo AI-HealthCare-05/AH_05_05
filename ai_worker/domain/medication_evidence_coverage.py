@@ -92,6 +92,10 @@ class MedicationEvidenceCoverageEvaluator:
             )
         if KnowledgeSectionType.INTERACTION in requested and (verified_pair_keys or overview_supported):
             covered.append(KnowledgeSectionType.INTERACTION)
+        elif verified_crosscheck_pair_keys and KnowledgeSectionType.INTERACTION not in covered:
+            # 질문이 상호작용을 요청하지 않았어도 등록 복용 항목과의 조합에서 근거를 확인했다면
+            # 답변이 그 사실을 말할 수 있어야 한다. 확보 목록에 없으면 재작성이 초안의 칸을 지운다.
+            covered.append(KnowledgeSectionType.INTERACTION)
 
         return MedicationEvidenceCoverage(
             requested_section_types=requested,

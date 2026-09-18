@@ -61,6 +61,8 @@ class MedicationAnswerAssembler:
         functional_goal_details: bool = False,
         form_caution_guides: dict[str, list[MedicationGuideFact]] | None = None,
         interaction_overview: bool = False,
+        crosscheck_pairs: list[MedicationInteractionQueryPair] | None = None,
+        crosscheck_chunks: list[RetrievedKnowledgeChunk] | None = None,
     ) -> str:
         intake_sections = self._patient_intake_sections(context)
         sections: list[str] = []
@@ -77,6 +79,14 @@ class MedicationAnswerAssembler:
             interaction_sections = self._interaction_overview_sections(rules=rules, chunks=chunks)
             has_unverified_interaction_notice = True
         sections.extend(interaction_sections)
+        crosscheck_section = self._active_intake_crosscheck_section(
+            pairs=crosscheck_pairs or [],
+            rules=rules,
+            chunks=crosscheck_chunks or [],
+            evidence_coverage=evidence_coverage,
+        )
+        if crosscheck_section:
+            sections.append(crosscheck_section)
         if guide is not None:
             sections.append(
                 self._product_guide_section(
@@ -769,6 +779,44 @@ class MedicationAnswerAssembler:
                 )
         if verified_pairs and len(verified_pairs) != len(pairs):
             lines.extend(["", cls._unverified_interaction_section()])
+        return "\n".join(lines)
+
+    @classmethod
+    def _active_intake_crosscheck_section(
+        cls,
+        *,
+        pairs: list[MedicationInteractionQueryPair],
+        rules: list[InteractionRuleFact],
+        chunks: list[RetrievedKnowledgeChunk],
+        evidence_coverage: MedicationEvidenceCoverage | None,
+    ) -> str:
+        """등록 복용 항목과의 대조 결과.
+
+        근거로 확인된 쌍만 본문에 올린다. 하나도 확인되지 않으면 아무 말도 하지 않는다.
+        사용자가 상호작용을 묻지 않은 질문이므로, 없다고 알리면 묻지도 않은 안내가
+        매번 따라붙는다. 침묵은 변경 이전과 같은 상태이지 안전하다는 말이 아니다.
+        """
+        if not pairs:
+            return ""
+        verified_keys = set(evidence_coverage.verified_crosscheck_pair_keys if evidence_coverage else [])
+        # 이미 쓰는 소제목을 그대로 쓴다. 허용 목록에 없는 제목은 재작성이 지운다.
+        lines = ["🔁 **복약정보와 상호작용**"]
+        for pair in pairs:
+            if pair.pair_key not in verified_keys:
+                continue
+            pair_rules = [rule for rule in rules if rule.pair_key == pair.pair_key]
+            if pair_rules:
+                lines.extend(f"- {' '.join(rule.effect_texts)}" for rule in pair_rules)
+                continue
+            # 승인 규칙이 없으면 검색 원문을 그대로 옮기지 않는다. 이 말뭉치의 상호작용
+            # 문서는 표·키워드 나열이 많아 문장으로 쓸 수 없다. 조합만 알리고,
+            # 이미 정확히 답하는 경로로 안내한다.
+            lines.append(
+                f"- 복용 중인 {pair.left_name}과(와) {pair.right_name}의 상호작용 근거가 있습니다. "
+                f"`{pair.left_name}과 {pair.right_name} 같이 먹어도 되나요?`라고 물으면 자세히 확인해 드립니다."
+            )
+        if len(lines) == 1:
+            return ""
         return "\n".join(lines)
 
     @staticmethod

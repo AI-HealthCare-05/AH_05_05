@@ -1,6 +1,7 @@
 from ai_worker.llm.assemblers.medication_answer_assembler import (
     MedicationAnswerAssembler,
 )
+from ai_worker.schemas.interaction import InteractionPairType
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeChunkMetadata,
@@ -1106,3 +1107,54 @@ def test_assemble_keeps_cautions_even_when_only_efficacy_is_requested() -> None:
 
     assert "발열과 통증 완화" in answer
     assert "중증 간장애 환자는 복용하지 마십시오." in answer
+
+
+CROSSCHECK_PAIR = MedicationInteractionQueryPair(
+    left_name="와파린",
+    right_name="비타민 K",
+    pair_type=InteractionPairType.DRUG_SUPPLEMENT,
+    pair_key="d" * 64,
+)
+
+
+def test_verified_crosscheck_pair_is_reported_with_its_approved_rule() -> None:
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=[
+            InteractionRuleFact(
+                interaction_rule_id=1,
+                pair_key=CROSSCHECK_PAIR.pair_key,
+                pair_type="DRUG_SUPPLEMENT",
+                left_name="와파린",
+                right_name="비타민 K",
+                risk_level="CONTRAINDICATED",
+                effect_texts=["비타민 K는 와파린의 항응고 효과를 감소시킬 수 있습니다."],
+            )
+        ],
+        chunks=[],
+        interaction_question=False,
+        crosscheck_pairs=[CROSSCHECK_PAIR],
+        evidence_coverage=MedicationEvidenceCoverage(
+            verified_crosscheck_pair_keys=[CROSSCHECK_PAIR.pair_key],
+        ),
+    )
+
+    assert "🔁 **복약정보와 상호작용**" in answer
+    assert "비타민 K는 와파린의 항응고 효과를 감소시킬 수 있습니다." in answer
+
+
+def test_unverified_crosscheck_pair_is_not_mentioned_at_all() -> None:
+    """확인하지 못한 조합을 언급하면 사용자가 묻지 않은 추측이 된다."""
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=[],
+        chunks=[],
+        interaction_question=False,
+        crosscheck_pairs=[CROSSCHECK_PAIR],
+        evidence_coverage=MedicationEvidenceCoverage(verified_crosscheck_pair_keys=[]),
+    )
+
+    assert "복약정보와 상호작용" not in answer
+    assert "와파린" not in answer

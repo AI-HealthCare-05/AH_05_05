@@ -902,6 +902,8 @@ class AnswerMedicationQuestionUseCase:
                     functional_goal_title=self._functional_supplement_goal_title(
                         request.question,
                     ),
+                    crosscheck_pairs=query_plan.crosscheck_pairs,
+                    crosscheck_chunks=crosscheck_chunks,
                     functional_goal_details=(
                         self._is_supplement_function_goal_question(request.question)
                         and bool(re.search(r"영양제|건강기능식품|기능.*정보", request.question))
