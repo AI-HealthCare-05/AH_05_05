@@ -624,8 +624,14 @@ async def test_search_relaxes_pair_to_entities_then_semantic_without_hint_filter
 
     await retriever.search_with_diagnostics(execution_plan=execution_plan)
 
-    assert len(store.queries) == 3
-    pair_query, entity_query, semantic_query = store.queries
+    # 상호작용 질의에는 영문 별칭 질의(`warfarin interaction`)가 한 건 더 붙는다.
+    # 같은 티어의 두 질의는 필터가 같으므로 각 티어의 첫 질의로 확인한다.
+    assert len(store.queries) == 6
+    pair_query, entity_query, semantic_query = (
+        store.queries[0],
+        store.queries[2],
+        store.queries[4],
+    )
 
     assert pair_query.drug_names == []
     assert pair_query.ingredient_names == []
@@ -659,7 +665,8 @@ async def test_search_semantic_fallback_recovers_pair_without_metadata_filters()
         section_type=KnowledgeSectionType.RESULTS,
     )
     relevant.metadata.drug_names = ["와파린"]
-    store = FakeKnowledgeStore(responses=[[], [], [relevant]])
+    # 티어마다 본 질의와 영문 별칭 질의가 함께 나가므로 티어당 응답을 두 칸씩 둔다.
+    store = FakeKnowledgeStore(responses=[[], [], [], [], [relevant], []])
     retriever = MedicationKnowledgeRetriever(
         embedding_provider=FakeEmbeddingProvider(),
         vector_store=store,
@@ -1767,3 +1774,55 @@ async def test_search_limits_results_from_one_document_to_two_chunks() -> None:
         "paper-a",
         "paper-b",
     ]
+
+
+async def test_search_adds_english_alias_query_for_interaction_questions() -> None:
+    """영문으로만 색인된 상호작용 근거에 한국어 질의가 닿게 한다."""
+    store = FakeKnowledgeStore(responses=[])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v2",
+        min_similarity_score=0.65,
+    )
+    execution_plan = build_execution_plan("와파린과 비타민 K를 같이 먹어도 되나요?")
+    execution_plan = execution_plan.model_copy(
+        update={
+            "query_plan": execution_plan.query_plan.model_copy(
+                update={"alternate_queries": []},
+            ),
+        },
+    )
+
+    await retriever.search_with_diagnostics(execution_plan=execution_plan)
+
+    assert any("warfarin" in query.query for query in store.queries)
+
+
+async def test_search_keeps_guide_questions_free_of_alias_queries() -> None:
+    """상호작용을 묻지 않은 질문의 검색어는 바뀌지 않는다."""
+    store = FakeKnowledgeStore(responses=[])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v2",
+        min_similarity_score=0.65,
+    )
+    execution_plan = build_execution_plan("와파린 효능 알려줘")
+    execution_plan = execution_plan.model_copy(
+        update={
+            "query_plan": execution_plan.query_plan.model_copy(
+                update={
+                    "alternate_queries": [],
+                    "section_types": [KnowledgeSectionType.FUNCTION],
+                    "interaction_pairs": [],
+                    "interaction_pair": None,
+                    "interaction_pair_keys": [],
+                },
+            ),
+        },
+    )
+
+    await retriever.search_with_diagnostics(execution_plan=execution_plan)
+
+    assert all("warfarin" not in query.query for query in store.queries)

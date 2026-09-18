@@ -15,6 +15,7 @@ from ai_worker.rag.errors import (
     GuidelineRetrievalError,
     RetrievalFailureStage,
 )
+from ai_worker.rag.ingredient_name_aliases import english_aliases_for
 from ai_worker.schemas.knowledge import (
     KnowledgeSearchQuery,
     KnowledgeSearchTier,
@@ -85,6 +86,22 @@ class MedicationKnowledgeCandidateRetriever:
         self._eligibility_evaluator = eligibility_evaluator
         self._section_coverage_evaluator = section_coverage_evaluator
 
+    @staticmethod
+    def _english_alias_queries(plan: MedicationKnowledgeQueryPlan) -> list[str]:
+        """영문으로만 색인된 상호작용 근거를 한국어 질의가 놓치지 않게 한다.
+
+        측정: `와파린 상호작용`은 영문 근거를 한 건도 가져오지 못하고,
+        `warfarin interaction`은 상위 20건 중 18건이 INTERACTION 섹션이다.
+        별칭은 말뭉치에서 유도한 사전에서만 온다.
+        """
+        if (
+            KnowledgeSectionType.INTERACTION not in plan.section_types
+            and not plan.interaction_pairs
+            and plan.interaction_pair is None
+        ):
+            return []
+        return [f"{alias} interaction" for name in plan.entity_names for alias in english_aliases_for(name)]
+
     async def retrieve(
         self,
         *,
@@ -92,7 +109,15 @@ class MedicationKnowledgeCandidateRetriever:
     ) -> MedicationKnowledgeCandidateSearchResult:
         plan = execution_plan.query_plan
         candidate_limit = min(50, max(20, execution_plan.limit * 4))
-        queries = list(dict.fromkeys([plan.expanded_query, *plan.alternate_queries]))
+        queries = list(
+            dict.fromkeys(
+                [
+                    plan.expanded_query,
+                    *plan.alternate_queries,
+                    *self._english_alias_queries(plan),
+                ]
+            )
+        )
         if self._is_interaction_overview(execution_plan):
             subject = plan.entity_names[0]
             queries = list(

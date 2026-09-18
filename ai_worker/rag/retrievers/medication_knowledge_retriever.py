@@ -4,6 +4,7 @@ from ai_worker.domain.interfaces import EmbeddingProvider
 from ai_worker.domain.supplement_function_goal_detector import (
     is_supplement_function_goal_question,
 )
+from ai_worker.rag.ingredient_name_aliases import korean_alias_for
 from ai_worker.rag.metadata.supplement_interaction_registry import (
     supplement_pair_matches_text,
 )
@@ -523,6 +524,12 @@ class MedicationKnowledgeRetriever:
             ]
             if len(cls._normalize_name(name)) >= 2
         }
+        # 영문으로만 색인된 근거(연구 문헌·약-음식 가이드)를 한국어 질의가 찾을 수 있게 한다.
+        # 별칭은 말뭉치에서 유도한 사전에서만 오며, 없으면 아무것도 더하지 않는다.
+        for name in [*result.metadata.ingredient_names, *result.metadata.drug_names]:
+            korean_alias = korean_alias_for(name)
+            if korean_alias and len(cls._normalize_name(korean_alias)) >= 2:
+                aliases.add(cls._normalize_name(korean_alias))
         if result.metadata.document_type != KnowledgeDocumentType.DRUG_ENCYCLOPEDIA:
             return aliases
 
