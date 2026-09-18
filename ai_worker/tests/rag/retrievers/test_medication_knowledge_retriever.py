@@ -1826,3 +1826,38 @@ async def test_search_keeps_guide_questions_free_of_alias_queries() -> None:
     await retriever.search_with_diagnostics(execution_plan=execution_plan)
 
     assert all("warfarin" not in query.query for query in store.queries)
+
+
+async def test_english_only_chunk_survives_entity_filter_for_korean_question() -> None:
+    """영문으로만 색인된 근거가 한국어 질의에서 엔터티 필터에 탈락하지 않아야 한다.
+
+    이 경로가 없으면 별칭으로 검색해 와도 전량 `ENTITY_MISMATCH`로 버려진다.
+    """
+    chunk = build_chunk(
+        0.70,
+        title="Warfarin drug interactions",
+        content="Warfarin interacts with several agents.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        section_type=KnowledgeSectionType.INTERACTION,
+    )
+    chunk.metadata.drug_names = ["warfarin"]
+    chunk.metadata.ingredient_names = []
+    plan = MedicationKnowledgeQueryBuilder().build("와파린 상호작용 알려줘")
+
+    assert MedicationKnowledgeRetriever._matches_query_target(chunk, plan=plan) is True
+
+
+async def test_entity_filter_does_not_link_an_unmapped_english_name() -> None:
+    """사전에 없는 영문명은 잇지 않는다. 억지 연결은 다른 약의 근거를 끌어온다."""
+    chunk = build_chunk(
+        0.70,
+        title="Unrelated agent",
+        content="An unrelated agent is described here.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        section_type=KnowledgeSectionType.INTERACTION,
+    )
+    chunk.metadata.drug_names = ["not-an-indexed-ingredient"]
+    chunk.metadata.ingredient_names = []
+    plan = MedicationKnowledgeQueryBuilder().build("와파린 상호작용 알려줘")
+
+    assert MedicationKnowledgeRetriever._matches_query_target(chunk, plan=plan) is False

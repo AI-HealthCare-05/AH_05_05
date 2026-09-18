@@ -90,9 +90,9 @@ class MedicationKnowledgeCandidateRetriever:
     def _english_alias_queries(plan: MedicationKnowledgeQueryPlan) -> list[str]:
         """영문으로만 색인된 상호작용 근거를 한국어 질의가 놓치지 않게 한다.
 
-        측정: `와파린 상호작용`은 영문 근거를 한 건도 가져오지 못하고,
-        `warfarin interaction`은 상위 20건 중 18건이 INTERACTION 섹션이다.
-        별칭은 말뭉치에서 유도한 사전에서만 온다.
+        INTERACTION 섹션 청크 294건 중 138건이 영문 이름만 가지고 있어 한국어
+        질의로는 닿지 않는다. 별칭은 말뭉치에서 유도한 사전에서만 오며, 사전에
+        없는 이름에는 아무것도 더하지 않는다.
         """
         if (
             KnowledgeSectionType.INTERACTION not in plan.section_types
