@@ -117,7 +117,7 @@ test('새 메모는 선택한 처방의 첫 복용 일시를 수정 가능한 �
   await expect(doseDateTime).toBeEditable();
   await expect(doseDateTime).toHaveValue('');
   await page.getByLabel('처방').selectOption('24');
-  await expect(doseDateTime).toHaveValue('2026-08-24T19:40');
+  await expect(doseDateTime).toHaveValue('2026-08-24 19:40');
 });
 
 test('새 메모에서 수정한 복용 일시를 생성 요청에 보낸다', async ({ page }) => {
@@ -138,7 +138,7 @@ test('새 메모에서 수정한 복용 일시를 생성 요청에 보낸다', a
 
   await page.goto('/medications/notes/new');
   await page.getByLabel('처방').selectOption('24');
-  await expect(page.getByLabel('복용 일시')).toHaveValue('2026-08-24T19:40');
+  await expect(page.getByLabel('복용 일시')).toHaveValue('2026-08-24 19:40');
   await page.getByLabel('복용 일시').fill('2026-08-26T21:10');
   await page.getByLabel('복용 후 느낀 점').fill('자동 일시 메모');
   await page.getByRole('button', { name: '저장', exact: true }).click();
@@ -210,7 +210,7 @@ test('기존 메모의 복용 일시도 계속 수정할 수 있다', async ({ p
   );
 
   await page.goto('/medications/notes/404');
-  await expect(page.getByLabel('복용 일시')).toHaveValue('2026-08-25T09:15');
+  await expect(page.getByLabel('복용 일시')).toHaveValue('2026-08-25 09:15');
   await page.getByLabel('복용 일시').fill('2026-08-26T10:30');
   await page.getByLabel('복용 후 느낀 점').fill('일시도 수정한 메모');
   await page.getByRole('button', { name: '수정 저장', exact: true }).click();
