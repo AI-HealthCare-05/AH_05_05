@@ -38,8 +38,10 @@ class DbActiveIntakeContextProvider:
         self,
         *,
         today_provider: Callable[[], date] = _service_today,
+        include_all_episode_medications: bool = False,
     ) -> None:
         self._today_provider = today_provider
+        self._include_all_episode_medications = include_all_episode_medications
 
     async def get_active_context(
         self,
@@ -76,7 +78,8 @@ class DbActiveIntakeContextProvider:
         medications = [
             self._to_active_medication(row)
             for row in medication_rows
-            if self._is_current_medication(
+            if self._include_all_episode_medications
+            or self._is_current_medication(
                 row,
                 episode=episodes_by_id[row.care_episode_id],
                 today=today,

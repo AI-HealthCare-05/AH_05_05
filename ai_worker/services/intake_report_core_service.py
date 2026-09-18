@@ -118,7 +118,7 @@ def build_intake_report_core_service(
         else base_generator
     )
     use_case = GenerateIntakeReportUseCase(
-        context_provider=DbActiveIntakeContextProvider(),
+        context_provider=DbActiveIntakeContextProvider(include_all_episode_medications=True),
         guide_repository=ReportMedicationGuideRepository(
             candidate_selector=OpenAIMedicationCandidateSelector(
                 model=settings.OPENAI_CHAT_MODEL,
