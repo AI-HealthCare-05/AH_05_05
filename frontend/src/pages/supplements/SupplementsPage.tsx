@@ -325,7 +325,7 @@ export function SupplementsPage({
             size="compact"
             fullWidth={false}
             className="px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            onClick={() => navigate('/reports/new?source=supplements')}
+            onClick={() => navigate('/reports/new?source=supplements', { state: { returnTo: location.pathname } })}
           >
             AI 보고서 받기
           </Button>

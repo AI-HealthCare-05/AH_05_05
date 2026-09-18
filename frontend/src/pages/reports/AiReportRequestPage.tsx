@@ -1,10 +1,11 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { FileText } from 'lucide-react';
-import { Navigate, useNavigate, useSearchParams } from 'react-router';
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useSession } from '@/app/SessionContext';
 import { generateIntakeReport } from '@/entities/intake-report/api';
 import type { IntakeReport } from '@/entities/intake-report/types';
 import { ApiError, getAuthGeneration } from '@/shared/api/client';
+import { navigateBackOrReplace, trustedBackTarget } from '@/shared/lib/navigation';
 import { Button, Header } from '@/shared/ui';
 import { PendingBubble } from '@/shared/ui/PendingBubble';
 import { ReportEmailButton } from './ReportEmailButton';
@@ -20,6 +21,12 @@ export function AiReportRequestPage() {
 
 function ReportRequest({ source }: { source: 'medications' | 'supplements' }) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const goBack = () => navigateBackOrReplace(
+    navigate,
+    `/${source}`,
+    trustedBackTarget(location.state, [`/${source}`, `/dev/${source}`]) !== null,
+  );
   const [report, setReport] = useState<IntakeReport | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +55,7 @@ function ReportRequest({ source }: { source: 'medications' | 'supplements' }) {
 
   const label = source === 'medications' ? '복약' : '영양제';
   return <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
-    <Header title="복용 정보 AI 보고서" onBack={() => navigate(`/${source}`)} />
+    <Header title="복용 정보 AI 보고서" onBack={goBack} />
     <main className="rx-reading-content flex min-w-0 flex-1 flex-col gap-5 px-page-x py-5">
       {!report && <section className="space-y-4 rounded-card bg-card p-5 shadow-card">
         <FileText aria-hidden className="size-8 text-primary" />
@@ -61,13 +68,13 @@ function ReportRequest({ source }: { source: 'medications' | 'supplements' }) {
       {report?.reportStatus === 'EMPTY' ? <section className="space-y-4 rounded-card bg-card p-5 shadow-card">
         <h2 className="text-lg font-bold">분석할 복용 정보가 없어요</h2>
         <p className="text-sm text-muted-foreground">현재 복용 중인 약이나 영양제를 등록한 뒤 다시 요청해주세요.</p>
-        <Button onClick={() => navigate(`/${source}`)}>{label} 관리로 이동</Button>
+        <Button onClick={goBack}>{label} 관리로 이동</Button>
       </section> : report ? <Suspense fallback={<p role="status" className="text-sm text-primary">보고서 화면을 준비하고 있어요.</p>}><IntakeReportBody report={report} /></Suspense> : null}
       <div className="mt-auto flex flex-col gap-3 pt-4 pb-3">
         {report && report.reportStatus !== 'EMPTY' ? <>
           <ReportEmailButton emailToken={report.emailToken} onRegenerate={() => void generate()} />
         </> : <Button onClick={() => void generate()} disabled={pending} aria-busy={pending || undefined}>{pending ? '보고서 생성 중' : error ? '다시 시도' : '보고서 생성하기'}</Button>}
-        <Button variant="secondary" onClick={() => navigate(`/${source}`)}>{source === 'medications' ? '복약으로 돌아가기' : '영양제로 돌아가기'}</Button>
+        <Button variant="secondary" onClick={goBack}>{source === 'medications' ? '복약으로 돌아가기' : '영양제로 돌아가기'}</Button>
       </div>
     </main>
   </div>;
