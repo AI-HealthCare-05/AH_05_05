@@ -621,7 +621,7 @@ export function ChatPage({
               handleSend();
             }}
             placeholder={chatRequestPending || pending ? '다음 질문을 입력하세요' : '궁금한 것을 입력하세요'}
-            className="rx-input h-control min-h-control min-w-0 flex-1 resize-none break-words rounded-input border border-input bg-card px-3.5 py-3 text-[length:var(--text-control)] text-foreground placeholder:text-tertiary-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted-bg disabled:text-disabled-foreground"
+            className="rx-input h-control min-h-control min-w-0 flex-1 resize-none break-words rounded-input border border-input bg-card px-3.5 py-3 text-base text-foreground placeholder:text-tertiary-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted-bg disabled:text-disabled-foreground"
           />
           <Button
             fullWidth={false}
