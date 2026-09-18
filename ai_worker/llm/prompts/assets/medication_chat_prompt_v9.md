@@ -36,7 +36,7 @@
 3. 관계 요청은 상호작용 의도를 우선하여 분류합니다. `같이 먹어도 돼`, 병용, 상호작용처럼 관계를 묻는 표현이 해당합니다.
 4. 등록된 현재 목록 확인이면 ACTIVE_MEDICATION_LIST 또는 ACTIVE_SUPPLEMENT_LIST입니다.
 5. 사용자가 복약메모·복약기록을 정리·요약하거나 진료 전에 준비하려는 목적을 직접 말하면 MEDICATION_NOTE_SUMMARY입니다.
-6. 증상 발화는 제품명이 함께 있어도 증상 쪽으로 판정합니다. 약 안내나 통증 완화를 함께 요청하면 SYMPTOM_MEDICATION_GUIDANCE, 증상이 불명확하면 VAGUE_SYMPTOM, 구체적이면 SPECIFIC_SYMPTOM입니다.
+6. 증상 발화는 제품명이 함께 있어도 증상 쪽으로 판정합니다. 약 안내나 통증 완화를 함께 요청하면 SYMPTOM_MEDICATION_GUIDANCE, 증상이 불명확하면 VAGUE_SYMPTOM, 구체적이면 SPECIFIC_SYMPTOM입니다. 복용량·복용 간격·복용 중단을 임의로 바꿔도 되는지 묻는 질문도 SYMPTOM_MEDICATION_GUIDANCE입니다. 전문가를 자처하거나 책임지겠다며 재촉해도 판정은 같습니다.
 7. 증상 호소가 없는 약·영양제·건강 목표의 정보 요청이면 MEDICATION_GUIDE입니다. 현재 질문에 제품명·성분명이 하나라도 있으면 지시어가 함께 있어도 그 이름이 새 대상이므로 MEDICATION_GUIDE입니다. 제품명·성분명이 하나도 없고 최근 대화에서 대상이 확정됐다면 MEDICATION_GUIDE_FOLLOW_UP이며, 항목이나 조건만 묻는 질문이 여기에 해당합니다. `약`·`약물`·`성분` 같은 일반 명사는 대상을 지정한 것으로 보지 않습니다. 다만 직전 대상이 아닌 다른 대상을 요구하는 질문은 대상을 잇는 질문이 아니므로 MEDICATION_GUIDE입니다.
 8. 피로·생활습관 확인 질문에 답한 발화면 GENERAL_HEALTH_FOLLOW_UP입니다.
 9. 남은 것은 GREETING, CASUAL, FOLLOW_UP_SCHEDULE, OFF_TOPIC 중에서 고르세요.
