@@ -48,7 +48,7 @@ test('날짜 값은 native 외형 제거 후에도 세로 중앙 정렬 컨테�
   await expect(date).toHaveCSS('display', 'flex');
   await expect(date).toHaveCSS('align-items', 'center');
   await expect(date).toHaveCSS('appearance', 'none');
-  await expect(date).toHaveValue('2026-09-18T13:45');
+  await expect(date).toHaveValue('2026-09-18 13:45');
   await page.getByRole('heading', { name: '복용시 건강상태 변화를 기록해 보세요.' }).click();
   await date.screenshot({ path: testInfo.outputPath('date-centered.png') });
 });
@@ -72,7 +72,7 @@ test('iOS native 날짜 테마의 content-box 조건에서도 부모 폭을 넘�
   expect(layout.width).toBeLessThanOrEqual(layout.parentWidth);
   expect(layout.right).toBeLessThanOrEqual(393);
   await date.fill('2026-09-18T08:30');
-  await expect(date).toHaveValue('2026-09-18T08:30');
+  await expect(date).toHaveValue('2026-09-18 08:30');
   await expect(date).toBeFocused();
 });
 
@@ -111,7 +111,7 @@ for (const width of [375, 390, 393, 414, 430]) {
     await page.getByRole('heading', { name: '복용시 건강상태 변화를 기록해 보세요.' }).click();
     await page.setViewportSize({ width: width + 20, height: 700 });
     await page.setViewportSize({ width, height: 852 });
-    await expect(page.getByLabel('복용 일시')).toHaveValue('2026-09-18T08:30');
+    await expect(page.getByLabel('복용 일시')).toHaveValue('2026-09-18 08:30');
     await expect(page.getByLabel('건강상태 기록')).toHaveValue('레이아웃 회귀 검증용 합성 메모');
     await expectFits(page, width);
     await page.reload();
