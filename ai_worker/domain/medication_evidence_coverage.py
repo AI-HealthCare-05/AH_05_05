@@ -147,9 +147,19 @@ class MedicationEvidenceCoverageEvaluator:
                 for section in self._SUPPORTED_SECTIONS
                 if section != KnowledgeSectionType.INTERACTION and section in available
             ]
-        return [
+        covered = [
             section for section in requested if section != KnowledgeSectionType.INTERACTION and section in available
         ]
+        # 화면의 주의사항과 이상반응은 같은 주의사항 근거에서 온다. 주의사항을 요청했는데
+        # 이상반응만 확보에서 빠지면, 같은 질문도 표현에 따라 섹션 구성이 달라진다.
+        # 이상반응 자료가 실제로 있을 때만 더한다.
+        if (
+            KnowledgeSectionType.CAUTION in covered
+            and KnowledgeSectionType.ADVERSE_EVENT in available
+            and KnowledgeSectionType.ADVERSE_EVENT not in covered
+        ):
+            covered.append(KnowledgeSectionType.ADVERSE_EVENT)
+        return covered
 
     def _verified_interaction_pair_keys(
         self,

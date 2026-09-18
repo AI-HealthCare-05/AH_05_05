@@ -296,3 +296,33 @@ def test_unspecified_request_covers_available_guide_sections() -> None:
         KnowledgeSectionType.DAILY_INTAKE,
         KnowledgeSectionType.CAUTION,
     ]
+
+
+def test_requested_caution_also_covers_adverse_event_when_evidence_exists() -> None:
+    """같은 질문이 표현에 따라 다른 섹션 구성으로 나오지 않게 한다.
+
+    화면의 주의사항과 이상반응은 같은 주의사항 근거에서 오므로, 주의사항을 요청했고
+    이상반응 자료가 실제로 있으면 함께 확보로 센다.
+    """
+
+    evaluator = MedicationEvidenceCoverageEvaluator()
+    plan = build_plan(KnowledgeSectionType.CAUTION)
+
+    with_adverse = evaluator.evaluate(
+        query_plan=plan,
+        guide_lookup=build_guide(
+            precautions="정해진 용법을 지킵니다.",
+            adverse_reactions="드물게 발진이 나타날 수 있습니다.",
+        ),
+        rules=[],
+        chunks=[],
+    )
+    without_adverse = evaluator.evaluate(
+        query_plan=plan,
+        guide_lookup=build_guide(precautions="정해진 용법을 지킵니다."),
+        rules=[],
+        chunks=[],
+    )
+
+    assert KnowledgeSectionType.ADVERSE_EVENT in with_adverse.covered_section_types
+    assert KnowledgeSectionType.ADVERSE_EVENT not in without_adverse.covered_section_types
