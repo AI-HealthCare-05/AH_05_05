@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { AlertTriangle, Pencil, Plus, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
@@ -377,16 +377,6 @@ export function OcrReviewPage() {
     }, 450);
     return () => window.clearInterval(intervalId);
   }, [readingStage]);
-
-  function openDatePicker(event: MouseEvent<HTMLInputElement>) {
-    const input = event.currentTarget;
-    if (typeof input.showPicker !== 'function') return;
-    try {
-      input.showPicker();
-    } catch {
-      // 미지원 브라우저에서는 기본 date input 동작에 맡깁니다.
-    }
-  }
 
   const reviewItemNames: string[] = [];
   if (hospitalNameConfidence === 'low' && !hospitalNameReviewed) {
@@ -837,7 +827,6 @@ export function OcrReviewPage() {
               setDispensedDate(event.target.value);
               setDispensedDateReviewed(true);
             }}
-            onClick={openDatePicker}
             disabled={confirmedReviewMode}
             error={dispensedDateTooLate ? '조제일은 오늘 기준 31일 뒤까지만 고를 수 있어요.' : undefined}
             hint={

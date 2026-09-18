@@ -79,7 +79,7 @@ test('회원가입은 생년월일 다음에 기본 선택 없는 성별을 필�
   const male = page.getByRole('radio', { name: '남성' });
   const female = page.getByRole('radio', { name: '여성' });
 
-  await expect(birthDate).toHaveAttribute('type', 'date');
+  await expect(birthDate).toHaveAttribute('aria-haspopup', 'dialog');
   await expect(birthDate).toHaveAttribute('min', '1900-01-01');
   await expect(birthDate).toHaveAttribute('max', '2026-08-25');
   await expect(birthDate).toHaveAttribute('required', '');
