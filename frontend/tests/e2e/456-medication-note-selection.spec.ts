@@ -292,5 +292,5 @@ test('새 메모 처방 선택기는 작성 불가 inventory와 종료 overview�
     '현재 복용 처방',
   ]);
   await page.getByLabel('처방', { exact: true }).selectOption('501');
-  await expect(page.getByLabel('복용 일시')).toHaveValue('2026-09-13T08:00');
+  await expect(page.getByLabel('복용 일시')).toHaveValue('2026-09-13 08:00');
 });

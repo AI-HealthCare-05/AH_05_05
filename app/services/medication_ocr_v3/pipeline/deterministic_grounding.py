@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 from app.services.medication_ocr_v3.domain.grounding import (
@@ -47,6 +47,9 @@ class DeterministicGroundingPlan:
     ambiguous_date: bool
     ambiguous_strength_row_ids: frozenset[str]
     issues: tuple[GroundingIssue, ...]
+    _source_catalog: EvidenceCatalog | None = field(default=None, repr=False, compare=False)
+    _source_rows: MedicationRowsResult | None = field(default=None, repr=False, compare=False)
+    _effective_today: date | None = field(default=None, repr=False, compare=False)
 
     @property
     def ambiguity_required(self) -> bool:
@@ -138,6 +141,9 @@ def plan_deterministic_grounding(
         ambiguous_date=date_candidates.ambiguous,
         ambiguous_strength_row_ids=frozenset(ambiguous_strength_row_ids),
         issues=tuple(issues),
+        _source_catalog=catalog,
+        _source_rows=medication_rows,
+        _effective_today=effective_today,
     )
 
 
@@ -147,15 +153,29 @@ def canonicalize_deterministic_selection(
     llm_selection: GroundingSelection,
     *,
     today: date | None = None,
+    prepared_plan: DeterministicGroundingPlan | None = None,
 ) -> CanonicalizedGroundingSelection:
-    """Merge only valid ambiguity selections into the deterministic base plan."""
+    """Merge only valid ambiguity selections into the deterministic base plan.
+
+    ``prepared_plan`` is a request-local, immutable plan produced for this same
+    catalog/row snapshot and effective date. A mismatched plan is rebuilt;
+    omitting it preserves the standalone API behavior.
+    """
 
     effective_today = today or seoul_today()
-    plan = plan_deterministic_grounding(
-        catalog,
-        medication_rows,
-        today=effective_today,
-    )
+    if (
+        prepared_plan is not None
+        and prepared_plan._source_catalog is catalog
+        and prepared_plan._source_rows is medication_rows
+        and prepared_plan._effective_today == effective_today
+    ):
+        plan = prepared_plan
+    else:
+        plan = plan_deterministic_grounding(
+            catalog,
+            medication_rows,
+            today=effective_today,
+        )
     raw_grounded = materialize_grounded_selection(
         catalog,
         llm_selection,

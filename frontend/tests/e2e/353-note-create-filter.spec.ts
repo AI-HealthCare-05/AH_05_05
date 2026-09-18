@@ -70,7 +70,7 @@ test('아코디언의 처방으로 새 메모를 열면 처방과 복용 일시�
   await openNewNote(page);
   await expect(page.getByLabel('처방', { exact: true })).toHaveValue('41');
   await expect(page.getByLabel('약', { exact: true })).toHaveCount(0);
-  await expect(page.getByLabel('복용 일시')).toHaveValue('2026-09-13T08:00');
+  await expect(page.getByLabel('복용 일시')).toHaveValue('2026-09-13 08:00');
 });
 
 for (const chosenEpisode of ['41', '42']) {
