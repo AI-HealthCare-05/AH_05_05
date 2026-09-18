@@ -37,6 +37,22 @@ async function expectFits(page: Page, width: number) {
   }
 }
 
+test('날짜 값은 native 외형 제거 후에도 세로 중앙 정렬 컨테이너를 유지한다', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 393, height: 852 });
+  await page.goto('/medications/notes/new');
+  const date = page.getByLabel('복용 일시');
+  await expect(date).toBeEnabled();
+  await date.fill('2026-09-18T13:45');
+  // The native date value lives inside the UA shadow tree. Guard its flex
+  // alignment contract here, and inspect the rendered screenshot separately.
+  await expect(date).toHaveCSS('display', 'flex');
+  await expect(date).toHaveCSS('align-items', 'center');
+  await expect(date).toHaveCSS('appearance', 'none');
+  await expect(date).toHaveValue('2026-09-18T13:45');
+  await page.getByRole('heading', { name: '복용시 건강상태 변화를 기록해 보세요.' }).click();
+  await date.screenshot({ path: testInfo.outputPath('date-centered.png') });
+});
+
 test('iOS native 날짜 테마의 content-box 조건에서도 부모 폭을 넘지 않는다', async ({ page }) => {
   await page.setViewportSize({ width: 393, height: 852 });
   await page.goto('/medications/notes/new');

@@ -209,7 +209,9 @@
     -webkit-appearance: none;
     appearance: none;
     box-sizing: border-box;
-    display: block;
+    /* Preserve the native value's vertical centering after removing its theme. */
+    display: flex;
+    align-items: center;
     inline-size: 100%;
     min-inline-size: 0;
     max-inline-size: 100%;

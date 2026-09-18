@@ -2,6 +2,16 @@
 
 기준일: 2026-09-18. 기준 코드: main `6768a8d`. 작업 브랜치: `feature/555`.
 
+## 후속: 날짜 값 세로 정렬 v3
+
+- 사용자가 실제 아이폰 v2 화면에서 가로 넘침 해소를 확인했지만 날짜 값이 위로 치우친 스크린샷을 제공했다. 가로 문제의 사용자 확인과 세로 정렬의 새 문제를 구분한다.
+- 날짜 입력에 남아 있던 `display:block`이 native 날짜 값의 세로 중앙 정렬을 덮어썼다. [WebKit 기본 CSS](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/css/html.css)는 날짜 계열에 `display:inline-flex; align-items:center`를 사용한다.
+- 기존 appearance:none/box-sizing:border-box/너비 제약은 유지하고, 해당 date/datetime-local에 `display:flex; align-items:center` 적용. 글자 크기·값 형식·저장 로직·사용자 확대는 그대로다.
+- 신규 정렬 계약 테스트는 Chromium/WebKit 모두 수정 전 block으로 실패했다. UA shadow tree의 실제 문자 경계 대신 computed flex/center 조건을 검증하므로 화면 캡처를 별도로 확인하고, iPhone에서 최종 위치/피커 동작은 재확인한다.
+- 공개 수정본은 v3로 갱신한다. v2 빌드는 로컬 `preview/after-width-v2`에 보존하며 1번 main 원본은 변경하지 않는다.
+- 수정 후 Chromium/Linux WebKit 전용 테스트 16개 통과. 정렬 테스트의 WebKit 날짜 입력 캡처를 직접 확인해 위쪽 쏠림 없이 세로 중앙에 표시됨을 확인했다. 코드 리뷰에서 차단 결함 없음. 정적 빌드 성공(기존 큰 bundle 경고 유지). 실제 아이폰 v3는 사용자 확인 대기다.
+- 타입 검사 통과. 공개 HTTPS 원본/수정본 × 2엔진 4조합에서 로딩, 정렬 속성, 합성 메모 저장·수정, API/소스 차단 확인. 결과: `artifacts/ios-note-viewport-20260918/preview-verification-date-align-v3.json`; 화면: `screens/*-date-align-v3.png`. 실제 API와 iPhone 피커 조작을 검증한 것은 아니다.
+
 ## 최신 상태: 아이폰 실측 기반 날짜 너비 개선 v2
 
 - 사용자 피드백: 기존 원본/16px 후보 모두 날짜 입력창 넘침 동일. 따라서 #556 글자 크기 변경을 #555 해결로 보지 않는다.
