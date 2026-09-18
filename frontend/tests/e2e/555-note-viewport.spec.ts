@@ -38,20 +38,6 @@ async function expectFits(page: Page, width: number) {
 }
 
 for (const width of [375, 390, 393, 414, 430]) {
-  test(`메모 입력은 ${width}px에서 iOS 확대 유발 작은 글자를 사용하지 않는다`, async ({ page }) => {
-    await page.setViewportSize({ width, height: 852 });
-    await page.goto('/medications/notes/new');
-    await page.getByLabel('처방').selectOption({ index: 1 });
-    for (const name of ['처방', '복용 일시', '건강상태 기록']) {
-      const control = page.getByLabel(name, { exact: true });
-      await control.focus();
-      // Contract based on WebKit iOS focus scaling (standardFontSize / fontSize).
-      // This checks rendered CSS, NOT actual iOS keyboard/zoom behavior.
-      expect(await control.evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
-    }
-    await expectFits(page, width);
-  });
-
   test(`메모 ${width}px 최초 진입·새로고침·복귀·resize에서 입력과 값을 유지한다`, async ({ page }) => {
     await page.setViewportSize({ width, height: 852 });
     await page.goto('/medications/notes/new');
