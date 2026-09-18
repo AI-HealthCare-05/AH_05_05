@@ -51,7 +51,8 @@ export function BaseInput({
           aria-invalid={error ? true : undefined}
           aria-describedby={describedBy}
           className={cn(
-            'rx-input h-control w-full rounded-input border bg-card px-3.5 text-[length:var(--text-control)] text-foreground',
+            // iOS의 작은 입력 글자에 따른 포커스 확대를 피하되 사용자 확대는 제한하지 않습니다.
+            'rx-input h-control w-full rounded-input border bg-card px-3.5 text-base text-foreground',
             'min-w-0 max-w-full',
             'placeholder:text-tertiary-foreground',
             'focus:outline-none focus:ring-2 focus:ring-ring',
