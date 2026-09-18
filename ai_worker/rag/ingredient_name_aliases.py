@@ -26,9 +26,32 @@ def load_ingredient_name_aliases() -> IngredientNameAliases:
     )
 
 
+def aliases_match_collection(collection_name: str) -> bool:
+    """사전이 지금 조회하는 말뭉치에서 만들어진 것인지 확인한다."""
+    return load_ingredient_name_aliases().source_collection == collection_name.strip()
+
+
+_active_collection: str | None = None
+
+
+def use_collection(collection_name: str) -> None:
+    """조회할 말뭉치를 고정한다. 사전이 다른 말뭉치에서 왔으면 별칭을 쓰지 않는다.
+
+    컬렉션이 교체되면 사전은 조용히 다른 말뭉치에 적용된다. 성분 표기가 바뀐
+    말뭉치에 낡은 별칭을 쓰면 없는 근거를 엮는다. 불일치를 예외로 막지는 않는다.
+    별칭이 없어도 검색은 변경 이전과 동일하게 동작하므로, 서비스를 세우지 못하게
+    하는 쪽이 더 위험하다.
+    """
+    global _active_collection
+    _active_collection = collection_name.strip()
+    _alias_pairs.cache_clear()
+
+
 @lru_cache(maxsize=1)
 def _alias_pairs() -> tuple[dict[str, str], dict[str, tuple[str, ...]]]:
     """영문→한글, 한글→영문 두 방향을 만든다. 한글 하나에 영문 이형이 여럿일 수 있다."""
+    if _active_collection is not None and not aliases_match_collection(_active_collection):
+        return {}, {}
     english_to_korean = {
         english.casefold(): korean for english, korean in load_ingredient_name_aliases().aliases.items()
     }
