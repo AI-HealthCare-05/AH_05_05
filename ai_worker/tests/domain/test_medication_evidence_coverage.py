@@ -272,3 +272,27 @@ def test_adverse_event_is_covered_only_when_adverse_reactions_has_evidence() -> 
     assert KnowledgeSectionType.CAUTION in without_adverse.covered_section_types
     assert KnowledgeSectionType.ADVERSE_EVENT not in without_adverse.covered_section_types
     assert KnowledgeSectionType.ADVERSE_EVENT in with_adverse.covered_section_types
+
+
+def test_unspecified_request_covers_available_guide_sections() -> None:
+    """항목을 지정하지 않은 질문도 확보한 근거를 covered로 남긴다.
+
+    빈 목록으로 두면 답변이 어떤 섹션을 선언하든 근거 밖으로 판정해 초안이 그대로 나간다.
+    """
+
+    coverage = MedicationEvidenceCoverageEvaluator().evaluate(
+        query_plan=build_plan(),
+        guide_lookup=build_guide(
+            usage_instructions="1일 3회 복용합니다.",
+            precautions="정해진 용법을 지킵니다.",
+        ),
+        rules=[],
+        chunks=[],
+    )
+
+    assert coverage.requested_section_types == []
+    assert coverage.covered_section_types == [
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.DAILY_INTAKE,
+        KnowledgeSectionType.CAUTION,
+    ]
