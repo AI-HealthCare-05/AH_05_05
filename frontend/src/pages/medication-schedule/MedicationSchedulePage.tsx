@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { useLocation, useNavigate } from 'react-router';
 import {
@@ -290,17 +290,6 @@ export function MedicationSchedulePage({
     }
     setMealTimes(nextMealTimes);
     setEditingSlot(null);
-  }
-
-  /** 07 퇴원일과 같은 이유로, 입력칸 아무 곳이나 눌러도 달력이 열리게 합니다. */
-  function openDatePicker(event: MouseEvent<HTMLInputElement>) {
-    const input = event.currentTarget;
-    if (typeof input.showPicker !== 'function') return;
-    try {
-      input.showPicker();
-    } catch {
-      // 미지원·제스처 아님 — 기본 동작에 맡깁니다.
-    }
   }
 
   /**
@@ -675,7 +664,6 @@ export function MedicationSchedulePage({
               setStartDate(e.target.value);
               setStartDateEdited(true);
             }}
-            onClick={openDatePicker}
           />
           <div
             role="group"

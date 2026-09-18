@@ -271,6 +271,79 @@ async def test_unresolved_product_uses_only_ingredient_common_guidance(product_l
 
 
 @pytest.mark.asyncio
+async def test_verifier_can_narrow_mixed_dose_quote_to_specific_adverse_event() -> None:
+    dose_sentence = "해열 목적일 경우에는 3일 이상 복용하지 않도록 한다."
+    adverse_bullet = "아세트아미노펜 투여 후 구역, 구토, 식욕부진, 위장 출혈이 발생할 수 있다."
+    chunk = _chunk(
+        point_id="mixed",
+        document_id="mixed",
+        content=f"{dose_sentence}\n• {adverse_bullet}",
+    ).model_copy(
+        update={
+            "metadata": _chunk(point_id="mixed", document_id="mixed", content="x").metadata.model_copy(
+                update={
+                    "ingredient_names": ["아세트아미노펜"],
+                    "document_type": KnowledgeDocumentType.DRUG_ENCYCLOPEDIA,
+                }
+            )
+        }
+    )
+    retriever = _Retriever([chunk])
+    verifier_inputs = []
+    broad_claim = {
+        "section_id": "additional_precautions",
+        "target_ids": ["medication:1"],
+        "title": "이상반응 주의",
+        "summary": "위장 이상반응이 발생할 수 있습니다.",
+        "action": "증상이 나타나면 상담하세요.",
+        "grounded": True,
+        "evidence": [{"chunk_id": "mixed", "exact_quote": chunk.content}],
+    }
+    narrowed_claim = {**broad_claim, "evidence": [{"chunk_id": "mixed", "exact_quote": adverse_bullet}]}
+
+    def verifier(value):
+        verifier_inputs.append(value)
+        return {
+            "claims": [
+                narrowed_claim
+                if value["server_checks"]
+                or value["candidate_claims"]["claims"][0]["evidence"][0]["exact_quote"] == adverse_bullet
+                else broad_claim
+            ]
+        }
+
+    pipeline = ReportRagPipeline(
+        retriever=retriever,
+        dataset_version="knowledge-test-v1",
+        planner=lambda _: {
+            "sections": [
+                {
+                    "section_id": "additional_precautions",
+                    "target_ids": ["medication:1"],
+                    "queries": ["아세트아미노펜 이상반응"],
+                }
+            ]
+        },
+        claim_writer=lambda _: {"claims": [broad_claim]},
+        verifier=verifier,
+        source_registry={"mixed": ("source-mixed", "Verified publisher")},
+    )
+    result = await pipeline.run(
+        targets=[
+            ReportRagTarget(
+                "medication:1", 1, "MEDICATION", "아세트아미노펜정500mg", ("아세트아미노펜",), ingredient_only=True
+            )
+        ]
+    )
+
+    assert verifier_inputs[0]["server_checks"] == [
+        {"claim_index": 0, "evidence_index": 0, "code": "dosing_in_ingredient_quote"}
+    ]
+    assert result.cards[0].source_ids
+    assert result.sources[0].quote == adverse_bullet
+
+
+@pytest.mark.asyncio
 async def test_pipeline_uses_safe_fallback_plan_and_emits_only_exact_quote_claims() -> None:
     retriever = _Retriever(
         [
