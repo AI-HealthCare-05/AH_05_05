@@ -6,7 +6,7 @@ test.beforeEach(() => test.skip(!IS_REAL_API, REAL_API_ONLY_REASON));
 const DATE = '2026-09-05';
 type Dose = { recordId?: number; supplementId?: number; date: string; slot: string; taken: boolean };
 
-async function openHome(page: Page, slots = ['morning', 'lunch', 'evening', 'bedtime'], at = '06:00:00') {
+async function openHome(page: Page, slots = ['morning', 'lunch', 'evening', 'bedtime'], at = '06:00:00', initialLabel = '아침') {
   const writes: Dose[] = [];
   const apiReads: string[] = [];
   let saveGate: Promise<void> | undefined;
@@ -44,14 +44,14 @@ async function openHome(page: Page, slots = ['morning', 'lunch', 'evening', 'bed
       await route.fulfill({ json: [] });
     } else if (path === '/api/v1/users/me') {
       await route.fulfill({ json: { name: '테스트', maskedName: '테*트', phoneNumber: null, birthDate: null, gender: null } });
-    } else if (path === '/api/v1/user/challenges') {
+    } else if (path === '/api/v1/user/challenges' || path === '/api/v1/user/custom-challenge-participations') {
       await route.fulfill({ json: { items: [], total_count: 0 } });
     } else {
       await route.fulfill({ status: 404, json: { detail: 'Isolated fixture' } });
     }
   });
   await page.goto('/home');
-  await expect(page.getByRole('group', { name: '아침약 상세' })).toBeVisible();
+  await expect(page.getByRole('group', { name: `${initialLabel}약 상세` })).toBeVisible();
   return { writes, apiReads, deferSave: () => {
     let release!: () => void;
     saveGate = new Promise<void>(resolve => { release = resolve; });
@@ -63,6 +63,27 @@ async function swipe(panel: Locator, dx: number, dy = 0) {
   await panel.dispatchEvent('pointerdown', { pointerId: 1, isPrimary: true, pointerType: 'touch', clientX: 180, clientY: 250 });
   await panel.dispatchEvent('pointerup', { pointerId: 1, isPrimary: true, pointerType: 'touch', clientX: 180 + dx, clientY: 250 + dy });
 }
+
+test('#577 모든 미완료 복약 시간대의 먹었어요 버튼은 초록색을 유지한다', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 393, height: 1000 });
+  const { writes } = await openHome(page, undefined, '20:00:00', '저녁');
+  const tabs = page.getByRole('tablist', { name: '복약 시간대' });
+  await expect(tabs.getByRole('tab', { name: '저녁', exact: true })).toHaveAttribute('aria-selected', 'true');
+  const currentColor = await page.getByRole('tabpanel', { name: '저녁', exact: true })
+    .getByRole('button', { name: '먹었어요', exact: true }).evaluate(el => getComputedStyle(el).backgroundColor);
+  for (const slot of ['아침', '점심', '저녁', '자기전']) {
+    await tabs.getByRole('tab', { name: slot, exact: true }).click();
+    const action = page.getByRole('tabpanel', { name: slot, exact: true }).getByRole('button', { name: '먹었어요', exact: true });
+    await expect(action).toBeEnabled();
+    await expect(action).toHaveAttribute('data-variant', 'primary');
+    await expect(action).toHaveCSS('background-color', currentColor);
+    await action.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath(`home-${slot}.png`), fullPage: true, animations: 'disabled' });
+  }
+  expect(writes).toEqual([]);
+});
 
 for (const kind of ['복약', '영양제']) {
   test(`${kind}: scheduled tabs, keyboard and both swipe directions preserve boundaries without API requests`, async ({ page }) => {
@@ -168,7 +189,10 @@ for (const kind of ['복약', '영양제']) {
     await expect(evening.getByText('복용 완료', { exact: true })).toHaveCount(0);
     await tabs.getByRole('tab', { name: '아침', exact: true }).click();
     const morningCard = kind === '복약' ? morning.locator('..') : morning;
-    await expect(morningCard.getByText('복용 완료', { exact: true })).toHaveCount(1);
+    if (kind === '복약') {
+      // 완료 표시는 현재 main의 처방별 배지(접힌 목록에는 2개)에 표시된다.
+      await expect(morningCard.locator('[data-episode-completed-badge]')).toHaveCount(2);
+    } else await expect(morningCard.getByText('복용 완료', { exact: true })).toHaveCount(1);
     await expect(morning.getByRole('button', { name: /복용 완료$/ })).toHaveCount(2);
     expect(writes.every(item => item.slot === 'morning')).toBe(true);
   });
@@ -200,7 +224,8 @@ for (const kind of ['복약', '영양제']) {
     await touch(start.x, start.y, -140, 0);
     await expect(tabs.getByRole('tab', { name: '저녁', exact: true })).toHaveAttribute('aria-selected', 'true');
     const eveningBox = (await panel().boundingBox())!;
-    await touch(eveningBox.x + 30, eveningBox.y + 30, 140, 0);
+    // The first swipe can leave the panel top above the viewport after scrollIntoView.
+    await touch(eveningBox.x + 30, Math.max(eveningBox.y, 80) + 30, 140, 0);
     await expect(tabs.getByRole('tab', { name: '아침', exact: true })).toHaveAttribute('aria-selected', 'true');
     const morningBox = (await panel().boundingBox())!;
     const scrollContainer = page.getByRole('main', { name: '홈 콘텐츠' });
