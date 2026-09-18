@@ -326,3 +326,72 @@ def test_requested_caution_also_covers_adverse_event_when_evidence_exists() -> N
 
     assert KnowledgeSectionType.ADVERSE_EVENT in with_adverse.covered_section_types
     assert KnowledgeSectionType.ADVERSE_EVENT not in without_adverse.covered_section_types
+
+
+def build_crosscheck_plan() -> MedicationKnowledgeQueryPlan:
+    return MedicationKnowledgeQueryPlan(
+        original_query="철분 먹어도 돼?",
+        expanded_query="철분",
+        section_types=[KnowledgeSectionType.FUNCTION],
+        crosscheck_pairs=[
+            MedicationInteractionQueryPair(
+                left_name="칼슘",
+                right_name="철분",
+                pair_type=InteractionPairType.SUPPLEMENT_SUPPLEMENT,
+                pair_key=calcium_iron_pair_key(),
+            )
+        ],
+    )
+
+
+def test_crosscheck_pair_is_verified_only_from_its_own_search_result() -> None:
+    """교차 확인 쌍은 전용 검색 결과로만 판정한다. 답변 근거에는 섞지 않는다."""
+    plan = build_crosscheck_plan()
+    chunk = build_interaction_chunk(pair_keys=[calcium_iron_pair_key()])
+
+    from_answer_chunks = MedicationEvidenceCoverageEvaluator().evaluate(
+        query_plan=plan,
+        guide_lookup=build_guide(),
+        rules=[],
+        chunks=[chunk],
+    )
+    from_crosscheck_chunks = MedicationEvidenceCoverageEvaluator().evaluate(
+        query_plan=plan,
+        guide_lookup=build_guide(),
+        rules=[],
+        chunks=[],
+        crosscheck_chunks=[chunk],
+    )
+
+    assert from_answer_chunks.verified_crosscheck_pair_keys == []
+    assert from_crosscheck_chunks.verified_crosscheck_pair_keys == [calcium_iron_pair_key()]
+
+
+def test_crosscheck_pair_without_evidence_is_not_verified() -> None:
+    """근거가 없으면 확인하지 않는다. 추론으로 메우면 없는 상호작용을 만든다."""
+    coverage = MedicationEvidenceCoverageEvaluator().evaluate(
+        query_plan=build_crosscheck_plan(),
+        guide_lookup=build_guide(),
+        rules=[],
+        chunks=[],
+        crosscheck_chunks=[build_interaction_chunk(pair_keys=[], content="다른 성분에 대한 설명입니다.")],
+    )
+
+    assert coverage.verified_crosscheck_pair_keys == []
+
+
+def test_crosscheck_pairs_do_not_change_requested_section_coverage() -> None:
+    """교차 확인은 질문이 요청한 항목의 충족 여부를 바꾸지 않는다."""
+    plan = build_crosscheck_plan()
+    chunk = build_interaction_chunk(pair_keys=[calcium_iron_pair_key()])
+
+    coverage = MedicationEvidenceCoverageEvaluator().evaluate(
+        query_plan=plan,
+        guide_lookup=build_guide(),
+        rules=[],
+        chunks=[],
+        crosscheck_chunks=[chunk],
+    )
+
+    assert coverage.requested_section_types == [KnowledgeSectionType.FUNCTION]
+    assert coverage.verified_interaction_pair_keys == []

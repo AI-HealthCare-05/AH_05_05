@@ -42,6 +42,7 @@ class MedicationEvidenceCoverageEvaluator:
         rules: list[InteractionRuleFact],
         chunks: list[RetrievedKnowledgeChunk],
         approved_therapeutic_class_names: list[str] | None = None,
+        crosscheck_chunks: list[RetrievedKnowledgeChunk] | None = None,
     ) -> MedicationEvidenceCoverage:
         requested = [section for section in self._SUPPORTED_SECTIONS if section in query_plan.section_types]
         covered = self._covered_non_interaction_sections(
@@ -53,6 +54,12 @@ class MedicationEvidenceCoverageEvaluator:
             query_plan=query_plan,
             rules=rules,
             chunks=chunks,
+        )
+        # 교차 확인 쌍은 전용 검색 결과로만 판정한다. 답변 근거(chunks)에는 섞지 않는다.
+        verified_crosscheck_pair_keys = self._verified_crosscheck_pair_keys(
+            query_plan=query_plan,
+            rules=rules,
+            chunks=crosscheck_chunks or [],
         )
         overview_supported = False
         if len(query_plan.entity_names) == 1 and not query_plan.interaction_pair_keys:
@@ -91,7 +98,33 @@ class MedicationEvidenceCoverageEvaluator:
             covered_section_types=covered,
             missing_section_types=[section for section in requested if section not in covered],
             verified_interaction_pair_keys=verified_pair_keys,
+            verified_crosscheck_pair_keys=verified_crosscheck_pair_keys,
         )
+
+    def _verified_crosscheck_pair_keys(
+        self,
+        *,
+        query_plan: MedicationKnowledgeQueryPlan,
+        rules: list[InteractionRuleFact],
+        chunks: list[RetrievedKnowledgeChunk],
+    ) -> list[str]:
+        """등록 복약정보와의 대조 쌍 중 근거로 확인된 것만 돌려준다."""
+        requested_keys = set(query_plan.crosscheck_pair_keys)
+        if not requested_keys:
+            return []
+        verified = requested_keys.intersection(rule.pair_key for rule in rules)
+        for chunk in chunks:
+            verified.update(requested_keys.intersection(chunk.metadata.interaction_pair_keys))
+            if chunk.metadata.section_type != KnowledgeSectionType.INTERACTION:
+                continue
+            for pair in query_plan.crosscheck_pairs:
+                if pair.pair_key in requested_keys and self._same_sentence_contains_pair(
+                    chunk.content,
+                    left_name=pair.left_name,
+                    right_name=pair.right_name,
+                ):
+                    verified.add(pair.pair_key)
+        return [key for key in query_plan.crosscheck_pair_keys if key in verified]
 
     @classmethod
     def _is_legacy_interaction_chunk(cls, chunk: RetrievedKnowledgeChunk) -> bool:
