@@ -204,6 +204,11 @@
 
   .rx-input[type='date'],
   .rx-input[type='datetime-local'] {
+    /* iOS native date styling can add padding/borders outside width:100%.
+       Keep the native picker, but let our CSS size the control (WebKit #301648). */
+    -webkit-appearance: none;
+    appearance: none;
+    box-sizing: border-box;
     display: block;
     inline-size: 100%;
     min-inline-size: 0;

@@ -2,6 +2,33 @@
 
 기준일: 2026-09-18. 기준 코드: main `6768a8d`. 작업 브랜치: `feature/555`.
 
+## 최신 상태: 아이폰 실측 기반 날짜 너비 개선 v2
+
+- 사용자 피드백: 기존 원본/16px 후보 모두 날짜 입력창 넘침 동일. 따라서 #556 글자 크기 변경을 #555 해결로 보지 않는다.
+- 첨부 `rxvita-555-before (2).json`의 첫 render: 화면 393px, 확대율 1, 처방/메모 폭 353px, 날짜 폭 383px, 날짜 오른쪽 403px. 포커스 이벤트 없이 이미 10px 화면 밖으로 나가 있다. 문서 scrollWidth는 기존 clipping 때문에 393px로 남아, 그것만으로 정상 판단하면 안 된다.
+- 별도 붙여넣기 자료는 Android UA로, 아이폰 증거와 혼합하지 않았다. UA만으로 실제 기기 여부나 정확한 OS 버전을 추가 추정하지 않는다.
+- 30px 초과는 좌우 padding 28px와 border 2px 합에 일치한다. iOS native 날짜 테마의 content-box 보정이 가장 유력한 원인이다. 원본 JSON에는 computed boxSizing이 없어 해당 속성의 실기기 직접 확인은 아직 없다.
+- 공식 근거: [WebKit 버그 301648](https://bugs.webkit.org/show_bug.cgi?id=301648)에는 iOS 날짜/시간 input의 width:100% + padding 초과가 보고되어 있다. [RenderThemeIOS](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/rendering/ios/RenderThemeIOS.mm)의 `adjustInputElementButtonStyle`에는 native 날짜 컨트롤의 boxSizing을 content-box로 조정하는 코드가 있다. 자료와 실측의 일치는 원인 가설을 강하게 뒷받침하지만 수정 후 실기기 성공 증거를 대신하지 않는다.
+
+### 변경
+
+- `.rx-input[type=date]`, `.rx-input[type=datetime-local]`에만 `-webkit-appearance:none`, `appearance:none`, `box-sizing:border-box` 적용.
+- 기본 테마의 너비 보정을 피하고, 디자인의 여백/테두리를 지정된 폭 안에 포함한다. native input type, 값 형식, 이벤트, 날짜 저장 로직은 유지한다.
+- 자동 포커스, 글자 크기, 사용자 확대, 기존 clipping은 변경하지 않는다. #556 변경은 이 브랜치에 포함하지 않는다.
+- 범위상 복약 메모 외 진료일정·OCR·프로필·복용 시작일의 공통 날짜 입력에도 적용된다. iOS native 피커의 열기/선택 및 빈 날짜 표시가 실제 기기에서 유지되는지 확인해야 한다.
+
+### 검증 및 공개 비교
+
+- 수정 전 native content-box 조건 모델 검증: Chromium/WebKit 모두 383px > 부모 353px로 실패. Linux WebKit 자체에서 iOS 결함을 재현한 것이 아니라 공식 native 테마 동작을 제한적으로 모델링한 테스트다.
+- 수정 후 전용 14개 통과: 조건 모델, 진료일정 빈 값·입력·포커스·최소 높이, 메모 5개 폭의 진입·새로고침·복귀·resize/값 유지. `tsc --noEmit` 통과.
+- 기존 #310 메모 목록 4개 + #532 UI 회귀 8개 = 12개 통과. 합성 정적 빌드 성공(기존 500kB 초과 bundle 경고 유지). 코드 리뷰에서 차단 결함 없음. `fill()` 검증은 실제 iPhone 피커 조작 검증이 아니다.
+- 공개 HTTPS의 원본/수정본 × Chromium/Linux WebKit 4조합 확인: 수정본 appearance:none/box-sizing:border-box, 화면 내 입력 경계, 합성 메모 저장·수정 통과. 런타임 예외·실패 HTTP 리소스 없음. API/환경파일/소스 차단 및 POST 405 유지. 결과는 `artifacts/ios-note-viewport-20260918/preview-verification-date-width-v2.json`, 스크린샷은 `screens/*-date-width-v2.png`.
+- 공개 비교의 1번은 main `6768a8d` 그대로, 2번은 이번 #555 날짜 너비 v2로 교체한다. 기존 16px 후보 빌드는 로컬 `preview/after-font-only-556`에 보존한다.
+- 진단 v2에는 날짜 입력과 부모의 폭, appearance, boxSizing, padding, border를 추가하고, 기존 수치와 섞이지 않도록 저장 키를 구분한다. 입력값은 수집하지 않는다.
+- **최종 해결 여부는 동일 아이폰에서 v2 최초 진입/날짜 선택/복귀 확인 대기. PR·원격 push·병합·운영 배포는 하지 않는다.**
+
+아래는 v2 이전 조사 이력이다. 과거 Fix·Test Result 및 기존 공개 서버 설명을 최신 결과로 해석하지 않는다.
+
 ## 범위 분리 (2026-09-18 후속 결정)
 
 - 사용자 요청으로 **날짜 입력 박스 가로 넘침은 #555**, **입력 포커스 자동 확대는 #556**으로 분리했다.

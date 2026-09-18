@@ -37,6 +37,51 @@ async function expectFits(page: Page, width: number) {
   }
 }
 
+test('iOS native 날짜 테마의 content-box 조건에서도 부모 폭을 넘지 않는다', async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 852 });
+  await page.goto('/medications/notes/new');
+  const date = page.getByLabel('복용 일시');
+  await expect(date).toBeEnabled();
+  // Linux WebKit does not run RenderThemeIOS. Model only its native-date
+  // content-box adjustment (WebKit bug 301648), not an actual iPhone run.
+  // Removing the product's native-appearance opt-out must expose overflow.
+  await date.evaluate(el => {
+    if (getComputedStyle(el).appearance !== 'none') el.style.boxSizing = 'content-box';
+  });
+  const layout = await date.evaluate(el => ({
+    width: el.getBoundingClientRect().width,
+    parentWidth: el.parentElement!.getBoundingClientRect().width,
+    right: el.getBoundingClientRect().right,
+  }));
+  expect(layout.width).toBeLessThanOrEqual(layout.parentWidth);
+  expect(layout.right).toBeLessThanOrEqual(393);
+  await date.fill('2026-09-18T08:30');
+  await expect(date).toHaveValue('2026-09-18T08:30');
+  await expect(date).toBeFocused();
+});
+
+test('진료일정 날짜는 빈 값과 입력 후에도 클릭·값 입력과 크기를 유지한다', async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 852 });
+  await page.goto('/dev/my-visits');
+  await page.getByRole('button', { name: '진료일정 추가', exact: true }).click();
+  const date = page.getByLabel('진료일', { exact: true });
+  await expect(date).toBeEnabled();
+  await date.fill('');
+  await date.click();
+  await expect(date).toBeFocused();
+  for (const value of ['', '2026-09-20']) {
+    await date.fill(value);
+    await expect(date).toHaveValue(value);
+    const rect = await date.evaluate(el => {
+      const box = el.getBoundingClientRect();
+      return { left: box.left, right: box.right, height: box.height };
+    });
+    expect(rect.left).toBeGreaterThanOrEqual(0);
+    expect(rect.right).toBeLessThanOrEqual(393);
+    expect(rect.height).toBeGreaterThanOrEqual(44);
+  }
+});
+
 for (const width of [375, 390, 393, 414, 430]) {
   test(`메모 ${width}px 최초 진입·새로고침·복귀·resize에서 입력과 값을 유지한다`, async ({ page }) => {
     await page.setViewportSize({ width, height: 852 });
