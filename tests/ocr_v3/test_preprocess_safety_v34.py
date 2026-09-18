@@ -45,6 +45,40 @@ def test_small_internal_box_is_not_the_document_when_content_surrounds_it(monkey
         assert "conservative_full_frame" in result.operations
 
 
+def test_edge_to_edge_panel_layout_is_kept_as_one_full_frame_document():
+    rgb = np.full((600, 900, 3), 250, dtype=np.uint8)
+    blue = (20, 130, 240)
+    cv2.rectangle(rgb, (12, 12), (300, 560), blue, 3)
+    cv2.rectangle(rgb, (320, 12), (887, 500), blue, 3)
+    cv2.rectangle(rgb, (320, 520), (700, 580), blue, 3)
+    for x in (150, 550):
+        cv2.line(rgb, (x, 15), (x, 490), blue, 2)
+    for y in (100, 180, 260, 340, 420):
+        cv2.line(rgb, (15, y), (295, y), blue, 1)
+    for y in (80, 160, 240, 320, 400):
+        cv2.putText(rgb, "MEDICINE 10mg  1 tablet", (340, y), 0, 0.5, (20, 20, 20), 1, cv2.LINE_AA)
+
+    result = preprocess_image(_png(rgb), "image/png")
+
+    assert result.quality_state is QualityState.PROCESSED
+    assert "multiple_documents_suspected" not in result.reasons
+    assert "conservative_full_frame" in result.operations
+
+
+def test_separate_inset_pages_are_still_rejected_as_multiple_documents():
+    rgb = np.full((600, 900, 3), 120, dtype=np.uint8)
+    for x1, x2 in ((40, 400), (500, 860)):
+        cv2.rectangle(rgb, (x1, 60), (x2, 540), (245, 245, 245), -1)
+        cv2.rectangle(rgb, (x1, 60), (x2, 540), (20, 20, 20), 3)
+        for y in (160, 260, 360, 460):
+            cv2.line(rgb, (x1 + 20, y), (x2 - 20, y), (80, 80, 80), 2)
+
+    result = preprocess_image(_png(rgb), "image/png")
+
+    assert result.quality_state is QualityState.RECAPTURE_REQUIRED
+    assert "multiple_documents_suspected" in result.reasons
+
+
 @pytest.mark.parametrize(
     ("outer_confidence", "outer_boundary", "inner_coverage", "inner_confidence", "inner_boundary", "expect_inner"),
     [

@@ -43,17 +43,41 @@ test('복약 메모 오늘 선택은 기존 시간을 보존하고 24시간 시�
   await expect(dialog.getByLabel('시 (24시간제)')).toHaveValue('18');
   await expect(dialog.getByLabel('분', { exact: true })).toHaveValue('37');
   await dialog.getByRole('button', { name: '적용', exact: true }).click();
-  await expect(field).toHaveValue('2026-09-18T18:37');
+  await expect(field).toHaveValue('2026-09-18 18:37');
   await field.click();
   await dialog.getByLabel('시 (24시간제)').selectOption('23');
   await dialog.getByLabel('분', { exact: true }).selectOption('59');
   await dialog.getByRole('button', { name: '적용', exact: true }).click();
-  await expect(field).toHaveValue('2026-09-18T23:59');
+  await expect(field).toHaveValue('2026-09-18 23:59');
   await field.click();
   await dialog.getByLabel('시 (24시간제)').selectOption('00');
   await dialog.getByLabel('분', { exact: true }).selectOption('00');
   await dialog.getByRole('button', { name: '적용', exact: true }).click();
-  await expect(field).toHaveValue('2026-09-18T00:00');
+  await expect(field).toHaveValue('2026-09-18 00:00');
+});
+
+test('#578 복용 일시는 공백으로 표시하고 수정·저장은 ISO 형식을 유지한다', async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/medications/notes/new');
+  await page.getByLabel('처방', { exact: true }).selectOption({ index: 1 });
+  const field = page.getByLabel('복용 일시', { exact: true });
+  await field.fill('2026-09-17T08:00');
+  await expect(field).toHaveValue('2026-09-17 08:00');
+  await field.click();
+  const dialog = page.getByRole('dialog', { name: '복용 일시 선택', exact: true });
+  await expect(dialog.getByLabel('시 (24시간제)')).toHaveValue('08');
+  await dialog.getByLabel('시 (24시간제)').selectOption('09');
+  await dialog.getByRole('button', { name: '취소', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(field).toHaveValue('2026-09-17 08:00');
+  await page.getByLabel('건강상태 기록').fill('테스트 메모: 날짜와 시간 표시 확인');
+  await page.screenshot({ path: testInfo.outputPath('note-datetime-space.png'), fullPage: true, animations: 'disabled' });
+  // Hardware keyboard users may enter the visible format; the parent still receives ISO.
+  await field.fill('2026-09-17 09:15');
+  await page.getByRole('button', { name: '저장', exact: true }).click();
+  await expect(page).toHaveURL(/\/medications\/notes\?/);
+  const saved = await page.evaluate(() => JSON.parse(sessionStorage.getItem('rxvita.mock.medication-notes:calendar%40example.invalid') ?? '[]'));
+  expect(saved).toEqual(expect.arrayContaining([expect.objectContaining({ dosedAt: '2026-09-17T09:15' })]));
 });
 
 test('진료일 달력은 내일부터 제한을 지켜 오늘을 비활성화하고 원래 시트로 복귀한다', async ({ page }) => {
@@ -174,6 +198,6 @@ test('공통 달력 화면은 OCR·메모·진료일 각각의 날짜 제한과 
     await expect(dialog.getByRole('button', { name: '오늘', exact: true })).toBeVisible();
     await page.screenshot({ path: path.join(directory, `${entry.file}-${testInfo.project.name}-393.png`), animations: 'disabled' });
     await dialog.getByRole('button', { name: '취소', exact: true }).click();
-    await expect(field).toHaveValue(entry.value);
+    await expect(field).toHaveValue(entry.label === '복용 일시' ? '2026-09-18 18:37' : entry.value);
   }
 });

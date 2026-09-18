@@ -22,6 +22,7 @@ from app.services.medication_ocr_v3.pipeline.ocr_layout import (
 )
 from app.services.medication_ocr_v3.pipeline.ocr_normalization import (
     normalize_dose_unit_ocr,
+    normalize_measurement_unit_ocr,
     strip_leading_name_symbols,
 )
 
@@ -79,6 +80,9 @@ _ACID_TABLET_WITH_STRENGTH_PATTERN = re.compile(
 _DUPLICATE_NAME_SIMILARITY = 0.75
 _DUPLICATE_NAME_MEAN_SIMILARITY = 0.85
 _MIN_TRUNCATED_NAME_PREFIX_LENGTH = 4
+_DATE_ONLY_NAME_PATTERN = re.compile(
+    r"^(?:(?:19|20)\d{2}(?:년)?|(?:19|20)\d{2}[./-]\d{1,2}[./-]\d{1,2}|(?:19|20)\d{2}년\s*\d{1,2}월\s*\d{1,2}일|(?:19|20)\d{6})$"
+)
 
 
 class MedicationIssueCode(StrEnum):
@@ -323,6 +327,8 @@ def materialize_medication_rows(layout: OcrLayoutResult) -> MedicationRowsResult
                     row.source_block_ids,
                 )
             )
+            continue
+        if _is_date_only_name(name_cell.text):
             continue
         medications.append(_medication_row(row))
     return MedicationRowsResult(
@@ -1407,9 +1413,17 @@ def _is_plausible_product_name(text: str) -> bool:
         normalized = trailing_parenthetical.group("base")
     return (
         bool(normalized)
+        and not _is_date_only_name(normalized)
         and not _has_imprint_name_contamination(text)
         and _PRODUCT_NAME_PATTERN.fullmatch(normalized) is not None
     )
+
+
+def _is_date_only_name(text: str) -> bool:
+    """Reject a complete year/date token, while retaining numeric drug names."""
+
+    normalized = "".join(unicodedata.normalize("NFKC", text).split())
+    return _DATE_ONLY_NAME_PATTERN.fullmatch(normalized) is not None
 
 
 def _has_non_medication_table_vocabulary(rows: tuple[LayoutRow, ...]) -> bool:
@@ -1590,6 +1604,7 @@ def _name_field(cell: LayoutCell) -> MedicationField:
 
 def _canonical_name_value(text: str) -> str:
     normalized = " ".join(unicodedata.normalize("NFKC", text).split()).replace("_", "")
+    normalized = normalize_measurement_unit_ocr(normalized)
     # OCR can join the preceding row's storage label to a starred product name.
     # Require an explicit product separator; never strip a product-name prefix.
     normalized = re.sub(r"^(?:\((?:실온|냉장|차광)보관\)|(?:실온|냉장|차광)보관)\s*\*\s*(?=[가-힣])", "", normalized)

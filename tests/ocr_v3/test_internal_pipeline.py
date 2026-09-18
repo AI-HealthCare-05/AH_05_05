@@ -416,6 +416,9 @@ async def test_unusable_output_fails_at_origin_and_does_not_run_downstream(monke
         ("비)재산정625mg", False),
         ("정산정625mg", False),
         ("산정내역", False),
+        ("2026년", False),
+        ("2026-09-18", False),
+        ("20260918", False),
         ("보험료산정", False),
         ("급여산정625mg", False),
         ("산정625mg", False),
@@ -524,6 +527,31 @@ def test_units_are_normalized_without_rewriting_the_drug_name() -> None:
     assert rows.medications[0].name == "감마정100밀리그램"
     assert parse_strength("100밀리그램") == "100mg"
     assert parse_strength("15밀리리터") == "15mL"
+
+
+def test_numeric_adjacent_il_ri_gram_is_normalized_in_name_but_not_evidence() -> None:
+    printed_name = "부루펜정200일리그램"
+    source = OcrResult(
+        (
+            _block("header-name", "약품명", 10, 10, 80),
+            _block("header-dose", "투약량", 250, 10, 45),
+            _block("header-times", "횟수", 320, 10, 35),
+            _block("header-days", "일수", 390, 10, 35),
+            _block("name", printed_name, 10, 40, 220),
+            _block("dose", "1", 260, 40, 20),
+            _block("times", "1", 330, 40, 20),
+            _block("days", "5", 400, 40, 20),
+        )
+    )
+    layout = build_ocr_layout(source)
+    rows = materialize_medication_rows(layout)
+    catalog = build_evidence_catalog(source, layout, rows)
+
+    assert rows.medications[0].name == "부루펜정200밀리그램"
+    assert build_project_review(rows)["medications"][0]["name"] == "부루펜정200밀리그램"
+    assert source.blocks[4].text == printed_name
+    evidence = next(block for block in catalog.blocks if block.block_id == "name")
+    assert evidence.text == printed_name
 
 
 @pytest.mark.parametrize("prefix", ["*!", "!?/#$", "※→★", "✔️ 💊 ", "[]{}()", "！？＊", "__! ", "· + • !"])
