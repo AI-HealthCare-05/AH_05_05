@@ -2460,9 +2460,9 @@ async def test_active_medication_interaction_without_approved_rule_states_uncert
     ).execute(build_request("현재 먹는 두 약 사이에 상호작용이 있어?"))
 
     assert "☑️ **확인하지 못한 조합**" not in result.answer
-    # 이 초안은 LLM 재작성을 거치지 않으므로 규약 소제목과 안전 문구를 갖춰 나간다.
-    assert "✉️ **안내사항**" in result.answer
-    assert "상호작용: 현재 근거에서 확인하지 못했습니다." in result.answer
+    # 조회 범위를 밝히지 않으면 "등록약 사이에 없음"이 "조회 실패"로 읽힌다.
+    assert "🔁 **복약정보와 상호작용**" in result.answer
+    assert "등록하신 약·영양제 조합에서는 승인된 상호작용 규칙을 찾지 못했습니다." in result.answer
     assert "확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다." in result.answer
 
 
@@ -4210,7 +4210,13 @@ async def test_execute_records_safe_stage_summaries_without_raw_content() -> Non
     assert llm_outputs["fallback_used"] is False
     assert llm_outputs["fallback_reason"] is None
     assert llm_outputs["declared_section_types"] == []
-    assert llm_outputs["covered_section_types"] == []
+    # 항목을 지정하지 않은 전반 설명 질문이라 확보한 근거가 그대로 covered가 된다.
+    assert llm_outputs["covered_section_types"] == [
+        "FUNCTION",
+        "DAILY_INTAKE",
+        "CAUTION",
+        "ADVERSE_EVENT",
+    ]
     assert len(llm_outputs["draft_answer_hash"]) == 64
     assert len(llm_outputs["generated_answer_hash"]) == 64
 

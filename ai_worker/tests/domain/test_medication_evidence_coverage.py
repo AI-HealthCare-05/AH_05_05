@@ -242,3 +242,182 @@ def test_evaluate_accepts_approved_rule_for_requested_pair() -> None:
     assert coverage.covered_section_types == [KnowledgeSectionType.INTERACTION]
     assert coverage.missing_section_types == []
     assert coverage.verified_interaction_pair_keys == [requested_pair_key]
+
+
+def test_adverse_event_is_covered_only_when_adverse_reactions_has_evidence() -> None:
+    """이상반응은 주의사항 근거에 묶여 있지만 자료가 없으면 확보로 세지 않는다.
+
+    묶어서 세면 이상반응 자료가 없는 제품에서 `🚨 **이상반응**` 섹션이 근거 검증을 통과한다.
+    """
+
+    evaluator = MedicationEvidenceCoverageEvaluator()
+    plan = build_plan()
+
+    without_adverse = evaluator.evaluate(
+        query_plan=plan,
+        guide_lookup=build_guide(precautions="정해진 용법을 지킵니다."),
+        rules=[],
+        chunks=[],
+    )
+    with_adverse = evaluator.evaluate(
+        query_plan=plan,
+        guide_lookup=build_guide(
+            precautions="정해진 용법을 지킵니다.",
+            adverse_reactions="드물게 발진이 나타날 수 있습니다.",
+        ),
+        rules=[],
+        chunks=[],
+    )
+
+    assert KnowledgeSectionType.CAUTION in without_adverse.covered_section_types
+    assert KnowledgeSectionType.ADVERSE_EVENT not in without_adverse.covered_section_types
+    assert KnowledgeSectionType.ADVERSE_EVENT in with_adverse.covered_section_types
+
+
+def test_unspecified_request_covers_available_guide_sections() -> None:
+    """항목을 지정하지 않은 질문도 확보한 근거를 covered로 남긴다.
+
+    빈 목록으로 두면 답변이 어떤 섹션을 선언하든 근거 밖으로 판정해 초안이 그대로 나간다.
+    """
+
+    coverage = MedicationEvidenceCoverageEvaluator().evaluate(
+        query_plan=build_plan(),
+        guide_lookup=build_guide(
+            usage_instructions="1일 3회 복용합니다.",
+            precautions="정해진 용법을 지킵니다.",
+        ),
+        rules=[],
+        chunks=[],
+    )
+
+    assert coverage.requested_section_types == []
+    assert coverage.covered_section_types == [
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.DAILY_INTAKE,
+        KnowledgeSectionType.CAUTION,
+    ]
+
+
+def test_requested_caution_also_covers_adverse_event_when_evidence_exists() -> None:
+    """같은 질문이 표현에 따라 다른 섹션 구성으로 나오지 않게 한다.
+
+    화면의 주의사항과 이상반응은 같은 주의사항 근거에서 오므로, 주의사항을 요청했고
+    이상반응 자료가 실제로 있으면 함께 확보로 센다.
+    """
+
+    evaluator = MedicationEvidenceCoverageEvaluator()
+    plan = build_plan(KnowledgeSectionType.CAUTION)
+
+    with_adverse = evaluator.evaluate(
+        query_plan=plan,
+        guide_lookup=build_guide(
+            precautions="정해진 용법을 지킵니다.",
+            adverse_reactions="드물게 발진이 나타날 수 있습니다.",
+        ),
+        rules=[],
+        chunks=[],
+    )
+    without_adverse = evaluator.evaluate(
+        query_plan=plan,
+        guide_lookup=build_guide(precautions="정해진 용법을 지킵니다."),
+        rules=[],
+        chunks=[],
+    )
+
+    assert KnowledgeSectionType.ADVERSE_EVENT in with_adverse.covered_section_types
+    assert KnowledgeSectionType.ADVERSE_EVENT not in without_adverse.covered_section_types
+
+
+def build_crosscheck_plan() -> MedicationKnowledgeQueryPlan:
+    return MedicationKnowledgeQueryPlan(
+        original_query="철분 먹어도 돼?",
+        expanded_query="철분",
+        section_types=[KnowledgeSectionType.FUNCTION],
+        crosscheck_pairs=[
+            MedicationInteractionQueryPair(
+                left_name="칼슘",
+                right_name="철분",
+                pair_type=InteractionPairType.SUPPLEMENT_SUPPLEMENT,
+                pair_key=calcium_iron_pair_key(),
+            )
+        ],
+    )
+
+
+def test_crosscheck_pair_is_verified_only_from_its_own_search_result() -> None:
+    """교차 확인 쌍은 전용 검색 결과로만 판정한다. 답변 근거에는 섞지 않는다."""
+    plan = build_crosscheck_plan()
+    chunk = build_interaction_chunk(pair_keys=[calcium_iron_pair_key()])
+
+    from_answer_chunks = MedicationEvidenceCoverageEvaluator().evaluate(
+        query_plan=plan,
+        guide_lookup=build_guide(),
+        rules=[],
+        chunks=[chunk],
+    )
+    from_crosscheck_chunks = MedicationEvidenceCoverageEvaluator().evaluate(
+        query_plan=plan,
+        guide_lookup=build_guide(),
+        rules=[],
+        chunks=[],
+        crosscheck_chunks=[chunk],
+    )
+
+    assert from_answer_chunks.verified_crosscheck_pair_keys == []
+    assert from_crosscheck_chunks.verified_crosscheck_pair_keys == [calcium_iron_pair_key()]
+
+
+def test_crosscheck_pair_without_evidence_is_not_verified() -> None:
+    """근거가 없으면 확인하지 않는다. 추론으로 메우면 없는 상호작용을 만든다."""
+    coverage = MedicationEvidenceCoverageEvaluator().evaluate(
+        query_plan=build_crosscheck_plan(),
+        guide_lookup=build_guide(),
+        rules=[],
+        chunks=[],
+        crosscheck_chunks=[build_interaction_chunk(pair_keys=[], content="다른 성분에 대한 설명입니다.")],
+    )
+
+    assert coverage.verified_crosscheck_pair_keys == []
+
+
+def test_crosscheck_pairs_do_not_change_requested_section_coverage() -> None:
+    """교차 확인은 질문이 요청한 항목의 충족 여부를 바꾸지 않는다."""
+    plan = build_crosscheck_plan()
+    chunk = build_interaction_chunk(pair_keys=[calcium_iron_pair_key()])
+
+    coverage = MedicationEvidenceCoverageEvaluator().evaluate(
+        query_plan=plan,
+        guide_lookup=build_guide(),
+        rules=[],
+        chunks=[],
+        crosscheck_chunks=[chunk],
+    )
+
+    assert coverage.requested_section_types == [KnowledgeSectionType.FUNCTION]
+    assert coverage.verified_interaction_pair_keys == []
+
+
+def test_verified_crosscheck_lets_the_answer_mention_the_interaction() -> None:
+    """확보 목록에 없으면 재작성이 초안의 대조 결과를 지운다."""
+    coverage = MedicationEvidenceCoverageEvaluator().evaluate(
+        query_plan=build_crosscheck_plan(),
+        guide_lookup=build_guide(),
+        rules=[],
+        chunks=[],
+        crosscheck_chunks=[build_interaction_chunk(pair_keys=[calcium_iron_pair_key()])],
+    )
+
+    assert KnowledgeSectionType.INTERACTION in coverage.covered_section_types
+    assert coverage.missing_section_types == []
+
+
+def test_unverified_crosscheck_does_not_widen_covered_sections() -> None:
+    coverage = MedicationEvidenceCoverageEvaluator().evaluate(
+        query_plan=build_crosscheck_plan(),
+        guide_lookup=build_guide(),
+        rules=[],
+        chunks=[],
+        crosscheck_chunks=[],
+    )
+
+    assert KnowledgeSectionType.INTERACTION not in coverage.covered_section_types

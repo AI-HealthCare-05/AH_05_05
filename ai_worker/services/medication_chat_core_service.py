@@ -46,6 +46,7 @@ from ai_worker.providers.db_medication_note_summary_provider import (
 from ai_worker.rag.embeddings.openai_embedding_provider import (
     OpenAIEmbeddingProvider,
 )
+from ai_worker.rag.ingredient_name_aliases import use_collection
 from ai_worker.rag.retrievers.medication_knowledge_retriever import (
     MedicationKnowledgeRetriever,
 )
@@ -136,6 +137,9 @@ def build_medication_chat_core_service(
 ) -> MedicationChatCoreService:
     if settings.OPENAI_API_KEY is None or not settings.OPENAI_API_KEY.get_secret_value().strip():
         raise AIConfigurationError("약·영양제 Chat Core를 구성하려면 OPENAI_API_KEY가 필요합니다.")
+    # 낡은 별칭은 지금 말뭉치에 없는 성분 표기를 엮어 근거를 오귀속시킨다.
+    # 컬렉션이 다르면 별칭 없이 동작한다(변경 이전과 동일).
+    use_collection(settings.KNOWLEDGE_QDRANT_COLLECTION)
     chat_tracer = tracer or build_chat_tracer(settings)
     model_policy = ChatModelPolicy(
         fast_model=settings.OPENAI_FAST_CHAT_MODEL,
