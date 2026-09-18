@@ -54,7 +54,7 @@ export function DateInput(props: InputProps) {
   };
   const time = draft.slice(11).split(':');
   return <>
-    <BaseInput {...rest} type="text" min={min} max={max} inputMode="none" value={partialInput ?? current} inputClassName={`${inputClassName ?? ''} !text-base cursor-pointer`} inputRef={(node) => {
+    <BaseInput {...rest} type="text" min={min} max={max} inputMode="none" value={partialInput ?? (withTime ? current.replace('T', ' ') : current)} inputClassName={`${inputClassName ?? ''} !text-base cursor-pointer`} inputRef={(node) => {
       field.current = node;
       if (typeof inputRef === 'function') inputRef(node);
       else if (inputRef) inputRef.current = node;
@@ -64,9 +64,10 @@ export function DateInput(props: InputProps) {
       const probe = document.createElement('input');
       selection.current = { start: event.target.selectionStart ?? 0, end: event.target.selectionEnd ?? 0 };
       probe.type = type!;
-      probe.value = event.target.value;
+      probe.value = withTime ? event.target.value.replace(' ', 'T') : event.target.value;
       setPartialInput(probe.value ? null : event.target.value);
-      if (!probe.value) event.target.value = '';
+      // 화면은 공백으로 표시하되 부모 폼과 API에는 기존 ISO 값을 전달한다.
+      event.target.value = probe.value;
       updateValidity(event.target.value);
       setUncontrolled(event.target.value);
       onChange?.(event);
