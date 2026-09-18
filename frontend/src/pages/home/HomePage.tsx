@@ -75,7 +75,7 @@ export function HomePage({
   doseRecordSaver = saveDoseTaken,
 }: HomePageProps) {
   const navigate = useNavigate();
-  const { authenticated, principalKey } = useSession();
+  const { authenticated, principalKey, isDemo } = useSession();
   const isAuthenticated = authenticatedOverride ?? authenticated;
   const principalRef = useRef(principalKey);
   const doseProgressGenerationRef = useRef(0);
@@ -387,6 +387,7 @@ export function HomePage({
     <div className="rx-home mx-auto flex h-dvh min-h-dvh w-full max-w-app flex-col overflow-hidden bg-background">
       {isAuthenticated ? (
         <Header
+          right={isDemo ? <span className="text-sm font-bold text-red-600">[데모 버전]</span> : undefined}
           title={
             <img src="/images/rxvita-logo-480.png" alt="RxVita" className="h-6 w-auto" />
           }

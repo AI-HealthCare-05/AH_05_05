@@ -22,6 +22,7 @@ from app.models.enums import (
 )
 from app.models.users import User
 from app.services.admin_settings import SmtpRuntimeSettings, SmtpSettingsService
+from app.services.demo_access import is_demo_account
 
 EMAIL_TASK_LEASE = timedelta(seconds=60)
 _UNFINISHED_STATUSES = (
@@ -396,10 +397,15 @@ class EmailBackgroundTaskExecutor:
             return False
         user = await User.get_or_none(
             id=job.reference_id,
-            email=recipient_email.casefold(),
             status=AccountStatus.ACTIVE,
         )
         if user is None:
+            return False
+        # The shared demo account may send to a visitor without signup verification.
+        # Ownership and ACTIVE status have already been checked above.
+        if is_demo_account(user.email):
+            return True
+        if user.email.casefold() != recipient_email.casefold():
             return False
         return await EmailVerification.filter(
             email=user.email.casefold(),

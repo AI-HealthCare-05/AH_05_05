@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.core import config
 from app.core.api_timeout import api_timeout
 from app.core.email.intake_report_renderer import render_intake_report_email
 from app.dependencies.email_background_tasks import get_email_task_scheduler
@@ -21,6 +22,7 @@ from app.dtos.intake_reports import (
 from app.models.background_jobs import BackgroundJob
 from app.models.enums import BackgroundJobStatus, BackgroundJobType
 from app.models.users import User
+from app.services.demo_access import DemoFeatureUnavailableError, is_demo_account
 from app.services.email_jobs import EmailJobService, EmailTaskScheduler
 from app.services.intake_report import (
     INTAKE_REPORT_API_GUARD_TIMEOUT_SECONDS,
@@ -136,9 +138,14 @@ async def send_intake_report_email(
     email_job_service: Annotated[EmailJobService, Depends(get_intake_report_email_job_service)],
     scheduler: Annotated[EmailTaskScheduler, Depends(get_email_task_scheduler)],
 ) -> IntakeReportEmailJobResponse:
+    demo_recipient = data.recipient_email
+    if demo_recipient is not None and (not config.DEMO_LOGIN_ENABLED or not is_demo_account(user.email)):
+        raise DemoFeatureUnavailableError()
     try:
         snapshot = email_service.consume_snapshot_token(token=data.email_token, user=user)
-        recipient_email = await email_service.require_verified_recipient(user=user)
+        recipient_email = (
+            str(demo_recipient) if demo_recipient else await email_service.require_verified_recipient(user=user)
+        )
     except IntakeReportEmailTokenError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except IntakeReportEmailNotVerifiedError as exc:
