@@ -87,3 +87,21 @@ def test_builder_wires_bounded_candidate_selector_using_configured_model() -> No
     assert isinstance(selector, OpenAIMedicationCandidateSelector)
     assert selector.model_name == settings.OPENAI_CHAT_MODEL
     assert selector._timeout_seconds <= 5.0
+
+
+def test_builder_uses_all_episode_medications_for_reports(monkeypatch) -> None:
+    import ai_worker.services.intake_report_core_service as module
+
+    captured = {}
+    provider_type = module.DbActiveIntakeContextProvider
+
+    def capture_provider(**kwargs):
+        captured.update(kwargs)
+        return provider_type(**kwargs)
+
+    monkeypatch.setattr(module, "DbActiveIntakeContextProvider", capture_provider)
+    settings = Config(OPENAI_API_KEY="offline-not-a-real-key", KNOWLEDGE_SEARCH_MODE="DENSE", _env_file=None)
+
+    build_intake_report_core_service(settings=settings, qdrant_client=object())
+
+    assert captured["include_all_episode_medications"] is True

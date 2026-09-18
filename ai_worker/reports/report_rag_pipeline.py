@@ -13,6 +13,7 @@ import re
 from collections.abc import Awaitable, Callable
 from contextlib import nullcontext
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Literal, Protocol
 from urllib.parse import urlparse
@@ -25,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
 from ai_worker.llm.prompts.prompt_assets import load_prompt_asset
 from ai_worker.reports.text_guidance_rules import mentions_food_or_drink
+from ai_worker.reports.v11_lifestyle_guidance import SUPPORTED_CALCULATION_STATUSES
 from ai_worker.schemas.intake_report_cards import CardSource, LifestyleCard, ReportGuidanceSectionStatus
 from ai_worker.schemas.interaction import InteractionEntityKind
 from ai_worker.schemas.knowledge import (
@@ -70,6 +72,22 @@ _FOOD_CONTEXT = re.compile(
 _CLINICAL_PRECAUTION = re.compile(
     r"질환|혈증|과량|이상\s*(?:사례|반응)|부작용|금기|"
     r"\b(?:disease|hypercalcemia|overdose|adverse|contraindicat\w*)\b",
+    re.IGNORECASE,
+)
+# Generic "overconsumption may be risky" language about an ingredient itself,
+# as opposed to a claim that names a specific reaction, organ, or disease.
+_GENERIC_OVERCONSUMPTION = re.compile(r"과[다량잉]\s*섭취|초과\s*섭취|지나치게\s*섭취|많이\s*섭취")
+# A named reaction, organ, or disease. Generic condition vocabulary only: no
+# nutrient, product, or drug name is hardcoded here or anywhere in this gate.
+_SPECIFIC_CONDITION = re.compile(
+    r"혈증|질환|신장|콩팥|결석|부전|간\s*손상|과민반응|알레르기|출혈|골절|"
+    r"\b(?:disease|failure|hypercalcemia|hyperkalemia|nephro\w*|renal)\b",
+    re.IGNORECASE,
+)
+# A warning about combining products, which the upper-limit gate never touches.
+_INTERACTION_CONTEXT = re.compile(
+    r"병용|상호\s*작용|함께\s*(?:복용|섭취|먹)|같이\s*(?:복용|섭취|먹)|동시에?\s*(?:복용|섭취)|"
+    r"\b(?:interact\w*|concomitant\w*)\b",
     re.IGNORECASE,
 )
 _MAX_BATCH_EVIDENCE_BYTES = 20_000
@@ -649,11 +667,20 @@ class ReportRagPipeline:
 
     @staticmethod
     def _verifier_input(claims: _ClaimsPayload, trusted: dict, chunks: list[RetrievedKnowledgeChunk]) -> dict:
-        # Give the existing verifier precise structural failures before final
-        # rejection. These checks do not establish medical support or approval.
+        # Give the existing verifier precise structural and server-owned safety
+        # failures before final rejection. These checks do not establish
+        # medical support or approval.
         content_by_id = {chunk.point_id: chunk.content for chunk in chunks}
+        ingredient_only_ids = {
+            str(target["id"])
+            for target in trusted.get("targets", [])
+            if isinstance(target, dict) and target.get("ingredient_only")
+        }
         checks = []
         for claim_index, claim in enumerate(claims.claims):
+            rendered_text = " ".join((claim.title, claim.summary, claim.action))
+            if _DOSE_CHANGE.search(rendered_text) or _INGREDIENT_DOSING.search(rendered_text):
+                checks.append({"claim_index": claim_index, "code": "dose_in_claim"})
             for evidence_index, evidence in enumerate(claim.evidence):
                 content = content_by_id.get(evidence.chunk_id)
                 if content is None or evidence.exact_quote.strip() not in content:
@@ -662,6 +689,16 @@ class ReportRagPipeline:
                             "claim_index": claim_index,
                             "evidence_index": evidence_index,
                             "code": "unknown_chunk" if content is None else "quote_not_in_chunk",
+                        }
+                    )
+                elif ingredient_only_ids.intersection(claim.target_ids) and (
+                    _DOSE_CHANGE.search(evidence.exact_quote) or _INGREDIENT_DOSING.search(evidence.exact_quote)
+                ):
+                    checks.append(
+                        {
+                            "claim_index": claim_index,
+                            "evidence_index": evidence_index,
+                            "code": "dosing_in_ingredient_quote",
                         }
                     )
         return {"candidate_claims": claims.model_dump(), "trusted_evidence": trusted, "server_checks": checks}
@@ -1221,6 +1258,81 @@ def build_openai_report_rag_pipeline(
     )
 
 
+def _positive_decimal(value: str | None) -> Decimal | None:
+    if not value or not value.strip():
+        return None
+    try:
+        number = Decimal(value)
+    except InvalidOperation:
+        return None
+    return number if number.is_finite() and number >= 0 else None
+
+
+def _nutrient_over_upper_limits(nutrient_totals: list[Any]) -> dict[str, bool]:
+    """Map a nutrient name to whether its one known total strictly exceeds its upper limit.
+
+    Only a nutrient with exactly one row, a calculation status that means the
+    amount really was computed, a unit, and a positive upper limit is listed.
+    Duplicate rows for one name are dropped rather than combined, matching the
+    conservative rule the nutrient section already uses. A nutrient absent from
+    this map has no comparable total or limit today. That is missing data, and
+    the caller treats it as "unknown", never as "within the limit".
+    """
+    rows_by_name: dict[str, list[Any]] = {}
+    for total in nutrient_totals:
+        name = (getattr(total, "nutrient_name", "") or "").strip()
+        if name:
+            rows_by_name.setdefault(name, []).append(total)
+
+    result: dict[str, bool] = {}
+    for name, rows in rows_by_name.items():
+        if len(rows) != 1:
+            continue  # Two rows for one nutrient are not a single known total.
+        total = rows[0]
+        if getattr(total, "calculation_status", "") not in SUPPORTED_CALCULATION_STATUSES:
+            continue
+        if not (getattr(total, "unit", "") or "").strip():
+            continue  # An amount without a unit is not comparable to a limit.
+        amount = _positive_decimal(getattr(total, "amount", None))
+        upper = _positive_decimal(getattr(total, "upper_limit_value", None))
+        if amount is None or upper is None or upper <= 0:
+            continue
+        result[name] = amount > upper
+    return result
+
+
+def _filter_generic_overconsumption_cards(
+    cards: list[LifestyleCard], nutrient_totals: list[Any]
+) -> list[LifestyleCard]:
+    """Withhold a generic ingredient-overconsumption claim unless a known,
+    comparable total for that ingredient strictly exceeds its upper limit.
+
+    Only a claim whose whole point is "taking too much of this may be risky"
+    is gated. A claim that names a specific reaction, organ, or disease (for
+    example hypercalcemia or kidney disease) and any interaction warning are
+    never touched: they stay exactly as verified regardless of the user's
+    computed totals.
+
+    A missing, duplicated, or non-comparable total withholds the generic
+    claim. Withholding removes only that one card; nothing is rewritten to say
+    the ingredient is within its limit, and no "safe" wording is ever emitted
+    in its place.
+    """
+    over_upper_by_nutrient = _nutrient_over_upper_limits(nutrient_totals)
+    kept: list[LifestyleCard] = []
+    for card in cards:
+        text = " ".join((card.title, card.summary, card.action))
+        if not _GENERIC_OVERCONSUMPTION.search(text):
+            kept.append(card)
+            continue
+        if _SPECIFIC_CONDITION.search(text) or _INTERACTION_CONTEXT.search(text):
+            kept.append(card)
+            continue
+        if any(over_upper for name, over_upper in over_upper_by_nutrient.items() if name in text):
+            kept.append(card)
+    return kept
+
+
 class RagIntakeReportCardsGenerator:
     """Server-rendered report cards plus source-locked RAG lifestyle cards."""
 
@@ -1291,11 +1403,12 @@ class RagIntakeReportCardsGenerator:
         cards = base.cards
         if cards is None:  # The established generator always returns cards; fail closed if its contract changes.
             raise RuntimeError("evidence card generator returned no cards")
+        rag_cards = _filter_generic_overconsumption_cards(rag.cards, draft.nutrient_totals)
         sources = {source.id: source for source in cards.sources}
         sources.update({source.id: source for source in rag.sources})
         merged = cards.model_copy(
             update={
-                "lifestyle": [*cards.lifestyle, *rag.cards],
+                "lifestyle": [*cards.lifestyle, *rag_cards],
                 "sources": sorted(sources.values(), key=lambda source: source.id),
                 "section_statuses": rag.section_statuses,
             }

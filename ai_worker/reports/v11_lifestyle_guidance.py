@@ -17,7 +17,9 @@ from urllib.parse import urlparse
 from ai_worker.schemas.intake_report import IntakeReportDraft, IntakeReportItemType, IntakeReportNutrientTotal
 from ai_worker.schemas.intake_report_cards import CardSource, LifestyleCard
 
-_SUPPORTED_CALCULATION_STATUSES = frozenset(
+# The only calculation statuses whose nutrient amount is a real computed total.
+# Shared so every caller uses one definition of "this total is comparable".
+SUPPORTED_CALCULATION_STATUSES = frozenset(
     {"LABEL_SCHEDULE", "PARTIAL_LABEL_SCHEDULE", "REGISTERED_SCHEDULE", "PARTIAL_REGISTERED_SCHEDULE"}
 )
 _REGISTRY_RESOURCE = "data/v11_lifestyle_guidance.json"
@@ -221,7 +223,7 @@ def _food_card(
     food_action: str,
     food_category: str,
 ) -> LifestyleCard | None:
-    if total.calculation_status not in _SUPPORTED_CALCULATION_STATUSES:
+    if total.calculation_status not in SUPPORTED_CALCULATION_STATUSES:
         return None
     if total.reference_kind is None or total.unit not in spec.expected_units:
         return None
@@ -264,7 +266,7 @@ def _timing_card(
     *,
     timing_category: str,
 ) -> LifestyleCard | None:
-    if total.calculation_status not in _SUPPORTED_CALCULATION_STATUSES:
+    if total.calculation_status not in SUPPORTED_CALCULATION_STATUSES:
         return None
     if total.unit not in spec.expected_units:
         return None

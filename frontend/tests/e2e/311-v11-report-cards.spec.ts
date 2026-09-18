@@ -693,22 +693,58 @@ test('guidance groups interleaved warnings by medicine without dropping details'
   const products = section.locator('.v11-guidance-product');
   await expect(products).toHaveCount(2);
   await expect(products.first().getByRole('heading', { level: 3 })).toHaveText('가상 처방약 감마 25mg');
-  await expect(products.first().getByRole('heading', { level: 4 })).toHaveText(['감마 첫 번째 주의', '감마 두 번째 주의', '감마 세 번째 주의']);
+  await expect(products.first().locator('h4')).toHaveCount(0);
   await expect(products.first()).toContainText('첫 번째 설명');
   await expect(products.first()).toContainText('두 번째 설명');
   await expect(products.first()).toContainText('세 번째 설명');
   await expect(products.last()).toContainText('델타 설명');
   await expect(section.locator('article')).toHaveCount(2);
   await expect(products.first().getByText(disclaimer, { exact: true })).toHaveCount(1);
-  expect(await products.first().evaluate(element => {
-    const lastTitle = element.querySelector('h4:last-child');
-    const description = element.querySelector('.v11-guidance-description');
-    return Boolean(lastTitle && description && (lastTitle.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING));
-  })).toBe(true);
+  await expect(products.first().locator('h4')).toHaveCount(0);
+  await expect(products.first().locator('.v11-action')).toHaveCount(0);
   for (const width of [390, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await section.screenshot({ path: testInfo.outputPath(`medicine-guidance-${width}.png`) });
+  }
+});
+
+test('guidance merges screenshot-shaped C and D consultation variants into one body each', async ({ page }, testInfo) => {
+  const grouped = structuredClone(report);
+  const base = report.cards.lifestyle[0];
+  grouped.cards.lifestyle = [
+    {
+      ...base,
+      id: 'screenshot-c',
+      title: '비타민 C 신장질환 주의',
+      summary: '비타민 C를 섭취하기 전에 신장질환이 있는 경우 전문가와 상담해야 합니다.',
+      action: '신장질환이 있는 경우 비타민 C 섭취 전에 전문가와 상담하십시오.',
+    },
+    {
+      ...base,
+      id: 'screenshot-d',
+      title: '비타민 D 고칼슘혈증 주의',
+      summary: '비타민 D를 섭취할 때 고칼슘혈증이 있는 경우 전문가와 상담해야 합니다.',
+      action: '고칼슘혈증이 있거나 의약품을 복용 중이라면 비타민 D 섭취 전에 전문가와 상담하십시오.',
+    },
+  ];
+  await page.route('**/api/v1/intake-reports', route => route.fulfill({ json: grouped }));
+  await page.goto('/reports/new?source=medications');
+  await page.getByRole('button', { name: '보고서 생성하기', exact: true }).click();
+  const product = page.locator('#v11-lifestyle .v11-guidance-product');
+  const description = product.locator('.v11-guidance-description');
+  await expect(product).toHaveCount(1);
+  await expect(product.locator('h4')).toHaveCount(0);
+  await expect(product.locator('.v11-action')).toHaveCount(0);
+  await expect(description.locator('p')).toHaveCount(2);
+  await expect(description).toContainText('신장질환이 있는 경우 비타민 C 섭취 전에 전문가와 상담하십시오.');
+  await expect(description).toContainText('고칼슘혈증이 있거나 의약품을 복용 중이라면 비타민 D 섭취 전에 전문가와 상담하십시오.');
+  await expect(product).not.toContainText('비타민 C 신장질환 주의');
+  await expect(product).not.toContainText('비타민 D 고칼슘혈증 주의');
+  for (const width of [390, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await product.screenshot({ path: testInfo.outputPath(`screenshot-guidance-${width}.png`) });
   }
 });
 
@@ -730,7 +766,7 @@ test('guidance separates colliding medication and supplement IDs and keeps joint
   await expect(groups).toHaveCount(4);
   await expect(groups.nth(0).locator('h3')).toHaveText('가상 처방약 감마 25mg');
   await expect(groups.nth(1).locator('h3')).toHaveText('동일 ID 영양제');
-  await expect(groups.nth(0)).toContainText('약 음식 주의');
+  await expect(groups.nth(0)).toContainText(base.summary);
   await expect(groups.nth(0)).not.toContainText('동일 ID 영양제');
   await expect(groups.nth(2).locator('h3')).toHaveText('공통 안내');
   await expect(groups.nth(3).locator('h3')).toHaveText('공통 안내');
@@ -748,9 +784,10 @@ test('product consolidation retains all 25 distinct warnings without a display c
   await page.getByRole('button', { name: '보고서 생성하기', exact: true }).click();
   const section = page.locator('#v11-lifestyle');
   await expect(section.locator('article')).toHaveCount(1);
-  await expect(section.locator('h4')).toHaveCount(25);
-  await expect(section.locator('.v11-guidance-description p')).toHaveCount(25);
-  await expect(section.locator('.v11-action p')).toHaveCount(25);
+  await expect(section.locator('h4')).toHaveCount(0);
+  await expect(section.locator('.v11-guidance-description p')).toHaveCount(51);
+  await expect(section.locator('.v11-action')).toHaveCount(0);
+  await section.getByRole('button', { name: /자세히 펼쳐보기/ }).click();
   await expect(section.getByText('설명 25', { exact: true })).toBeVisible();
 });
 
@@ -776,9 +813,9 @@ for (const startsWithGroup of [false, true]) {
     const section = page.locator('#v11-lifestyle');
     const groups = section.locator('.v11-guidance-product');
     await expect(groups).toHaveCount(1);
-    await expect(groups.locator('h4')).toHaveCount(grouped.cards.lifestyle.length);
+    await expect(groups.locator('h4')).toHaveCount(0);
     await expect(groups.locator('.v11-pair')).toHaveCount(0);
-    await expect(groups.locator('.v11-action p')).toHaveCount(startsWithGroup ? 3 : 4);
+    await expect(groups.locator('.v11-action')).toHaveCount(0);
     for (const card of grouped.cards.lifestyle) await expect(groups).toContainText(card.summary);
     for (const width of [320, 1280]) {
       await page.setViewportSize({ width, height: 900 });

@@ -52,7 +52,7 @@ def test_markdown_groups_product_guidance_without_interleaving_or_losing_rag_ref
                 id="habit:two-drugs",
                 category="생활 관리",
                 title="두 약 함께 안내",
-                summary="두 약 설명",
+                summary="두 약의 조합 설명",
                 action="두 제품을 함께 확인하세요.",
                 related_item_ids=[303, 101],
                 source_ids=["rag-d"],
@@ -88,13 +88,13 @@ def test_markdown_groups_product_guidance_without_interleaving_or_losing_rag_ref
     markdown = render_cards_markdown(cards, draft)
 
     assert "## 약·영양제별 주의사항 및 가이드" in markdown
-    assert markdown.index("### 아세트아미노펜\n") < markdown.index("#### 첫 약 안내")
-    assert (
-        markdown.index("#### 첫 약 안내") < markdown.index("#### 둘째 약 안내") < markdown.index("### 동일번호 영양제")
-    )
-    assert markdown.index("### 공통 안내") < markdown.index("#### 두 약 함께 안내")
+    assert "#### 첫 약 안내" not in markdown
+    assert "#### 둘째 약 안내" not in markdown
+    assert markdown.index("### 아세트아미노펜\n") < markdown.index("첫 약 설명")
+    assert markdown.index("첫 약 설명") < markdown.index("둘째 약 설명") < markdown.index("### 동일번호 영양제")
+    assert markdown.index("### 공통 안내") < markdown.index("두 약의 조합 설명")
     assert markdown.count(COMMON_INGREDIENT_DISCLAIMER) == 1
-    assert markdown.index("둘째 약 안내") < markdown.index(COMMON_INGREDIENT_DISCLAIMER) < markdown.index("첫 약 설명")
+    assert markdown.index(COMMON_INGREDIENT_DISCLAIMER) < markdown.index("첫 약 설명")
     assert markdown.count(shared_action) == 2
     assert markdown.count("두 제품을 함께 확인하세요.") == 1
     for source_title in ("첫 약 근거", "영양제 근거", "둘째 약 근거", "두 약 근거", "두 약 순서 반대 근거"):
@@ -139,7 +139,7 @@ def test_email_groups_product_guidance_without_interleaving() -> None:
             "id": "rag:lifestyle:medication:1:2",
             "category": "생활 관리",
             "title": "둘째 첫 약 안내",
-            "summary": f"{COMMON_INGREDIENT_DISCLAIMER} 둘째 첫 약 설명",
+            "summary": f"{COMMON_INGREDIENT_DISCLAIMER} 둘째 약의 추가 설명",
             "action": "제품 설명서를 확인하세요.",
             "related_item_ids": [1],
             "source_ids": ["rag-c"],
@@ -165,13 +165,14 @@ def test_email_groups_product_guidance_without_interleaving() -> None:
     markup, plain = render_intake_report_email(IntakeReportResponse.model_validate(data))
 
     guidance = plain.split("약·영양제별 주의사항 및 가이드", maxsplit=1)[1]
-    assert guidance.index("등록한 약") < guidance.index("첫 약 안내") < guidance.index("둘째 첫 약 안내")
-    assert guidance.index("둘째 첫 약 안내") < guidance.index("두 번째 약") < guidance.index("두 번째 약 안내")
-    assert "첫 약 안내\n둘째 첫 약 안내" in guidance
+    assert guidance.index("등록한 약") < guidance.index("첫 약 설명") < guidance.index("둘째 약의 추가 설명")
+    assert guidance.index("둘째 약의 추가 설명") < guidance.index("두 번째 약") < guidance.index("두 번째 약 설명")
+    assert "첫 약 안내" not in guidance
+    assert "둘째 첫 약 안내" not in guidance
     assert plain.count(COMMON_INGREDIENT_DISCLAIMER) == 1
     assert markup.count(COMMON_INGREDIENT_DISCLAIMER) == 1
     assert "공통 안내 · 2개 항목" not in markup.split("약·영양제별 주의사항 및 가이드", maxsplit=1)[1]
-    assert markup.count("<h4") >= 3
+    assert "<h4" not in markup.split("약·영양제별 주의사항 및 가이드", maxsplit=1)[1]
     for source_title in ("첫 약 근거", "두 번째 약 근거", "둘째 첫 약 근거"):
         assert source_title in plain
 
@@ -248,6 +249,6 @@ def test_group_resolver_uses_declared_card_type_and_never_guesses_a_collision() 
     ]
     medication_display = product_guidance_display(groups[0])
     assert medication_display.categories == ("음식", "운전")
-    assert medication_display.warning_titles == ("약 음식 주의", "약 음식 주의")
+    assert medication_display.warning_titles == ("약 음식 주의",)
     assert medication_display.actions == ("약 & 행동",)
     assert medication_display.source_ids == ("med-food", "med-driving")
