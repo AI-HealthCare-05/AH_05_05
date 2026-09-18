@@ -34,9 +34,12 @@ from app.core.db.databases import TORTOISE_ORM  # noqa: E402
 OUTPUT_PATH = PROJECT_ROOT / "ai_worker" / "rag" / "data" / "ingredient_name_aliases.json"
 SCROLL_BATCH = 2000
 
-# `한글(english)` 병기. 한글 쪽은 뒤에서부터 카탈로그와 맞춰 보므로 넉넉히 잡는다.
+# `한글(english)` 병기.
 _BILINGUAL = re.compile(r"([가-힣]{2,20})\s*\(\s*([A-Za-z][A-Za-z0-9\-' ]{2,30})\s*\)")
 _MIN_ENGLISH_LENGTH = 3
+# 한 번만 등장한 병기는 원문 오타·규격 표기를 그대로 들여온다.
+# 실측: `로바스타틴(atrovastatin)`, `시메티콘(usp)`, `헤파린(lmwh)`이 모두 1회 등장이다.
+_MIN_OCCURRENCES = 2
 
 
 def _normalize_english(value: str) -> str:
@@ -44,11 +47,14 @@ def _normalize_english(value: str) -> str:
 
 
 def _catalog_match(korean: str, catalog: set[str]) -> str | None:
-    """카탈로그에 정확히 일치하는 가장 긴 접미를 고른다."""
-    for start in range(len(korean)):
-        candidate = korean[start:]
-        if candidate.casefold() in catalog:
-            return candidate
+    """포착한 한글이 카탈로그 성분명과 통째로 일치할 때만 채택한다.
+
+    앞에서 한 글자씩 깎아 맞추면 카탈로그에 없는 이름이 다른 물질로 절단된다.
+    실측: `공황(panic)`→`황`, `대황(rheum palmatum)`→`황`,
+    `클로르펜터민(chlorphentermine)`→`펜터민`. 없는 근거를 만드는 경로다.
+    """
+    if korean.casefold() in catalog:
+        return korean
     return None
 
 
@@ -109,18 +115,26 @@ async def main() -> None:
     catalog = await _load_catalog()
     candidates, chunk_count, raw_count = await _collect_aliases(settings=settings, catalog=catalog)
 
-    aliases = {english: counter.most_common(1)[0][0] for english, counter in sorted(candidates.items())}
+    accepted = {
+        english: counter.most_common(1)[0]
+        for english, counter in sorted(candidates.items())
+        if counter.most_common(1)[0][1] >= _MIN_OCCURRENCES
+    }
+    aliases = {english: korean for english, (korean, _) in accepted.items()}
     payload = {
         "generated_at": datetime.now(UTC).isoformat(),
         "source_collection": settings.KNOWLEDGE_QDRANT_COLLECTION,
         "scanned_chunk_count": chunk_count,
         "bilingual_match_count": raw_count,
         "catalog_entity_count": len(catalog),
+        "minimum_occurrences": _MIN_OCCURRENCES,
+        # 사람이 항목을 쓰지는 않지만, 몇 번 관측됐는지는 검토할 수 있어야 한다.
+        "occurrences": {english: count for english, (_, count) in accepted.items()},
         "aliases": aliases,
     }
 
     print(f"말뭉치 {chunk_count}청크 · 병기 {raw_count}건 · 카탈로그 {len(catalog)}종")
-    print(f"채택 별칭 {len(aliases)}종")
+    print(f"후보 {len(candidates)}종 → 채택 {len(aliases)}종 (최소 관측 {_MIN_OCCURRENCES}회)")
     for english, korean in list(aliases.items())[:10]:
         print(f"  {english:28} → {korean}")
     if args.dry_run:
