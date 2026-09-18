@@ -15,15 +15,17 @@ import { getPushPermission } from '@/shared/push/permission';
 import { registerPushNotifications, unregisterPushNotifications } from '@/shared/push/register';
 
 interface SessionValue {
+  isDemo: boolean;
   authenticated: boolean;
   principalKey: string | null;
-  signIn: (principalKey: string) => void;
+  signIn: (principalKey: string, demo?: boolean) => void;
   signOut: () => Promise<void>;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
+  const [demoPrincipal, setDemoPrincipal] = useState(() => sessionStorage.getItem('rxvita.demo-principal'));
   const [principalKey, setPrincipalKey] = useState(() => restoreAccountPrincipal());
   const [authenticated, setAuthenticated] = useState(
     () => Boolean(restoreAccessToken() && restoreAccountPrincipal()),
@@ -38,6 +40,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const expireCurrentSession = () => {
+      sessionStorage.removeItem('rxvita.demo-principal');
+      setDemoPrincipal(null);
       void unregisterPushNotifications({ deactivateServer: false });
       const principal = restoreAccountPrincipal();
       if (principal) endActivitySession(principal);
@@ -74,9 +78,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       authenticated,
+      isDemo: authenticated && demoPrincipal === principalKey,
       principalKey,
-      signIn: (nextPrincipalKey: string) => {
+      signIn: (nextPrincipalKey: string, demo = false) => {
         const normalizedPrincipal = nextPrincipalKey.trim().toLowerCase();
+        if (demo) sessionStorage.setItem('rxvita.demo-principal', normalizedPrincipal);
+        else sessionStorage.removeItem('rxvita.demo-principal');
+        setDemoPrincipal(demo ? normalizedPrincipal : null);
         if (!restoreAccessToken() || !normalizedPrincipal) {
           setAccountPrincipal(null);
           setPrincipalKey(null);
@@ -89,6 +97,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setAuthenticated(true);
       },
       signOut: async () => {
+        sessionStorage.removeItem('rxvita.demo-principal');
+        setDemoPrincipal(null);
         // Invalidate earlier refreshes, then preserve server Push cleanup with a bounded wait.
         setAccessToken(restoreAccessToken());
         let timeout: number | undefined;
@@ -100,7 +110,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         await endSession();
       },
     }),
-    [authenticated, principalKey],
+    [authenticated, principalKey, demoPrincipal],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

@@ -9,6 +9,7 @@ from app.models.enums import AccountStatus
 from app.models.users import User
 from app.repositories.user_repository import UserRepository
 from app.services.auth import AuthService
+from app.services.demo_access import reject_demo_account
 
 
 class UserManageService:
@@ -18,6 +19,7 @@ class UserManageService:
 
     async def update_user(self, user: User, data: UserUpdateRequest) -> User:
         if data.email:
+            reject_demo_account(user.email)
             await self.auth_service.check_email_exists(data.email)
         payload = data.model_dump(exclude_none=True)
         if data.phone_number:
@@ -35,6 +37,7 @@ class UserManageService:
         관리자 쪽(AdminAuthService.change_password)과 같은 흐름이고 제약도 같다 —
         발급된 JWT 를 개별 폐기할 수단이 없어 다른 기기에 남은 토큰은 끊지 못한다.
         """
+        reject_demo_account(user.email)
         if not verify_password(data.current_password, user.hashed_password):
             raise InvalidPasswordError()
         # 현재와 같은 값이면 바꾼 것이 아니다. 해시가 매번 달라 문자열 비교로는 못 잡는다.
@@ -57,6 +60,7 @@ class UserManageService:
         비밀번호 변경과 같은 제약이 있다. 발급된 JWT 를 개별 폐기할 수단이 없어
         **탈퇴 뒤에도 액세스 토큰이 만료될 때까지 유효하다.**
         """
+        reject_demo_account(user.email)
         if not verify_password(data.password, user.hashed_password):
             raise InvalidPasswordError()
 
