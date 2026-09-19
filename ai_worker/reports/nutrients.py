@@ -145,6 +145,14 @@ def _measurement(value: object) -> tuple[Decimal, str] | None:
     return amount * Decimal(factors[unit]), "volume" if unit in {"l", "ml"} else "mass"
 
 
+def nutrient_display_specs() -> tuple[tuple[str, str, str], ...]:
+    """표시할 영양소의 (컬럼, 이름, 단위).
+
+    리포트와 챗봇이 같은 영양소를 다른 이름·단위로 부르지 않도록 한 곳에서만 정의한다.
+    """
+    return tuple((spec.field, spec.name, spec.unit) for spec in _NUTRIENT_SPECS)
+
+
 def registered_intake_factor(product: _ProductLike, registration: ActiveSupplement) -> tuple[Decimal, str] | None:
     """등록한 복용 계획으로 환산하는 계수와 그 기준 설명.
 

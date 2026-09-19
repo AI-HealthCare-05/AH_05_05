@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from ai_worker.providers.db_active_intake_context_provider import (
     DbActiveIntakeContextProvider,
 )
+from ai_worker.reports.nutrients import nutrient_display_specs
 from app.models.supplement_nutrients import SupplementNutrient
 
 ONE = Decimal("1")
@@ -18,7 +19,7 @@ def test_only_recorded_amounts_are_reported() -> None:
 
     assert [(item.name, item.amount, item.unit) for item in amounts] == [
         ("칼슘", "300", "mg"),
-        ("비타민 D", "10", "㎍"),
+        ("비타민 D", "10", "μg"),
     ]
 
 
@@ -54,6 +55,14 @@ def test_other_products_keep_fat_labelled_as_fat() -> None:
 
 def test_every_reported_column_exists_on_the_catalog_model() -> None:
     """컬럼명이 어긋나면 그 성분이 예외 없이 조용히 사라진다."""
-    columns = {column for column, _, _ in DbActiveIntakeContextProvider._NUTRIENT_COLUMNS}
+    columns = {column for column, _, _ in nutrient_display_specs()}
 
     assert columns <= set(SupplementNutrient._meta.fields_map)
+
+
+def test_chat_and_report_use_one_nutrient_label_table() -> None:
+    """표가 둘이면 같은 영양소를 리포트와 챗봇이 다르게 부른다."""
+    labels = {name for _, name, _ in nutrient_display_specs()}
+
+    assert "나이아신" in labels
+    assert "니아신" not in labels

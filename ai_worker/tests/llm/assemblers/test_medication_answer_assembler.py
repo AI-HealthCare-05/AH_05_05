@@ -1164,7 +1164,7 @@ def test_unverified_crosscheck_pair_is_not_mentioned_at_all() -> None:
 
 
 def test_supplement_lines_state_the_scope_of_the_public_nutrient_data() -> None:
-    """13개 성분만 담긴 자료다. 밝히지 않으면 표시된 것이 전부로 읽힌다."""
+    """자료가 담는 성분은 제품 표시사항의 일부다. 밝히지 않으면 표시된 것이 전부로 읽힌다."""
     supplement = ActiveSupplement(
         registration_id=1,
         supplement_nutrient_id=1,

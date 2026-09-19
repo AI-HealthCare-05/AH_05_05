@@ -9,7 +9,11 @@ from ai_worker.domain.errors import (
     PatientContextNotFoundError,
     UnconfirmedPatientContextError,
 )
-from ai_worker.reports.nutrients import _number, registered_intake_factor
+from ai_worker.reports.nutrients import (
+    _number,
+    nutrient_display_specs,
+    registered_intake_factor,
+)
 from ai_worker.schemas.interaction import normalize_interaction_name
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
@@ -202,33 +206,9 @@ class DbActiveIntakeContextProvider:
             scheduled_slots=sorted(slot.slot.value for slot in medication.slots),
         )
 
-    # 식품영양성분 DB의 성분 컬럼과 화면 표기. 값이 있는 것만 답변에 올린다.
-    # 이 자료는 오메가3를 따로 담지 않고 지방으로만 기록한다(오메가3 제품 671개 중 631개가
-    # `fat_g`만 보유). 거시영양소를 빼면 오메가3 제품이 비타민 영양제처럼 보인다.
-    _NUTRIENT_COLUMNS: tuple[tuple[str, str, str], ...] = (
-        ("protein_g", "단백질", "g"),
-        ("fat_g", "지방", "g"),
-        ("carb_g", "탄수화물", "g"),
-        ("sugar_g", "당류", "g"),
-        ("fiber_g", "식이섬유", "g"),
-        ("calcium_mg", "칼슘", "mg"),
-        ("iron_mg", "철", "mg"),
-        ("phosphorus_mg", "인", "mg"),
-        ("potassium_mg", "칼륨", "mg"),
-        ("sodium_mg", "나트륨", "mg"),
-        ("vitamin_a_ug_rae", "비타민 A", "㎍RAE"),
-        ("retinol_ug", "레티놀", "㎍"),
-        ("beta_carotene_ug", "베타카로틴", "㎍"),
-        ("thiamine_mg", "티아민", "mg"),
-        ("riboflavin_mg", "리보플라빈", "mg"),
-        ("niacin_mg", "니아신", "mg"),
-        ("vitamin_c_mg", "비타민 C", "mg"),
-        ("vitamin_d_ug", "비타민 D", "㎍"),
-    )
-
-    # 오메가3 제품은 이 자료에서 총지방으로만 기록된다. 제품명이 오메가3를 가리킬 때는
-    # `지방`보다 `오메가-3`가 사용자에게 맞는 이름이다. 다만 총지방이 곧 EPA+DHA 함량은
-    # 아니므로 답변에는 전체 성분을 제품 표시사항에서 확인하라는 안내를 함께 둔다.
+    # 이 자료에는 EPA·DHA 컬럼이 없고 오메가3 제품의 기능성 성분은 총지방으로만 기록된다.
+    # 제품명이 오메가3를 가리킬 때는 `지방`보다 `오메가-3`가 사용자에게 맞는 이름이다.
+    # 다만 총지방이 곧 EPA+DHA 함량은 아니므로 답변에 그 사실을 함께 밝힌다.
     _OMEGA_PRODUCT_NAME = re.compile(r"오메가\s*-?\s*3|EPA|DHA", re.IGNORECASE)
     _OMEGA_FAT_LABEL = "오메가-3"
 
@@ -247,7 +227,7 @@ class DbActiveIntakeContextProvider:
         product_name = str(getattr(nutrient, "name", "") or "")
         is_omega_product = bool(cls._OMEGA_PRODUCT_NAME.search(product_name))
         amounts: list[SupplementNutrientAmount] = []
-        for column, label, unit in cls._NUTRIENT_COLUMNS:
+        for column, label, unit in nutrient_display_specs():
             value = _number(getattr(nutrient, column, None))
             if value is None or value <= 0:
                 continue
