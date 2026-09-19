@@ -16,6 +16,7 @@ from ai_worker.reports.nutrients import (
 )
 from ai_worker.schemas.interaction import normalize_interaction_name
 from ai_worker.schemas.medication_chat import (
+    OMEGA_NUTRIENT_NAME,
     ActiveIntakeContext,
     ActiveMedication,
     ActiveSupplement,
@@ -210,7 +211,7 @@ class DbActiveIntakeContextProvider:
     # 제품명이 오메가3를 가리킬 때는 `지방`보다 `오메가-3`가 사용자에게 맞는 이름이다.
     # 다만 총지방이 곧 EPA+DHA 함량은 아니므로 답변에 그 사실을 함께 밝힌다.
     _OMEGA_PRODUCT_NAME = re.compile(r"오메가\s*-?\s*3|EPA|DHA", re.IGNORECASE)
-    _OMEGA_FAT_LABEL = "오메가-3"
+    _OMEGA_FAT_LABEL = OMEGA_NUTRIENT_NAME
 
     @classmethod
     def _nutrient_amounts(

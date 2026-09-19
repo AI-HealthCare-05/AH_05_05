@@ -12,6 +12,7 @@ from ai_worker.schemas.knowledge import (
     RetrievedKnowledgeChunk,
 )
 from ai_worker.schemas.medication_chat import (
+    OMEGA_NUTRIENT_NAME,
     ActiveIntakeContext,
     ActiveMedication,
     ActiveSupplement,
@@ -1233,17 +1234,17 @@ def test_same_named_products_are_listed_once_without_shifting_amounts() -> None:
         [
             build_supplement(
                 "비타 D 2000(120캡슐)",
-                nutrients=[SupplementNutrientAmount(name="비타민 D", amount="50", unit="㎍")],
+                nutrients=[SupplementNutrientAmount(name="비타민 D", amount="50", unit="μg")],
             ),
             build_supplement(
                 "비타 D 2000(60캡슐)",
-                nutrients=[SupplementNutrientAmount(name="비타민 D", amount="25", unit="㎍")],
+                nutrients=[SupplementNutrientAmount(name="비타민 D", amount="25", unit="μg")],
             ),
         ],
         with_dose=False,
     )
 
-    assert lines[0] == "- 비타 D 2000 · 비타민 D 50㎍"
+    assert lines[0] == "- 비타 D 2000 · 비타민 D 50μg"
     assert len([line for line in lines if line.startswith("- 비타 D 2000")]) == 1
 
 
@@ -1253,6 +1254,21 @@ def test_omega_amounts_state_that_they_come_from_total_fat() -> None:
             build_supplement(
                 "프리미엄 오메가-3",
                 nutrients=[SupplementNutrientAmount(name="오메가-3", amount="1", unit="g")],
+            )
+        ],
+        with_dose=False,
+    )
+
+    assert "총지방으로 기록된 값" in lines[-1]
+
+
+def test_omega_notice_is_bound_to_the_shared_nutrient_name() -> None:
+    """이름이 어긋나면 `총지방으로 기록된 값` 안내가 조용히 사라진다."""
+    lines = MedicationAnswerAssembler.supplement_intake_lines(
+        [
+            build_supplement(
+                "프리미엄 오메가-3",
+                nutrients=[SupplementNutrientAmount(name=OMEGA_NUTRIENT_NAME, amount="1", unit="g")],
             )
         ],
         with_dose=False,

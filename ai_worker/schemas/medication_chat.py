@@ -269,6 +269,11 @@ class ActiveMedication(BaseModel):
     scheduled_slots: list[str] = Field(default_factory=list)
 
 
+# 이 자료에는 EPA·DHA 컬럼이 없어 오메가3 제품의 기능성 성분이 총지방으로만 기록된다.
+# 그 사실을 알리는 안내 문구가 이 이름에 걸려 있으므로 한 곳에서만 정의한다.
+OMEGA_NUTRIENT_NAME = "오메가-3"
+
+
 class SupplementNutrientAmount(BaseModel):
     """식품영양성분 DB에 확정 값으로 들어 있는 성분 함량."""
 

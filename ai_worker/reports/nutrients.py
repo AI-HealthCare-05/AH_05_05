@@ -65,6 +65,8 @@ class _MissingCatalogProduct:
     vitamin_d_ug: Decimal | None = None
 
 
+# 리포트의 총량·상한 비교와 챗봇의 성분 표시가 모두 이 표를 쓴다(`nutrient_display_specs`).
+# 항목을 더하거나 이름·단위를 바꾸면 두 화면이 함께 바뀐다.
 _NUTRIENT_SPECS = (
     _NutrientSpec("fiber_g", "식이섬유", "g", "fiber_g", None),
     _NutrientSpec("calcium_mg", "칼슘", "mg", "calcium_mg", "calcium_mg_ul"),
