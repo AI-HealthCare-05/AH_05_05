@@ -374,7 +374,7 @@ export function OfficialChallengeParticipationPage() {
     <main className="flex flex-col gap-4 px-page-x py-5">
       <p className="text-caption text-muted-foreground">내 수행 기간 · {startDate} ~ {koreanChallengeDate(endDate)}</p>
 
-      {participation.today_verification?.status === 'APPROVED' ? (
+      {participation.status !== 'CANCELLED' && participation.today_verification?.status === 'APPROVED' ? (
         <section className="flex gap-3 rounded-card bg-primary-bg p-5" aria-label="오늘 인증 결과">
           <span className="flex size-10 shrink-0 items-center justify-center rounded-pill bg-primary text-card"><Check aria-hidden className="size-5" /></span>
           <div><h2 className="text-base font-bold">오늘의 실천을 기록했어요</h2><p className="mt-1 text-caption text-primary">같은 날 중복으로 인증되지 않아요.</p></div>
