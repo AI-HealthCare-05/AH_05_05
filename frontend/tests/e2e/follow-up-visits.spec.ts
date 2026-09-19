@@ -113,23 +113,32 @@ test('시트를 열어둔 사이 한국 자정을 넘기면 저장 시점에 날
   await expect(sheet.getByLabel('병원')).toHaveValue('자정경계병원');
 });
 
-test('진료 시간은 네이티브 입력 대신 10분 단위 옵션으로 선택한다', async ({ page }) => {
+test('진료 시간은 간결한 진료일정 창에서 10분 단위로 적용하고 취소 시 보존한다', async ({ page }, testInfo) => {
   await page.goto('/dev/my-visits');
   await page.getByRole('button', { name: '진료일정 추가' }).click();
 
   const visitSheet = page.getByRole('dialog', { name: '진료일정 추가' });
   await visitSheet.getByRole('button', { name: '진료 시간 시간 미정' }).click();
 
-  const timeSheet = page.getByRole('dialog', { name: '시간 선택' });
+  const timeSheet = page.getByRole('dialog', { name: '진료일정', exact: true });
+  await expect(timeSheet).toBeVisible();
+  await expect(timeSheet.getByText('진료 시간', { exact: true })).toHaveCount(0);
+  await expect(timeSheet.getByText('분은 10분 단위로 선택할 수 있어요.')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('visit-time-picker.png'), animations: 'disabled' });
   await timeSheet.getByLabel('분').click();
   await expect(page.getByRole('option', { name: /^(00|10|20|30|40|50)분$/ })).toHaveCount(6);
   await expect(page.getByRole('option', { name: '05분', exact: true })).toHaveCount(0);
   await page.getByRole('option', { name: '40분', exact: true }).click();
-  await timeSheet.getByRole('button', { name: '이 시간 적용' }).click();
+  await timeSheet.getByRole('button', { name: '적용', exact: true }).click();
 
   await expect(
     visitSheet.getByRole('button', { name: '진료 시간 08:40' }),
   ).toBeVisible();
+  await visitSheet.getByRole('button', { name: '진료 시간 08:40' }).click();
+  await timeSheet.getByLabel('분').click();
+  await page.getByRole('option', { name: '50분', exact: true }).click();
+  await timeSheet.getByRole('button', { name: '취소', exact: true }).click();
+  await expect(visitSheet.getByRole('button', { name: '진료 시간 08:40' })).toBeVisible();
 });
 
 test('빈 병원명과 공백은 저장할 수 없고 진료과만 입력하면 시간 없이 등록한다', async ({ page }) => {
@@ -203,6 +212,7 @@ for (const width of [320, 375]) {
   test(`${width}px 진료일정 시트에서 병원 입력 안내와 예시가 잘리지 않는다`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 812 });
     await page.goto('/dev/my-visits');
+    await expect(page.getByText('다가오는 일정', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: '진료일정 추가' }).click();
     const sheet = page.getByRole('dialog', { name: '진료일정 추가' });
     const hospital = sheet.getByLabel('병원');
@@ -214,8 +224,11 @@ for (const width of [320, 375]) {
       return context.measureText(input.placeholder).width <= availableWidth;
     });
     expect(placeholderFits).toBe(true);
-    await expect(hospital).toHaveAccessibleDescription(/이비인후과.*내과/);
+    await expect(hospital).toHaveAttribute('placeholder', 'oo 이비인후과 또는 내과');
+    await expect(hospital).toHaveAccessibleDescription('');
+    await expect(sheet.getByText('예: ○○이비인후과 또는 내과')).toHaveCount(0);
     expect(await sheet.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
-    await page.screenshot({ path: testInfo.outputPath(`follow-up-visit-${width}.png`) });
+    await expect(sheet).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`follow-up-visit-${width}.png`), animations: 'disabled' });
   });
 }
