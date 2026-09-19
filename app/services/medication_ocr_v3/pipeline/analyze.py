@@ -237,7 +237,7 @@ async def analyze_processed_image(
         medication_rows,
         today=run_today,
     )
-    selection = _empty_selection()
+    selection: GroundingSelection | SemanticGroundingSelection = _empty_selection()
     pipeline_issue_code: str | None = None
     grounding_required = bool(catalog.rows) if semantic else plan.ambiguity_required
     llm_skip_code: str | None = None
@@ -268,6 +268,7 @@ async def analyze_processed_image(
     else:
         llm_started = time.perf_counter()
         try:
+            assert structurer is not None
             selection = await structurer.select(catalog if semantic else _ambiguity_catalog(catalog, plan))
             expected_model = SemanticGroundingSelection if semantic else GroundingSelection
             if not isinstance(selection, expected_model):
@@ -283,6 +284,7 @@ async def analyze_processed_image(
         medication_rows,
         selection if isinstance(selection, GroundingSelection) else _empty_selection(),
         today=run_today,
+        prepared_plan=plan,
     )
     grounded = materialize_deterministic_grounding(
         original_catalog,

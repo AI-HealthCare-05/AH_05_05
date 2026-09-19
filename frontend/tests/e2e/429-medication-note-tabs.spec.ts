@@ -320,7 +320,7 @@ for (const episodeStatus of ['ACTIVE', 'COMPLETED'] as const) {
     await page.getByRole('button', { name: '이 처방에 메모 작성' }).click();
     await expect(page.getByLabel('처방', { exact: true })).toHaveValue('777');
     await expect(page.getByLabel('약', { exact: true })).toHaveCount(0);
-    await expect(page.getByLabel('복용 일시')).toHaveValue('2024-01-01T16:30');
+    await expect(page.getByLabel('복용 일시')).toHaveValue('2024-01-01 16:30');
     await waitForVisibleImages(page);
     await page.screenshot({ path: '../artifacts/429-first-dose/real/first-dose-' + episodeStatus + '.png', fullPage: true });
     await page.getByLabel('복용 일시').fill('2024-01-02T09:00');
@@ -347,7 +347,7 @@ for (const firstDoseAt of ['2024-01-01T00:15:00', null]) {
     }]));
     await page.goto('/medications/notes/new');
     await page.getByLabel('처방', { exact: true }).selectOption('103');
-    await expect(page.getByLabel('복용 일시')).toHaveValue(firstDoseAt === null ? '' : '2024-01-01T00:15');
+    await expect(page.getByLabel('복용 일시')).toHaveValue(firstDoseAt === null ? '' : '2024-01-01 00:15');
     await page.getByLabel('건강상태 기록').fill('건강상태 입력');
     if (firstDoseAt === null) await expect(page.getByRole('button', { name: '저장', exact: true })).toBeDisabled();
     else await expect(page.getByRole('button', { name: '저장', exact: true })).toBeEnabled();
@@ -446,7 +446,7 @@ test('인벤토리 실패 때 usable overview를 경고와 함께 유지하고 �
   await expect(page.getByRole('alert')).toHaveCount(0);
   await expect(page.getByLabel('처방', { exact: true })).toHaveValue('103');
   await expect(page.getByRole('option', { name: '복구된 완료 처방' })).toBeAttached();
-  await expect(page.getByLabel('복용 일시')).toHaveValue('2026-09-12T20:30');
+  await expect(page.getByLabel('복용 일시')).toHaveValue('2026-09-12 20:30');
   await expect(page.getByLabel('건강상태 기록')).toHaveValue('재시도 전 입력');
   expect(formInventoryRequests).toBeGreaterThan(failedFormRequests);
 });

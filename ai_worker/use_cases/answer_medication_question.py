@@ -2799,12 +2799,12 @@ class AnswerMedicationQuestionUseCase:
                 else "현재 등록된 복약정보가 없습니다."
             )
         else:
-            names = cls._clean_active_intake_names(item.name for item in context.supplements)
-            answer = (
-                "💪🏻 **영양제 정보**\n" + "\n".join(f"- {name}" for name in names)
-                if names
-                else "현재 등록된 영양제 정보가 없습니다."
+            lines = MedicationAnswerAssembler.supplement_intake_lines(
+                context.supplements,
+                with_dose=False,
+                names=cls._clean_active_intake_names(item.name for item in context.supplements),
             )
+            answer = "💪🏻 **영양제 정보**\n" + "\n".join(lines) if lines else "현재 등록된 영양제 정보가 없습니다."
         return cls._conversation_result(
             request=request,
             context=context,

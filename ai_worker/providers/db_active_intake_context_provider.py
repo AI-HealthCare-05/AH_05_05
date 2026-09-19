@@ -1,6 +1,7 @@
 import re
 from collections.abc import Callable
 from datetime import date, timedelta
+from decimal import Decimal
 
 from tortoise.timezone import now
 
@@ -13,6 +14,7 @@ from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     ActiveMedication,
     ActiveSupplement,
+    SupplementNutrientAmount,
 )
 from app.models.care import CareEpisode
 from app.models.enums import CareEpisodeStatus, SupplementStatus
@@ -199,14 +201,66 @@ class DbActiveIntakeContextProvider:
             scheduled_slots=sorted(slot.slot.value for slot in medication.slots),
         )
 
-    @staticmethod
+    # 식품영양성분 DB의 성분 컬럼과 화면 표기. 값이 있는 것만 답변에 올린다.
+    # 이 자료는 오메가3를 따로 담지 않고 지방으로만 기록한다(오메가3 제품 671개 중 631개가
+    # `fat_g`만 보유). 거시영양소를 빼면 오메가3 제품이 비타민 영양제처럼 보인다.
+    _NUTRIENT_COLUMNS: tuple[tuple[str, str, str], ...] = (
+        ("protein_g", "단백질", "g"),
+        ("fat_g", "지방", "g"),
+        ("carb_g", "탄수화물", "g"),
+        ("sugar_g", "당류", "g"),
+        ("fiber_g", "식이섬유", "g"),
+        ("calcium_mg", "칼슘", "mg"),
+        ("iron_mg", "철", "mg"),
+        ("phosphorus_mg", "인", "mg"),
+        ("potassium_mg", "칼륨", "mg"),
+        ("sodium_mg", "나트륨", "mg"),
+        ("vitamin_a_ug_rae", "비타민 A", "㎍RAE"),
+        ("retinol_ug", "레티놀", "㎍"),
+        ("beta_carotene_ug", "베타카로틴", "㎍"),
+        ("thiamine_mg", "티아민", "mg"),
+        ("riboflavin_mg", "리보플라빈", "mg"),
+        ("niacin_mg", "니아신", "mg"),
+        ("vitamin_c_mg", "비타민 C", "mg"),
+        ("vitamin_d_ug", "비타민 D", "㎍"),
+    )
+
+    # 오메가3 제품은 이 자료에서 총지방으로만 기록된다. 제품명이 오메가3를 가리킬 때는
+    # `지방`보다 `오메가-3`가 사용자에게 맞는 이름이다. 다만 총지방이 곧 EPA+DHA 함량은
+    # 아니므로 답변에는 전체 성분을 제품 표시사항에서 확인하라는 안내를 함께 둔다.
+    _OMEGA_PRODUCT_NAME = re.compile(r"오메가\s*-?\s*3|EPA|DHA", re.IGNORECASE)
+    _OMEGA_FAT_LABEL = "오메가-3"
+
+    @classmethod
+    def _nutrient_amounts(cls, nutrient: object) -> list[SupplementNutrientAmount]:
+        product_name = str(getattr(nutrient, "name", "") or "")
+        is_omega_product = bool(cls._OMEGA_PRODUCT_NAME.search(product_name))
+        amounts: list[SupplementNutrientAmount] = []
+        for column, label, unit in cls._NUTRIENT_COLUMNS:
+            value = getattr(nutrient, column, None)
+            if value is None or Decimal(str(value)) <= 0:
+                continue
+            if column == "fat_g" and is_omega_product:
+                label = cls._OMEGA_FAT_LABEL
+            amounts.append(
+                SupplementNutrientAmount(
+                    name=label,
+                    amount=f"{Decimal(str(value)).normalize():f}",
+                    unit=unit,
+                )
+            )
+        return amounts
+
+    @classmethod
     def _to_active_supplement(
+        cls,
         registration: UserSupplementNutrient,
     ) -> ActiveSupplement:
         return ActiveSupplement(
             registration_id=registration.id,
             supplement_nutrient_id=registration.supplement_nutrient_id,
             name=registration.supplement_nutrient.name,
+            nutrients=cls._nutrient_amounts(registration.supplement_nutrient),
             dose_amount=str(registration.dose_amount),
             dose_unit=registration.dose_unit,
             start_date=registration.start_date,

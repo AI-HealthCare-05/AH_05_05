@@ -7,6 +7,7 @@ from ai_worker.schemas.knowledge import (
 )
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
+    ActiveSupplement,
     InteractionRuleFact,
     MedicationEvidenceCoverage,
     MedicationGuideFact,
@@ -859,9 +860,45 @@ class MedicationAnswerAssembler:
         if medication_lines:
             sections.append("💊 **복약정보**\n" + "\n".join(medication_lines))
 
-        supplement_lines = []
-        for supplement in context.supplements:
-            supplement_lines.append(f"- {supplement.name} · {supplement.dose_amount}{supplement.dose_unit}")
+        # 머리말에는 성분을 붙이지 않는다. 상호작용·복약 질문에도 따라붙어 답변이 길어진다.
+        supplement_lines = MedicationAnswerAssembler.supplement_intake_lines(
+            context.supplements,
+            with_dose=True,
+            with_nutrients=False,
+        )
         if supplement_lines:
             sections.append("💪🏻 **영양제 정보**\n" + "\n".join(supplement_lines))
         return sections
+
+    @staticmethod
+    def supplement_intake_lines(
+        supplements: list[ActiveSupplement],
+        *,
+        with_dose: bool,
+        with_nutrients: bool = True,
+        names: list[str] | None = None,
+    ) -> list[str]:
+        """등록 영양제 줄. 목록 답변과 복약정보 머리말이 같은 형식을 쓰게 한다.
+
+        성분 함량은 식품영양성분 DB의 확정 값이다. 그 자료가 13개 성분만 담고 있어
+        제품 표시사항과 다르므로, 값이 하나라도 있으면 범위를 함께 밝힌다.
+        """
+        lines: list[str] = []
+        has_amounts = False
+        for index, supplement in enumerate(supplements):
+            name = names[index] if names is not None else supplement.name
+            line = f"- {name}"
+            if with_dose:
+                line = f"{line} · {supplement.dose_amount}{supplement.dose_unit}"
+            if with_nutrients and supplement.nutrients:
+                has_amounts = True
+                amounts = ", ".join(
+                    f"{nutrient.name} {nutrient.amount}{nutrient.unit}" for nutrient in supplement.nutrients
+                )
+                line = f"{line} · {amounts}"
+            lines.append(line)
+        if lines and has_amounts:
+            lines.append(
+                "- 공공 영양성분 자료에 값이 있는 성분만 표시했습니다. 전체 성분은 제품 표시사항을 확인하세요."
+            )
+        return lines

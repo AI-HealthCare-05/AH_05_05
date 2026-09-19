@@ -269,10 +269,22 @@ class ActiveMedication(BaseModel):
     scheduled_slots: list[str] = Field(default_factory=list)
 
 
+class SupplementNutrientAmount(BaseModel):
+    """식품영양성분 DB에 확정 값으로 들어 있는 성분 함량."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str = Field(min_length=1)
+    amount: str = Field(min_length=1)
+    unit: str = Field(min_length=1)
+
+
 class ActiveSupplement(BaseModel):
     registration_id: int = Field(ge=1)
     supplement_nutrient_id: int = Field(ge=1)
     name: str = Field(min_length=1)
+    # 공공 영양성분 DB에 값이 있는 성분만 담는다. 제품 표시사항 전체가 아니다.
+    nutrients: list[SupplementNutrientAmount] = Field(default_factory=list)
     dose_amount: str
     dose_unit: str = Field(min_length=1)
     start_date: date

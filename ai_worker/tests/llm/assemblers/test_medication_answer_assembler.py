@@ -1,3 +1,5 @@
+from datetime import date
+
 from ai_worker.llm.assemblers.medication_answer_assembler import (
     MedicationAnswerAssembler,
 )
@@ -16,6 +18,7 @@ from ai_worker.schemas.medication_chat import (
     InteractionRuleFact,
     MedicationEvidenceCoverage,
     MedicationGuideFact,
+    SupplementNutrientAmount,
 )
 from ai_worker.schemas.medication_search import (
     MedicationInteractionQueryPair,
@@ -1158,3 +1161,36 @@ def test_unverified_crosscheck_pair_is_not_mentioned_at_all() -> None:
 
     assert "복약정보와 상호작용" not in answer
     assert "와파린" not in answer
+
+
+def test_supplement_lines_state_the_scope_of_the_public_nutrient_data() -> None:
+    """13개 성분만 담긴 자료다. 밝히지 않으면 표시된 것이 전부로 읽힌다."""
+    supplement = ActiveSupplement(
+        registration_id=1,
+        supplement_nutrient_id=1,
+        name="코랄칼슘",
+        dose_amount="1",
+        dose_unit="정",
+        start_date=date(2026, 9, 1),
+        nutrients=[SupplementNutrientAmount(name="칼슘", amount="400", unit="mg")],
+    )
+
+    lines = MedicationAnswerAssembler.supplement_intake_lines([supplement], with_dose=False)
+
+    assert lines[0] == "- 코랄칼슘 · 칼슘 400mg"
+    assert "제품 표시사항을 확인하세요" in lines[-1]
+
+
+def test_supplement_lines_stay_unchanged_without_recorded_amounts() -> None:
+    supplement = ActiveSupplement(
+        registration_id=1,
+        supplement_nutrient_id=1,
+        name="루테인",
+        dose_amount="1",
+        dose_unit="정",
+        start_date=date(2026, 9, 1),
+    )
+
+    lines = MedicationAnswerAssembler.supplement_intake_lines([supplement], with_dose=False)
+
+    assert lines == ["- 루테인"]

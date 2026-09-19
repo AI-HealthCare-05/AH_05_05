@@ -52,6 +52,11 @@ PERSPECTIVE_ADAPTIVE_MAX_SURFACE_RESIDUAL_STD = 4.0
 PERSPECTIVE_NEAR_SMALL_LINE_MIN_SUPPORT = 20
 TRUSTED_OUTER_DOCUMENT_MIN_COVERAGE = 0.50
 TRUSTED_OUTER_DOCUMENT_MIN_CONFIDENCE = 0.90
+EDGE_TO_EDGE_PANEL_MIN_TOP_SUPPORT = 0.72
+EDGE_TO_EDGE_PANEL_MIN_SIDE_SUPPORT = 0.72
+EDGE_TO_EDGE_PANEL_MIN_BRIGHT_SURFACE = 0.75
+EDGE_TO_EDGE_PANEL_MIN_LOW_SATURATION = 0.85
+EDGE_TO_EDGE_PANEL_MIN_LONG_LINES = 4
 MAX_HOUGH_CLUSTERS_PER_AXIS = 12
 MAX_HOUGH_PAIRS_PER_AXIS = 24
 MAX_HOUGH_COMBINATIONS = 192
@@ -940,12 +945,23 @@ def _quad_overlap(first: Quad, second: Quad) -> float:
 def _group_nested_candidates(
     candidates: list[_QuadCandidate],
 ) -> list[list[_QuadCandidate]]:
+    quad_metrics = {
+        id(candidate): (_quad_array(candidate.quad), abs(_signed_area(candidate.quad))) for candidate in candidates
+    }
+
+    def overlap(first: _QuadCandidate, second: _QuadCandidate) -> float:
+        first_array, first_area = quad_metrics[id(first)]
+        second_array, second_area = quad_metrics[id(second)]
+        intersection, _ = cv2.intersectConvexConvex(first_array, second_array)
+        smaller = min(first_area, second_area)
+        return float(intersection / smaller) if smaller > 0 else 0.0
+
     groups: list[list[_QuadCandidate]] = []
     for candidate in candidates:
         matching = [
             index
             for index, group in enumerate(groups)
-            if any(_quad_overlap(candidate.quad, existing.quad) >= 0.55 for existing in group)
+            if any(overlap(candidate, existing) >= 0.55 for existing in group)
         ]
         if not matching:
             groups.append([candidate])
@@ -1295,6 +1311,11 @@ def _detect_document(rgb: UInt8Image, profile: _PreprocessProfile) -> DocumentDe
     plausible = [candidate for candidate in authorities if candidate.confidence >= 0.42]
     if not plausible:
         return DocumentDetection(None, 0, 0.0, False)
+    if likely_count >= 2 and _has_edge_to_edge_panel_layout(working):
+        # Several aligned panels on one bright, edge-to-edge canvas are one
+        # exported document. Keep the pixels intact; the normal multiple-page
+        # and tiny-document gates still apply to inset or photographic scenes.
+        return DocumentDetection(None, 1, 0.0, False)
     best = max(
         plausible,
         key=lambda candidate: (
@@ -1867,6 +1888,72 @@ def _has_meaningful_content_outside_quad(rgb: UInt8Image, quad: Quad) -> bool:
     if adaptive_text_pixels >= PERSPECTIVE_ADAPTIVE_TEXT_LINE_MIN_PIXELS:
         return True
     return False
+
+
+def _has_edge_to_edge_panel_layout(rgb: UInt8Image) -> bool:
+    """Recognize a flat, panelized document canvas touching the image frame.
+
+    Generated or exported documents commonly contain several bordered panels
+    (receipt, guide, warnings) which look like separate quadrilaterals to the
+    detector.  This guard is deliberately geometric: a bright, low-saturation
+    canvas must also have strong, axis-aligned structure at the top and both
+    side frame bands.  Inset pages and ordinary photographed scenes do not
+    satisfy those edge-to-edge constraints.
+    """
+
+    height, width = rgb.shape[:2]
+    scale = min(1.0, MAX_PERSPECTIVE_GUARD_EDGE / max(width, height))
+    if scale < 1.0:
+        working = cast(
+            UInt8Image,
+            cv2.resize(
+                rgb,
+                (max(2, round(width * scale)), max(2, round(height * scale))),
+                interpolation=cv2.INTER_AREA,
+            ),
+        )
+    else:
+        working = rgb
+    working_height, working_width = working.shape[:2]
+    gray = cv2.cvtColor(working, cv2.COLOR_RGB2GRAY)
+    hsv = cv2.cvtColor(working, cv2.COLOR_RGB2HSV)
+    if (
+        float(np.mean(gray >= 210)) < EDGE_TO_EDGE_PANEL_MIN_BRIGHT_SURFACE
+        or float(np.mean(hsv[..., 1] <= 80)) < EDGE_TO_EDGE_PANEL_MIN_LOW_SATURATION
+    ):
+        return False
+
+    edges = cv2.Canny(gray, 60, 160)
+    band = max(8, round(min(working_height, working_width) * 0.04))
+    top_support = float(np.mean(np.any(edges[:band] > 0, axis=0)))
+    left_support = float(np.mean(np.any(edges[:, :band] > 0, axis=1)))
+    right_support = float(np.mean(np.any(edges[:, -band:] > 0, axis=1)))
+    if not (
+        top_support >= EDGE_TO_EDGE_PANEL_MIN_TOP_SUPPORT
+        and left_support >= EDGE_TO_EDGE_PANEL_MIN_SIDE_SUPPORT
+        and right_support >= EDGE_TO_EDGE_PANEL_MIN_SIDE_SUPPORT
+    ):
+        return False
+
+    lines = cv2.HoughLinesP(
+        edges,
+        1,
+        np.pi / 180,
+        threshold=max(20, round(min(working_height, working_width) * 0.08)),
+        minLineLength=max(20, round(min(working_height, working_width) * 0.30)),
+        maxLineGap=max(8, round(min(working_height, working_width) * 0.03)),
+    )
+    if lines is None:
+        return False
+    horizontal = 0
+    vertical = 0
+    for x1, y1, x2, y2 in lines.reshape((-1, 4)):
+        angle = abs(math.degrees(math.atan2(float(y2 - y1), float(x2 - x1)))) % 180.0
+        if min(angle, 180.0 - angle) <= 4.0:
+            horizontal += 1
+        elif abs(angle - 90.0) <= 4.0:
+            vertical += 1
+    return horizontal >= EDGE_TO_EDGE_PANEL_MIN_LONG_LINES and vertical >= EDGE_TO_EDGE_PANEL_MIN_LONG_LINES
 
 
 def _encode_jpeg(rgb: UInt8Image) -> bytes:

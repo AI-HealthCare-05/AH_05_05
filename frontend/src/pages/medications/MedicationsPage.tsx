@@ -35,6 +35,7 @@ import {
 } from '@/shared/ui';
 import { MEAL_SLOTS, SLOT_ORDER, mealSlotLabel } from '@/shared/model/mealSlot';
 import { cn } from '@/shared/lib/cn';
+import { navigateBackOrReplace } from '@/shared/lib/navigation';
 import { LoadingState } from '@/shared/ui/LoadingState';
 import { formatDateLabel, formatDatePeriod } from '@/shared/lib/dateLabel';
 import { MedicationBulkDeleteDialog } from './MedicationBulkDeleteDialog';
@@ -468,13 +469,13 @@ export function MedicationsPage({
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
       <Header
         title={headerTitle}
-        onBack={() => enteredFromDirectNote ? navigate('/home', { replace: true }) : navigate(-1)}
+        onBack={() => enteredFromDirectNote ? navigate('/home', { replace: true }) : navigateBackOrReplace(navigate, '/home')}
         right={
           <Button
             size="compact"
             fullWidth={false}
             className="px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            onClick={() => navigate('/reports/new?source=medications')}
+            onClick={() => navigate('/reports/new?source=medications', { state: { returnTo: location.pathname } })}
           >
             AI 보고서 받기
           </Button>
