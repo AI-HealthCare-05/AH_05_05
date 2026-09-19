@@ -31,6 +31,7 @@ class MedicationAnswerAssembler:
     }
     # 숫자로 시작하는 괄호는 용량 표기이므로 남긴다. `(4,000mg)`을 지우면 답변에서 수치가 사라진다.
     _GUIDE_PARENTHETICAL_GLOSS = re.compile(r"\s*\((?!\d)[^()]*\)")
+    _PARENTHETICAL_DESCRIPTION = re.compile(r"\s*[\(（][^()（）]*[\)）]")
     _GUIDE_RDB_SPACING = (
         ("감기로인한", "감기로 인한 "),
         ("발열및", "발열 및 "),
@@ -876,29 +877,43 @@ class MedicationAnswerAssembler:
         *,
         with_dose: bool,
         with_nutrients: bool = True,
-        names: list[str] | None = None,
     ) -> list[str]:
         """등록 영양제 줄. 목록 답변과 복약정보 머리말이 같은 형식을 쓰게 한다.
 
-        성분 함량은 식품영양성분 DB의 확정 값이다. 그 자료가 13개 성분만 담고 있어
-        제품 표시사항과 다르므로, 값이 하나라도 있으면 범위를 함께 밝힌다.
+        성분 함량은 등록한 복용 계획으로 환산한 값이다(리포트와 같은 계수를 쓴다).
+        기준을 밝히지 않으면 숫자가 무엇의 양인지 알 수 없어 오해를 만든다.
         """
         lines: list[str] = []
         has_amounts = False
-        for index, supplement in enumerate(supplements):
-            name = names[index] if names is not None else supplement.name
+        has_omega_label = False
+        seen: set[str] = set()
+        for supplement in supplements:
+            # 이름 중복은 여기서 거른다. 바깥에서 거른 목록과 인덱스로 짝지으면
+            # 한 제품의 함량이 다른 제품 이름 옆에 붙는다.
+            name = " ".join(MedicationAnswerAssembler._PARENTHETICAL_DESCRIPTION.sub("", supplement.name).split())
+            key = name.casefold()
+            if not name or key in seen:
+                continue
+            seen.add(key)
             line = f"- {name}"
             if with_dose:
                 line = f"{line} · {supplement.dose_amount}{supplement.dose_unit}"
             if with_nutrients and supplement.nutrients:
                 has_amounts = True
+                has_omega_label = has_omega_label or any(n.name == "오메가-3" for n in supplement.nutrients)
                 amounts = ", ".join(
                     f"{nutrient.name} {nutrient.amount}{nutrient.unit}" for nutrient in supplement.nutrients
                 )
                 line = f"{line} · {amounts}"
             lines.append(line)
         if lines and has_amounts:
-            lines.append(
-                "- 공공 영양성분 자료에 값이 있는 성분만 표시했습니다. 전체 성분은 제품 표시사항을 확인하세요."
-            )
+            notes = [
+                "등록한 1회 복용량과 하루 복용 횟수로 환산한 값이며, "
+                "공공 영양성분 자료에 값이 있는 성분만 표시했습니다."
+            ]
+            if has_omega_label:
+                # 이 자료는 EPA·DHA를 따로 담지 않는다. 총지방을 그 이름으로 부르는 것이므로 밝힌다.
+                notes.append("오메가-3는 총지방으로 기록된 값이라 EPA·DHA 함량과 다를 수 있습니다.")
+            notes.append("전체 성분은 제품 표시사항을 확인하세요.")
+            lines.append(" ".join(notes))
         return lines

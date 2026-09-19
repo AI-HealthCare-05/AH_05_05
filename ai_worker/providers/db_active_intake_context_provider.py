@@ -9,6 +9,7 @@ from ai_worker.domain.errors import (
     PatientContextNotFoundError,
     UnconfirmedPatientContextError,
 )
+from ai_worker.reports.nutrients import _number, registered_intake_factor
 from ai_worker.schemas.interaction import normalize_interaction_name
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
@@ -232,20 +233,32 @@ class DbActiveIntakeContextProvider:
     _OMEGA_FAT_LABEL = "오메가-3"
 
     @classmethod
-    def _nutrient_amounts(cls, nutrient: object) -> list[SupplementNutrientAmount]:
+    def _nutrient_amounts(
+        cls,
+        nutrient: object,
+        *,
+        factor: Decimal,
+    ) -> list[SupplementNutrientAmount]:
+        """등록한 복용 계획으로 환산한 성분 함량.
+
+        컬럼 원본값은 자료가 정한 기준량(`basis_qty`) 기준이라 사용자가 실제로 먹는 양과
+        다르다. 리포트와 같은 계수를 곱해 두 화면이 같은 숫자를 말하게 한다.
+        """
         product_name = str(getattr(nutrient, "name", "") or "")
         is_omega_product = bool(cls._OMEGA_PRODUCT_NAME.search(product_name))
         amounts: list[SupplementNutrientAmount] = []
         for column, label, unit in cls._NUTRIENT_COLUMNS:
-            value = getattr(nutrient, column, None)
-            if value is None or Decimal(str(value)) <= 0:
+            value = _number(getattr(nutrient, column, None))
+            if value is None or value <= 0:
                 continue
             if column == "fat_g" and is_omega_product:
                 label = cls._OMEGA_FAT_LABEL
+            scaled = (value * factor).quantize(Decimal("0.001")).normalize()
             amounts.append(
                 SupplementNutrientAmount(
                     name=label,
-                    amount=f"{Decimal(str(value)).normalize():f}",
+                    # `normalize()`는 `1E+2` 같은 지수 표기를 만든다. `:f`가 그걸 막는다.
+                    amount=f"{scaled:f}",
                     unit=unit,
                 )
             )
@@ -256,15 +269,25 @@ class DbActiveIntakeContextProvider:
         cls,
         registration: UserSupplementNutrient,
     ) -> ActiveSupplement:
-        return ActiveSupplement(
+        supplement = ActiveSupplement(
             registration_id=registration.id,
             supplement_nutrient_id=registration.supplement_nutrient_id,
             name=registration.supplement_nutrient.name,
-            nutrients=cls._nutrient_amounts(registration.supplement_nutrient),
             dose_amount=str(registration.dose_amount),
             dose_unit=registration.dose_unit,
             start_date=registration.start_date,
             end_date=registration.end_date,
             note=registration.note,
             scheduled_slots=sorted(slot.slot.value for slot in registration.slots),
+        )
+        # 환산할 수 없는 제품은 함량을 싣지 않는다. 리포트도 같은 제품을 제외한다.
+        schedule = registered_intake_factor(registration.supplement_nutrient, supplement)
+        if schedule is None:
+            return supplement
+        factor, basis = schedule
+        return supplement.model_copy(
+            update={
+                "nutrients": cls._nutrient_amounts(registration.supplement_nutrient, factor=factor),
+                "nutrient_basis": basis,
+            }
         )

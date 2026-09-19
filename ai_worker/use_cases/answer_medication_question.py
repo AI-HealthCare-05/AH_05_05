@@ -387,8 +387,15 @@ class AnswerMedicationQuestionUseCase:
                 missing_categories.append("복약정보")
         if supplement_requested:
             if context.supplements:
-                supplement_names = cls._clean_active_intake_names(item.name for item in context.supplements)
-                sections.append("💪🏻 **영양제 정보**\n" + "\n".join(f"- {name}" for name in supplement_names))
+                sections.append(
+                    "💪🏻 **영양제 정보**\n"
+                    + "\n".join(
+                        MedicationAnswerAssembler.supplement_intake_lines(
+                            context.supplements,
+                            with_dose=False,
+                        )
+                    )
+                )
                 sources.extend(
                     MedicationChatSource(
                         kind=MedicationChatSourceKind.PATIENT_SUPPLEMENT,
@@ -2802,7 +2809,6 @@ class AnswerMedicationQuestionUseCase:
             lines = MedicationAnswerAssembler.supplement_intake_lines(
                 context.supplements,
                 with_dose=False,
-                names=cls._clean_active_intake_names(item.name for item in context.supplements),
             )
             answer = "💪🏻 **영양제 정보**\n" + "\n".join(lines) if lines else "현재 등록된 영양제 정보가 없습니다."
         return cls._conversation_result(

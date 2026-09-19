@@ -1194,3 +1194,68 @@ def test_supplement_lines_stay_unchanged_without_recorded_amounts() -> None:
     lines = MedicationAnswerAssembler.supplement_intake_lines([supplement], with_dose=False)
 
     assert lines == ["- 루테인"]
+
+
+def build_supplement(name: str, *, nutrients: list[SupplementNutrientAmount] | None = None) -> ActiveSupplement:
+    return ActiveSupplement(
+        registration_id=1,
+        supplement_nutrient_id=1,
+        name=name,
+        dose_amount="1",
+        dose_unit="정",
+        start_date=date(2026, 9, 1),
+        nutrients=nutrients or [],
+    )
+
+
+def test_intake_header_never_carries_nutrient_amounts() -> None:
+    """머리말은 상호작용·복약 질문에도 붙는다. 성분을 넣으면 묻지 않은 정보가 따라간다."""
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(
+            user_id=1,
+            supplements=[
+                build_supplement("코랄칼슘", nutrients=[SupplementNutrientAmount(name="칼슘", amount="400", unit="mg")])
+            ],
+        ),
+        guide=None,
+        rules=[],
+        chunks=[],
+        interaction_question=False,
+    )
+
+    assert "칼슘 400mg" not in answer
+    assert "제품 표시사항을 확인하세요" not in answer
+
+
+def test_same_named_products_are_listed_once_without_shifting_amounts() -> None:
+    """괄호만 다른 동명 제품이 있으면, 한 제품의 함량이 다른 이름 옆에 붙을 수 있다."""
+    lines = MedicationAnswerAssembler.supplement_intake_lines(
+        [
+            build_supplement(
+                "비타 D 2000(120캡슐)",
+                nutrients=[SupplementNutrientAmount(name="비타민 D", amount="50", unit="㎍")],
+            ),
+            build_supplement(
+                "비타 D 2000(60캡슐)",
+                nutrients=[SupplementNutrientAmount(name="비타민 D", amount="25", unit="㎍")],
+            ),
+        ],
+        with_dose=False,
+    )
+
+    assert lines[0] == "- 비타 D 2000 · 비타민 D 50㎍"
+    assert len([line for line in lines if line.startswith("- 비타 D 2000")]) == 1
+
+
+def test_omega_amounts_state_that_they_come_from_total_fat() -> None:
+    lines = MedicationAnswerAssembler.supplement_intake_lines(
+        [
+            build_supplement(
+                "프리미엄 오메가-3",
+                nutrients=[SupplementNutrientAmount(name="오메가-3", amount="1", unit="g")],
+            )
+        ],
+        with_dose=False,
+    )
+
+    assert "총지방으로 기록된 값" in lines[-1]

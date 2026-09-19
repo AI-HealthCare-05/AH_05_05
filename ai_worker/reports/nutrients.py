@@ -145,6 +145,14 @@ def _measurement(value: object) -> tuple[Decimal, str] | None:
     return amount * Decimal(factors[unit]), "volume" if unit in {"l", "ml"} else "mass"
 
 
+def registered_intake_factor(product: _ProductLike, registration: ActiveSupplement) -> tuple[Decimal, str] | None:
+    """등록한 복용 계획으로 환산하는 계수와 그 기준 설명.
+
+    리포트와 챗봇이 같은 제품에 다른 함량을 말하지 않도록 두 곳이 이 함수를 공유한다.
+    """
+    return _registered_schedule(product, registration)
+
+
 def _registered_schedule(product: _ProductLike, registration: ActiveSupplement) -> tuple[Decimal, str] | None:
     basis = _measurement(product.basis_qty)
     serving = _measurement(product.serving_size)
