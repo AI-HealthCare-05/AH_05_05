@@ -1129,6 +1129,59 @@ test('participation detail uses server dates, counts, progress, and verified dat
   await expect(page.getByRole('button', { name: '했어요' })).toBeEnabled();
 });
 
+for (const status of ['CANCELLED', 'ACTIVE', 'COMPLETED', 'EXPIRED'] as const) {
+  test(`#592 ${status} controls today's success notice without removing verified history`, async ({ page }, testInfo) => {
+    test.setTimeout(60_000);
+    await page.setViewportSize({ width: 393, height: 852 });
+    await authenticate(page);
+    await stubChallengeReads(page);
+    const mutations: string[] = [];
+    page.on('request', request => {
+      if (request.url().includes('/api/v1/') && request.method() !== 'GET') mutations.push(request.url());
+    });
+    await page.route('**/api/v1/user/challenges/501', route => route.fulfill({
+      json: participation({
+        status,
+        can_verify: false,
+        cancelled_at: status === 'CANCELLED' ? '2026-09-10T12:00:00+09:00' : null,
+        ...(status === 'COMPLETED' ? {
+          target_count: 3, progress_rate: '100.00', completed_at: '2026-09-10T11:00:00+09:00',
+          progress_periods: [{
+            id: 801, period_start: '2026-09-08', period_end: '2026-09-21',
+            target_count: 3, completed_count: 3, progress_rate: '100.00',
+            is_completed: true, completed_at: '2026-09-10T11:00:00+09:00',
+          }],
+        } : {}),
+        today_verification: {
+          id: 901, user_challenge_id: 501, progress_id: 801,
+          verification_date: '2026-09-10', content: null, image_path: null,
+          status: 'APPROVED', rejection_reason: null, reviewed_by_admin_id: null,
+          reviewed_at: '2026-09-10T11:00:00+09:00', submitted_at: '2026-09-10T11:00:00+09:00',
+        },
+        verified_dates: ['2026-09-08', '2026-09-09', '2026-09-10'],
+      }),
+    }));
+    await page.goto('/challenges/participations/501');
+    await expect(page.getByRole('heading', { name: dailyChallenge.name })).toBeVisible();
+    await expect(page.getByLabel('2026-09-10 인증 완료')).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`${status.toLowerCase()}.png`), fullPage: true, animations: 'disabled' });
+
+    const notice = page.getByRole('region', { name: '오늘 인증 결과', exact: true });
+    if (status === 'CANCELLED') {
+      await expect(notice).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: '이번 도전은 여기까지예요' })).toBeVisible();
+      await expect(page.getByText('3 / 14일 인증', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: '했어요', exact: true })).toHaveCount(0);
+      await page.reload();
+      await expect(page.getByLabel('2026-09-10 인증 완료')).toBeVisible();
+      await expect(notice).toHaveCount(0);
+    } else {
+      await expect(notice).toContainText('오늘의 실천을 기록했어요');
+    }
+    expect(mutations).toEqual([]);
+  });
+}
+
 test('active participation cancellation confirms retained history, posts once, and persists after reload', async ({ page }) => {
   await authenticate(page);
   await stubChallengeReads(page);
