@@ -1,8 +1,13 @@
 from datetime import date
 from types import SimpleNamespace
 
+import pytest
+from tortoise import Tortoise
+
 from ai_worker.assemblers.intake_report_assembler import IntakeReportAssembler
 from ai_worker.reports.nutrients import ReportNutrientData
+from ai_worker.reports.v11_cards import build_evidence_catalog
+from ai_worker.repositories.report_medication_guide_repository import ReportMedicationGuideRepository
 from ai_worker.schemas.intake_report import (
     IntakeReportFallbackReason,
     IntakeReportGenerationOutcome,
@@ -21,6 +26,8 @@ from ai_worker.schemas.medication_chat import (
     MedicationGuideLookup,
 )
 from ai_worker.use_cases.generate_intake_report import GenerateIntakeReportUseCase
+from app.core.db.databases import TORTOISE_APP_MODELS
+from app.models.interactions import MedicationProductGuide
 
 
 class FakeContextProvider:
@@ -84,6 +91,52 @@ class FakeGenerator:
             report_markdown=draft.deterministic_markdown,
             fallback_used=False,
         )
+
+
+@pytest.mark.parametrize(
+    "registered_name, canonical_name",
+    [
+        ("오라메디연고", "오라메디연고{수출명:오라메디파스타(ORAMEDYPASTE)}"),
+        ("나조린점안액", "나조린점안액(1회용)|나조린점안액"),
+        ("건아이점안액(1회용)", "건아이점안액(폴리소르베이트80)(1회용)"),
+    ],
+)
+async def test_equivalent_product_name_reaches_report_as_bound_product_not_inference(registered_name, canonical_name):
+    """A lookup success must survive the report boundary, preserving the registration name."""
+    await Tortoise.init(db_url="sqlite://:memory:", modules={"models": TORTOISE_APP_MODELS})
+    await Tortoise.generate_schemas()
+    try:
+        guide = await MedicationProductGuide.create(
+            item_seq="test-equivalent",
+            product_name=canonical_name,
+            manufacturer_name="테스트 제조사",
+            efficacy="제품 안내 효능 원문",
+            usage_instructions="제품 안내 사용법 원문",
+            pre_use_warning="",
+            precautions="",
+            drug_food_interactions="",
+            adverse_reactions="",
+            storage_instructions="",
+        )
+        context = ActiveIntakeContext(
+            user_id=1,
+            medications=[ActiveMedication(medication_id=101, care_episode_id=1, name=registered_name)],
+        )
+        generator = FakeGenerator()
+        await GenerateIntakeReportUseCase(
+            context_provider=FakeContextProvider(context),
+            guide_repository=ReportMedicationGuideRepository(),
+            interaction_rule_repository=FakeRuleRepository(),
+            knowledge_retriever=FakeRetriever(),
+            generator=generator,
+        ).execute(user_id=1)
+        assert generator.draft.guide_item_bindings == {101: guide.id}
+        assert generator.draft.inferred_guide_items == {}
+        assert generator.draft.current_stack[0].product_name == registered_name
+        catalog = build_evidence_catalog(generator.draft)
+        assert any(fact.text == "제품 안내 효능 원문" for fact in catalog.medications[101].facts)
+    finally:
+        await Tortoise.close_connections()
 
 
 def _supplement_context() -> ActiveIntakeContext:
