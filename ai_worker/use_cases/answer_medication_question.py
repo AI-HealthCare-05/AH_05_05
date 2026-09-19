@@ -2828,23 +2828,25 @@ class AnswerMedicationQuestionUseCase:
         context: ActiveIntakeContext,
         intent: ConversationIntent,
     ) -> list[MedicationChatSource]:
+        # 답변에 보이는 항목과 같은 집합에서 만든다. 따로 세면 `등록된 게 없습니다`라고
+        # 답하면서 근거를 붙이거나, 합쳐 보인 항목의 출처가 둘로 나뉜다.
         if intent is ConversationIntent.ACTIVE_MEDICATION_LIST:
             return [
                 MedicationChatSource(
                     kind=MedicationChatSourceKind.PATIENT_MEDICATION,
-                    title=f"사용자 확정 복약정보 · {item.name}",
+                    title=f"사용자 확정 복약정보 · {name}",
                     medication_id=item.medication_id,
                     care_episode_id=item.care_episode_id,
                 )
-                for item in context.medications
+                for item, name in MedicationAnswerAssembler.visible_intake_items(context.medications)
             ]
         return [
             MedicationChatSource(
                 kind=MedicationChatSourceKind.PATIENT_SUPPLEMENT,
-                title=f"사용자 복용 영양제 · {item.name}",
+                title=f"사용자 복용 영양제 · {name}",
                 user_supplement_id=item.registration_id,
             )
-            for item in context.supplements
+            for item, name in MedicationAnswerAssembler.visible_intake_items(context.supplements)
         ]
 
     @classmethod

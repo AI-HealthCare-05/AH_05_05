@@ -1,4 +1,5 @@
 import re
+from typing import TypeVar
 
 from ai_worker.schemas.knowledge import (
     KnowledgeDocumentType,
@@ -6,6 +7,7 @@ from ai_worker.schemas.knowledge import (
     RetrievedKnowledgeChunk,
 )
 from ai_worker.schemas.medication_chat import (
+    OMEGA_NUTRIENT_NAME,
     ActiveIntakeContext,
     ActiveSupplement,
     InteractionRuleFact,
@@ -16,6 +18,8 @@ from ai_worker.schemas.medication_search import (
     MedicationInteractionQueryPair,
     SupplementIngredientFamily,
 )
+
+_IntakeItem = TypeVar("_IntakeItem")
 
 
 class MedicationAnswerAssembler:
@@ -872,6 +876,24 @@ class MedicationAnswerAssembler:
         return sections
 
     @staticmethod
+    def visible_intake_items(items: list[_IntakeItem]) -> list[tuple[_IntakeItem, str]]:
+        """답변에 실제로 보이는 항목과 정제된 이름.
+
+        답변과 출처가 같은 집합에서 나오게 한다. 따로 세면 `등록된 게 없습니다`라고
+        답하면서 근거를 N건 붙이는 일이 생긴다.
+        """
+        visible: list[tuple[_IntakeItem, str]] = []
+        seen: set[str] = set()
+        for item in items:
+            name = " ".join(MedicationAnswerAssembler._PARENTHETICAL_DESCRIPTION.sub("", item.name).split())
+            key = name.casefold()
+            if not name or key in seen:
+                continue
+            seen.add(key)
+            visible.append((item, name))
+        return visible
+
+    @staticmethod
     def supplement_intake_lines(
         supplements: list[ActiveSupplement],
         *,
@@ -886,21 +908,13 @@ class MedicationAnswerAssembler:
         lines: list[str] = []
         has_amounts = False
         has_omega_label = False
-        seen: set[str] = set()
-        for supplement in supplements:
-            # 이름 중복은 여기서 거른다. 바깥에서 거른 목록과 인덱스로 짝지으면
-            # 한 제품의 함량이 다른 제품 이름 옆에 붙는다.
-            name = " ".join(MedicationAnswerAssembler._PARENTHETICAL_DESCRIPTION.sub("", supplement.name).split())
-            key = name.casefold()
-            if not name or key in seen:
-                continue
-            seen.add(key)
+        for supplement, name in MedicationAnswerAssembler.visible_intake_items(supplements):
             line = f"- {name}"
             if with_dose:
                 line = f"{line} · {supplement.dose_amount}{supplement.dose_unit}"
             if with_nutrients and supplement.nutrients:
                 has_amounts = True
-                has_omega_label = has_omega_label or any(n.name == "오메가-3" for n in supplement.nutrients)
+                has_omega_label = has_omega_label or any(n.name == OMEGA_NUTRIENT_NAME for n in supplement.nutrients)
                 amounts = ", ".join(
                     f"{nutrient.name} {nutrient.amount}{nutrient.unit}" for nutrient in supplement.nutrients
                 )
