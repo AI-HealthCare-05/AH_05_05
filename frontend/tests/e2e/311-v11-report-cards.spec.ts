@@ -67,6 +67,28 @@ const report = {
 };
 
 for (const width of [390, 1280]) {
+  test(`source overview deduplicates references without losing distinct sources at ${width}px`, async ({ page }, testInfo) => {
+    const unique = structuredClone(report);
+    const source = unique.cards.sources[0];
+    unique.cards.sources.push(
+      { ...source, id: 'duplicate-chunk' },
+      { ...source, id: 'other-url', url: 'https://example.com/other' },
+      { ...source, id: 'other-level', evidenceLevel: 'PUBLIC_GUIDE' },
+      { ...source, id: 'other-organization', organization: '다른 기관' },
+      { ...source, id: 'other-title', title: '다른 약 안내' },
+    );
+    await page.route('**/api/v1/intake-reports', route => route.fulfill({ json: unique }));
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/reports/new?source=medications');
+    await page.getByRole('button', { name: '보고서 생성하기', exact: true }).click();
+    const sources = page.locator('details').filter({ has: page.locator('summary', { hasText: '비교 기준과 출처' }) });
+    await sources.locator('summary').click();
+    await expect(sources.getByRole('listitem')).toHaveCount(7);
+    await expect(sources.getByRole('listitem').filter({ hasText: /^의약품 안내 · 공공기관 · 승인된 규칙$/ })).toHaveCount(2);
+    await expect(sources.locator('a[href="https://example.com/other"]')).toHaveCount(1);
+    await sources.screenshot({ path: testInfo.outputPath(`unique-sources-${width}.png`) });
+  });
+
   test(`RAG guidance preserves cards and shows evidence and partial status at ${width}px`, async ({ page }, testInfo) => {
     const ragReport = {
       ...report,
@@ -109,7 +131,7 @@ for (const width of [390, 1280]) {
     await page.screenshot({ path: testInfo.outputPath(`rag-guidance-${width}.png`), fullPage: true });
   });
 
-  test(`unavailable medicines share one list at ${width}px`, async ({ page }, testInfo) => {
+  test(`unavailable medicines are hidden at ${width}px`, async ({ page }, testInfo) => {
     const grouped = structuredClone(report);
     grouped.cards.medications.push({ ...grouped.cards.medications[0], itemId: 99, productName: '스토엠정', hasInformation: false } as typeof grouped.cards.medications[number]);
     grouped.cards.medications.push({ ...grouped.cards.medications[0], itemId: 100, productName: '자료없는약정', hasInformation: false } as typeof grouped.cards.medications[number]);
@@ -118,15 +140,31 @@ for (const width of [390, 1280]) {
     await page.goto('/reports/new?source=medications');
     await page.getByRole('button', { name: '보고서 생성하기', exact: true }).click();
     const section = page.locator('#v11-medications');
-    const unavailable = section.getByRole('list', { name: '확인 불가 약품' });
-    await expect(unavailable.getByRole('listitem')).toHaveCount(2);
-    await expect(unavailable).toContainText('스토엠정');
-    await expect(unavailable).toContainText('자료없는약정');
+    await expect(section.getByText('확인 불가 약품')).toHaveCount(0);
+    await expect(section.getByText('스토엠정')).toHaveCount(0);
+    await expect(section.getByText('자료없는약정')).toHaveCount(0);
+    await expect(page.locator('a[href="#v11-medications"]')).toBeVisible();
     await expect(section.locator('details')).toHaveCount(2);
     await section.locator('summary').first().click();
     await expect(section.getByText('확인된 효능 설명', { exact: true })).toBeVisible();
     await section.screenshot({ path: testInfo.outputPath(`grouped-medicines-${width}.png`) });
   });
+
+  for (const empty of [false, true]) {
+    test(`unavailable medicines hide the card and anchor when ${empty ? 'empty' : 'all unavailable'} at ${width}px`, async ({ page }) => {
+      const hidden = structuredClone(report);
+      hidden.cards.medications = empty ? [] : hidden.cards.medications.map(card => ({ ...card, hasInformation: false }));
+      await page.route('**/api/v1/intake-reports', route => route.fulfill({ json: hidden }));
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto('/reports/new?source=medications');
+      await page.getByRole('button', { name: '보고서 생성하기', exact: true }).click();
+      await expect(page.locator('#v11-lifestyle')).toBeVisible();
+      await expect(page.locator('#v11-medications')).toHaveCount(0);
+      await expect(page.locator('a[href="#v11-medications"]')).toHaveCount(0);
+      await page.locator('.v11-registered-products > summary').click();
+      await expect(page.getByRole('list', { name: '등록한 복용약', exact: true }).getByRole('listitem')).toHaveCount(2);
+    });
+  }
 }
 
 test.beforeEach(async ({ page }) => {
