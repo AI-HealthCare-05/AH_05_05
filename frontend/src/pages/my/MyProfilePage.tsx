@@ -58,6 +58,8 @@ export function MyProfilePage({
   const [saving, setSaving] = useState(false);
   const [passwordSheetOpen, setPasswordSheetOpen] = useState(false);
   const [withdrawDialogOpen, setWithdrawDialogOpen] = useState(false);
+  const [demoNoticeOpen, setDemoNoticeOpen] = useState(false);
+  const isDemoAccount = profile?.email?.trim().toLowerCase() === 'demo_tester@rxvita.p-e.kr';
   const today = formatDateInputValue(new Date());
 
   useEffect(() => {
@@ -190,7 +192,7 @@ export function MyProfilePage({
               <button
                 type="button"
                 className="flex min-h-16 w-full items-center justify-between rounded-card border border-border bg-card px-4 text-left text-[15px] font-bold text-foreground transition-colors hover:bg-muted-bg"
-                onClick={() => setPasswordSheetOpen(true)}
+                onClick={() => isDemoAccount ? setDemoNoticeOpen(true) : setPasswordSheetOpen(true)}
               >
                 <span>비밀번호 변경</span>
                 <DrawnChevron direction="right" className="size-5 text-muted-foreground" />
@@ -207,7 +209,7 @@ export function MyProfilePage({
             <Button
               variant="secondary"
               className="mt-2 text-danger-strong"
-              onClick={() => setWithdrawDialogOpen(true)}
+              onClick={() => isDemoAccount ? setDemoNoticeOpen(true) : setWithdrawDialogOpen(true)}
             >
               회원 탈퇴
             </Button>
@@ -222,6 +224,8 @@ export function MyProfilePage({
       />
 
       <PasswordChangeSheet open={passwordSheetOpen} onOpenChange={setPasswordSheetOpen} />
+      <ErrorDialog open={demoNoticeOpen} title="데모 버전" message="데모버전에서는 기능을 지원하지 않습니다."
+        retryLabel="확인" onRetry={() => setDemoNoticeOpen(false)} />
       <WithdrawAccountDialog
         open={withdrawDialogOpen}
         onOpenChange={setWithdrawDialogOpen}

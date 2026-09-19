@@ -10,8 +10,8 @@ export async function generateIntakeReport(): Promise<IntakeReport> {
   return http.post<IntakeReport>('/v1/intake-reports', {});
 }
 
-export function emailIntakeReport(emailToken: string): Promise<IntakeReportEmailJob> {
-  return http.post<IntakeReportEmailJob>('/v1/intake-reports/email', { emailToken });
+export function emailIntakeReport(emailToken: string, recipientEmail?: string): Promise<IntakeReportEmailJob> {
+  return http.post<IntakeReportEmailJob>('/v1/intake-reports/email', { emailToken, ...(recipientEmail ? { recipientEmail } : {}) });
 }
 
 export function getIntakeReportEmailJob(jobId: number): Promise<IntakeReportEmailJob> {

@@ -1,3 +1,4 @@
+import json
 from typing import Annotated
 
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, status
@@ -206,6 +207,33 @@ async def login(
             max_age=refresh_max_age,
         )
     return resp
+
+
+@auth_router.post("/demo-login", summary="데모 계정 로그인")
+async def demo_login(
+    auth_service: Annotated[AuthService, Depends(AuthService)],
+    jwt_service: Annotated[JwtService, Depends(JwtService)],
+) -> Response:
+    if not config.DEMO_LOGIN_ENABLED or not config.DEMO_LOGIN_PASSWORD:
+        return Response(
+            {"code": "DEMO_UNAVAILABLE", "message": "데모 로그인을 사용할 수 없습니다."},
+            status_code=403,
+            headers=TOKEN_RESPONSE_HEADERS,
+        )
+    response = await login(
+        LoginRequest(email=config.DEMO_LOGIN_EMAIL, password=config.DEMO_LOGIN_PASSWORD.get_secret_value()),
+        auth_service,
+        jwt_service,
+    )
+    if response.status_code != 200:
+        return response
+    body = json.loads(response.body)
+    body["email"] = config.DEMO_LOGIN_EMAIL
+    result = Response(body, headers=TOKEN_RESPONSE_HEADERS)
+    for name, value in response.raw_headers:
+        if name == b"set-cookie":
+            result.raw_headers.append((name, value))
+    return result
 
 
 @auth_router.post(
