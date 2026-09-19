@@ -2818,7 +2818,34 @@ class AnswerMedicationQuestionUseCase:
             route=MedicationChatRoute.ACTIVE_INTAKE,
             safety_status=SafetyStatus.SAFE,
             reason_code=MedicationChatReasonCode.ACTIVE_INTAKE_LIST_REQUESTED,
+            # 등록 정보에서 온 사실이므로 출처를 밝힌다. 성분 함량은 정량 주장이다.
+            sources=cls._active_intake_sources(context=context, intent=intent),
         )
+
+    @staticmethod
+    def _active_intake_sources(
+        *,
+        context: ActiveIntakeContext,
+        intent: ConversationIntent,
+    ) -> list[MedicationChatSource]:
+        if intent is ConversationIntent.ACTIVE_MEDICATION_LIST:
+            return [
+                MedicationChatSource(
+                    kind=MedicationChatSourceKind.PATIENT_MEDICATION,
+                    title=f"사용자 확정 복약정보 · {item.name}",
+                    medication_id=item.medication_id,
+                    care_episode_id=item.care_episode_id,
+                )
+                for item in context.medications
+            ]
+        return [
+            MedicationChatSource(
+                kind=MedicationChatSourceKind.PATIENT_SUPPLEMENT,
+                title=f"사용자 복용 영양제 · {item.name}",
+                user_supplement_id=item.registration_id,
+            )
+            for item in context.supplements
+        ]
 
     @classmethod
     def _clean_active_intake_names(cls, values) -> list[str]:
@@ -2994,6 +3021,7 @@ class AnswerMedicationQuestionUseCase:
         route: MedicationChatRoute,
         safety_status: SafetyStatus,
         reason_code: MedicationChatReasonCode,
+        sources: list[MedicationChatSource] | None = None,
     ) -> MedicationChatResult:
         return MedicationChatResult(
             request_id=request.request_id,
@@ -3001,6 +3029,7 @@ class AnswerMedicationQuestionUseCase:
             route=route,
             safety_status=safety_status,
             safety_reason_codes=[reason_code.value],
+            sources=sources or [],
             prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
             schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
             context_hash=cls._context_hash(context),
