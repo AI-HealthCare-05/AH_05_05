@@ -162,8 +162,7 @@ export function FollowUpVisitSheet({
           label="병원명 (필수)"
           required
           maxLength={255}
-          placeholder="병원명 또는 진료과"
-          hint="예: ○○이비인후과 또는 내과"
+          placeholder="oo 이비인후과 또는 내과"
           value={hospital}
           onChange={(event) => setHospital(event.target.value)}
         />
@@ -184,7 +183,9 @@ export function FollowUpVisitSheet({
         </DialogFooter>
         <TimePickerSheet
           open={timePickerOpen}
-          description="진료 시간"
+          title="진료일정"
+          applyLabel="적용"
+          showMinuteHint={false}
           value={visitTime || '08:00'}
           minuteStep={10}
           preserveInvalidMinute
