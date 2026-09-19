@@ -154,6 +154,9 @@ class Config(BaseSettings):
     # 초기 ADMIN 시드용(scripts/seed_admin.py). 운영에서는 시드 후 값을 지운다.
     SUPERADMIN_EMAIL: str | None = None
     SUPERADMIN_PASSWORD: str | None = None
+    DEMO_LOGIN_ENABLED: bool = False
+    DEMO_LOGIN_EMAIL: str = "demo_tester@rxvita.p-e.kr"
+    DEMO_LOGIN_PASSWORD: SecretStr | None = None
 
     # REQ-DASH-001 회원 현황 경보 임계치(정지 비율 %).
     # 이하는 NORMAL, 초과~WARNING 이하는 WARNING, 그 위는 DANGER.

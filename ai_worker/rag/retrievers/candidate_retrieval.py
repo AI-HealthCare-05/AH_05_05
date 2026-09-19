@@ -15,6 +15,7 @@ from ai_worker.rag.errors import (
     GuidelineRetrievalError,
     RetrievalFailureStage,
 )
+from ai_worker.rag.ingredient_name_aliases import english_aliases_for
 from ai_worker.schemas.knowledge import (
     KnowledgeSearchQuery,
     KnowledgeSearchTier,
@@ -87,6 +88,22 @@ class MedicationKnowledgeCandidateRetriever:
         self._eligibility_evaluator = eligibility_evaluator
         self._section_coverage_evaluator = section_coverage_evaluator
 
+    @staticmethod
+    def _english_alias_queries(plan: MedicationKnowledgeQueryPlan) -> list[str]:
+        """영문으로만 색인된 상호작용 근거를 한국어 질의가 놓치지 않게 한다.
+
+        INTERACTION 섹션 청크 294건 중 138건이 영문 이름만 가지고 있어 한국어
+        질의로는 닿지 않는다. 별칭은 말뭉치에서 유도한 사전에서만 오며, 사전에
+        없는 이름에는 아무것도 더하지 않는다.
+        """
+        if (
+            KnowledgeSectionType.INTERACTION not in plan.section_types
+            and not plan.interaction_pairs
+            and plan.interaction_pair is None
+        ):
+            return []
+        return [f"{alias} interaction" for name in plan.entity_names for alias in english_aliases_for(name)]
+
     async def retrieve(
         self,
         *,
@@ -98,7 +115,15 @@ class MedicationKnowledgeCandidateRetriever:
             if execution_plan.include_all_eligible
             else min(50, max(20, execution_plan.limit * 4))
         )
-        queries = list(dict.fromkeys([plan.expanded_query, *plan.alternate_queries]))
+        queries = list(
+            dict.fromkeys(
+                [
+                    plan.expanded_query,
+                    *plan.alternate_queries,
+                    *self._english_alias_queries(plan),
+                ]
+            )
+        )
         if self._is_interaction_overview(execution_plan):
             subject = plan.entity_names[0]
             queries = list(

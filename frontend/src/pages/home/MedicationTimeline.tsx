@@ -126,7 +126,6 @@ function TimelineItem({
   const [doseActionPending, setDoseActionPending] = useState(false);
   const doseActionPendingRef = useRef(false);
   const doseControlsPending = doseActionPending || mutationPending;
-  const current = item.status === 'current';
   const [completedEpisodes, setCompletedEpisodes] = useState<Set<number>>(() =>
     new Set(item.completedEpisodeRecordIds),
   );
@@ -387,7 +386,7 @@ function TimelineItem({
           <Button
             fullWidth={false}
             variant={
-              !doseActionDisabled && (hasSelection || (current && !actionCompleted))
+              !doseActionDisabled && (hasSelection || !actionCompleted)
                 ? 'primary'
                 : 'secondary'
             }

@@ -7,6 +7,8 @@ import time
 from collections import Counter
 from dataclasses import dataclass
 
+from langchain_core.runnables import RunnableLambda, RunnableParallel
+
 from ai_worker.chains.conditional_question_interpretation_chain import (
     ConditionalInterpretationReasonCode,
     ConditionalQuestionInterpretationChain,
@@ -277,6 +279,8 @@ class AnswerMedicationQuestionUseCase:
     _ACTIVE_INTAKE_INTERACTION_CUE_PATTERN = re.compile(
         r"상호작용|병용|같이|함께|조심|주의|영향|피해야|중복",
     )
+    # 등록 항목 × 지목 대상 대조 쌍의 상한. 쌍마다 검색 질의가 하나씩 늘어난다.
+    _MAX_CROSSCHECK_PAIRS = 8
     _INTERACTION_OVERVIEW_PATTERN = re.compile(
         r"안\s*되는\s*(?:것|거|약|음식|영양제)|(?:피해야|피할)\s*(?:할\s*)?(?:것|거|약|음식|영양제)"
     )
@@ -519,6 +523,7 @@ class AnswerMedicationQuestionUseCase:
             planning=planning,
         )
         planning = self._with_interaction_overview(request=request, context=context, planning=planning)
+        planning = self._with_active_intake_crosscheck_pairs(context=context, planning=planning)
         query_plan = planning.query_plan
         interpretation = planning.interpretation
         if terminal_result := await self._pre_retrieval_terminal_result(
@@ -612,7 +617,7 @@ class AnswerMedicationQuestionUseCase:
                 "requested_section_count": len(query_plan.section_types),
             },
         ) as rag_span:
-            retrieval_attempt = await self._retrieve_knowledge(
+            retrieval_attempt, crosscheck_chunks = await self._retrieve_with_crosscheck(
                 execution_plan=execution_plan,
             )
             retrieval = retrieval_attempt.result
@@ -725,6 +730,7 @@ class AnswerMedicationQuestionUseCase:
             ),
             rag_unavailable=rag_unavailable,
             approved_therapeutic_class_names=execution_plan.approved_therapeutic_class_names,
+            crosscheck_chunks=crosscheck_chunks,
         )
         retrieval = coverage_retry.retrieval
         chunks = coverage_retry.chunks
@@ -748,6 +754,7 @@ class AnswerMedicationQuestionUseCase:
                     rules=rules,
                     chunks=answer_chunks,
                     approved_therapeutic_class_names=approved_therapeutic_class_names,
+                    crosscheck_chunks=crosscheck_chunks,
                 )
         evidence = MedicationEvidenceBundle(
             query_plan=query_plan,
@@ -895,6 +902,8 @@ class AnswerMedicationQuestionUseCase:
                     functional_goal_title=self._functional_supplement_goal_title(
                         request.question,
                     ),
+                    crosscheck_pairs=query_plan.crosscheck_pairs,
+                    crosscheck_chunks=crosscheck_chunks,
                     functional_goal_details=(
                         self._is_supplement_function_goal_question(request.question)
                         and bool(re.search(r"영양제|건강기능식품|기능.*정보", request.question))
@@ -3840,6 +3849,85 @@ class AnswerMedicationQuestionUseCase:
         return pairs
 
     @classmethod
+    def _with_active_intake_crosscheck_pairs(
+        cls,
+        *,
+        context: ActiveIntakeContext,
+        planning: MedicationQuestionPlanResult,
+    ) -> MedicationQuestionPlanResult:
+        """질문이 지목한 약·영양제를 등록 복용 항목과 대조할 쌍을 만든다.
+
+        섭취 가부를 묻는 표현을 따로 분류하지 않는다(AGENTS §8.1). 지목한 대상이 있고
+        복용 중인 항목이 있으면 언제나 대조하며, 근거로 확인된 쌍만 답변에 올라간다.
+        """
+        plan = planning.query_plan
+        if plan.crosscheck_pairs or plan.interaction_pairs or plan.interaction_pair is not None:
+            return planning
+        active_entities = cls._active_intake_query_entities(context)
+        if not active_entities:
+            return planning
+        active_keys = {
+            (entity.kind, cls._normalize_entity_name(name))
+            for entity in active_entities
+            for name in (entity.surface, entity.canonical_name)
+        }
+        explicit_entities = [
+            entity
+            for entity in plan.entities
+            if (
+                entity.kind is not None
+                and entity.entity_type is not MedicationQueryEntityType.TOPIC
+                and (entity.kind, cls._normalize_entity_name(entity.canonical_name)) not in active_keys
+            )
+        ]
+        if not explicit_entities:
+            return planning
+        pairs = cls._interaction_pairs_between(
+            left_entities=active_entities,
+            right_entities=explicit_entities,
+        )
+        if not pairs or len(pairs) > cls._MAX_CROSSCHECK_PAIRS:
+            # 상한을 넘으면 검색 비용이 답변 품질보다 커진다. 대조를 생략한다.
+            return planning
+        query_plan = plan.model_copy(update={"crosscheck_pairs": pairs})
+        interpretation = planning.interpretation.model_copy(
+            update={"query_plan_hash": query_plan.query_plan_hash},
+        )
+        return MedicationQuestionPlanResult(
+            query_plan=query_plan,
+            interpretation=interpretation,
+        )
+
+    @classmethod
+    def _crosscheck_execution_plan(
+        cls,
+        *,
+        execution_plan: MedicationSearchExecutionPlan,
+    ) -> MedicationSearchExecutionPlan:
+        """교차 확인 전용 검색 계획. 본 검색과 후보·랭킹을 공유하지 않는다."""
+        plan = execution_plan.query_plan
+        pairs = plan.crosscheck_pairs
+        names = list(dict.fromkeys([name for pair in pairs for name in (pair.left_name, pair.right_name)]))
+        # 검색은 느슨하게 두고 판정은 `_verified_crosscheck_pair_keys`가 문장 단위로 한다.
+        # 여기에 `section_types=[INTERACTION]`과 `interaction_pairs`를 넣으면
+        # `_requires_entity_pair_match`가 켜져 제품명 기반 쌍이 전부 PAIR_MISMATCH로 탈락한다.
+        crosscheck_plan = plan.model_copy(
+            update={
+                "entity_names": names,
+                "section_types": [],
+                "alternate_queries": [f"{pair.left_name} {pair.right_name} 상호작용" for pair in pairs],
+                "interaction_pairs": [],
+                "interaction_pair_keys": [],
+                "interaction_types": [],
+                "interaction_pair": None,
+                "crosscheck_pairs": [],
+            },
+        )
+        return execution_plan.model_copy(
+            update={"query_plan": crosscheck_plan, "approved_rule_pair_keys": []},
+        )
+
+    @classmethod
     def _interaction_pairs_between(
         cls,
         *,
@@ -4569,6 +4657,36 @@ class AnswerMedicationQuestionUseCase:
             )
         return _KnowledgeRetrievalAttempt(result=retrieval)
 
+    async def _retrieve_with_crosscheck(
+        self,
+        *,
+        execution_plan: MedicationSearchExecutionPlan,
+    ) -> tuple[_KnowledgeRetrievalAttempt, list[RetrievedKnowledgeChunk]]:
+        """본 검색과 교차 확인 검색을 함께 돌린다.
+
+        교차 확인 결과는 답변 근거에 합류시키지 않는다. 같은 후보 집합에 넣으면
+        상위 선택(`select_diverse`)의 자리를 두고 겨뤄 질문이 요청한 근거를 밀어낸다.
+        확인된 쌍을 판정하는 데에만 쓴다.
+        """
+        if not execution_plan.query_plan.crosscheck_pairs:
+            return await self._retrieve_knowledge(execution_plan=execution_plan), []
+        crosscheck_execution = self._crosscheck_execution_plan(execution_plan=execution_plan)
+        results = await RunnableParallel(
+            answer=self._retrieval_runnable(execution_plan=execution_plan),
+            crosscheck=self._retrieval_runnable(execution_plan=crosscheck_execution),
+        ).ainvoke({})
+        return results["answer"], list(results["crosscheck"].result.chunks)
+
+    def _retrieval_runnable(
+        self,
+        *,
+        execution_plan: MedicationSearchExecutionPlan,
+    ) -> RunnableLambda:
+        async def retrieve(_input: object) -> _KnowledgeRetrievalAttempt:
+            return await self._retrieve_knowledge(execution_plan=execution_plan)
+
+        return RunnableLambda(retrieve, name="medication_knowledge_retrieval")
+
     async def _retry_for_missing_coverage(
         self,
         *,
@@ -4582,6 +4700,7 @@ class AnswerMedicationQuestionUseCase:
         prefer_supplement: bool,
         rag_unavailable: bool,
         approved_therapeutic_class_names: list[str],
+        crosscheck_chunks: list[RetrievedKnowledgeChunk],
     ) -> _CoverageRetryOutcome:
         evaluator = MedicationEvidenceCoverageEvaluator()
         before = evaluator.evaluate(
@@ -4590,6 +4709,7 @@ class AnswerMedicationQuestionUseCase:
             rules=rules,
             chunks=answer_chunks,
             approved_therapeutic_class_names=approved_therapeutic_class_names,
+            crosscheck_chunks=crosscheck_chunks,
         )
         retry = CoverageGapQueryExpander().build(
             query_plan=query_plan,
@@ -4646,6 +4766,7 @@ class AnswerMedicationQuestionUseCase:
                 rules=rules,
                 chunks=combined_answer_chunks,
                 approved_therapeutic_class_names=approved_therapeutic_class_names,
+                crosscheck_chunks=crosscheck_chunks,
             )
             retry_unavailable = rag_unavailable or retry_attempt.unavailable
             observation = KnowledgeCoverageRetryObservation(

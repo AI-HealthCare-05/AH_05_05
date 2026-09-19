@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
-_KOREAN_MILLIGRAM_ERROR = re.compile(r"(?<=\d)(?:밀리그람|밀리그랑|미리그램)")
+_KOREAN_MILLIGRAM_ERROR = re.compile(r"(?<=\d)(?:밀리그람|밀리그랑|미리그램|일리그램)")
 _KOREAN_MILLILITER = re.compile(r"(?<=\d)밀리리터")
 _MILLILITER_ERROR = re.compile(r"(?<=\d)[mM][lLI1ℓ](?![A-Za-z])")
 _MILLIGRAM_ERROR = re.compile(r"(?<=\d)[mM][gG9](?![A-Za-z])")
@@ -18,7 +18,7 @@ def strip_leading_name_symbols(text: str) -> str:
 
 
 def normalize_measurement_unit_ocr(text: str) -> str:
-    """Normalize only numeric measurement units, never medication names."""
+    """Normalize numeric measurement units while preserving surrounding text."""
 
     normalized = unicodedata.normalize("NFKC", text)
     normalized = _KOREAN_MILLIGRAM_ERROR.sub("밀리그램", normalized)

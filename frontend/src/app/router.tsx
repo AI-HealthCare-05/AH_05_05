@@ -249,6 +249,7 @@ export function AppRouter() {
         <Route path="/tutorial" element={<TutorialPage />} />
         <Route path="/home" element={<HomePage />} />
         <Route path="/login" element={<AuthPage />} />
+        <Route path="/demo" element={<DemoPage />} />
         <Route path="/password-reset" element={<Navigate to="/login" replace state={{ passwordReset: true }} />} />
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
@@ -535,3 +536,4 @@ export function AppRouter() {
     </ChallengeMockProvider>
   );
 }
+import { DemoPage } from '@/pages/auth/DemoPage';

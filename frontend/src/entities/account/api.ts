@@ -65,6 +65,7 @@ const MY_PROFILE_PATH = '/v1/users/me';
  * 생년월일·성별은 가입 때 선택 항목이라 기존 회원은 null 로 온다.
  */
 interface UserProfileResponse {
+  email?: string;
   name: string;
   maskedName: string;
   phoneNumber: string | null;
@@ -80,6 +81,7 @@ interface UserProfileResponse {
  */
 function toAccountProfile(body: UserProfileResponse): AccountProfile {
   return {
+    email: body.email,
     name: body.name,
     maskedName: body.maskedName,
     phoneNumber: body.phoneNumber ?? '',

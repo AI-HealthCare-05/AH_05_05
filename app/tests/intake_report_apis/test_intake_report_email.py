@@ -214,7 +214,8 @@ async def test_email_api_rejects_extra_client_content_and_queue_failure() -> Non
     finally:
         app.dependency_overrides.clear()
 
-    assert extra_response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+    assert extra_response.status_code == status.HTTP_403_FORBIDDEN
+    assert extra_response.json()["code"] == "DEMO_FEATURE_UNAVAILABLE"
     assert failed_response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
 

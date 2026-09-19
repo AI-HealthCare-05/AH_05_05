@@ -220,6 +220,8 @@ class MedicationEvidenceCoverage(BaseModel):
         default_factory=list,
     )
     verified_interaction_pair_keys: list[str] = Field(default_factory=list)
+    # 등록 복약정보와의 대조 쌍 중 근거로 확인된 것. 질문이 요청한 쌍과 구분한다.
+    verified_crosscheck_pair_keys: list[str] = Field(default_factory=list)
 
 
 class MedicationChatRequest(BaseModel):
