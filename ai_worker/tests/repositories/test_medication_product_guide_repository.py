@@ -713,6 +713,91 @@ async def test_report_handles_balanced_product_annotations_without_changing_iden
 
 
 @pytest.mark.parametrize(
+    "query,registered_name",
+    [
+        ("오라메디연고", "오라메디연고{수출명:오라메디파스타(ORAMEDYPASTE)}"),
+        ("오라메디연고[수출명:오라메디파스타（ORAMEDYPASTE）]", "오라메디연고{수출명:오라메디파스타(ORAMEDYPASTE)}"),
+        ("오라메디연고(수출명:오라메디파스타(ORAMEDYPASTE))", "오라메디연고"),
+        ("오라메디연고{수출명:오라메디파스타(ORAMEDYPASTE)}", "오라메디연고"),
+    ],
+)
+async def test_report_export_annotations_are_optional_identity_metadata(initialized_db, query, registered_name):
+    guide = await _create_guide("100", registered_name)
+
+    result = await _report_repository().find_by_name(query)
+
+    assert result.guide is not None
+    assert result.guide.medication_guide_id == guide.id
+    assert result.is_ambiguous is False
+
+
+async def test_report_export_annotation_does_not_drop_known_ingredient(initialized_db):
+    guide = await _create_guide(
+        "100",
+        "리나치올캡슐375밀리그램(카르보시스테인){수출명:HyundiolCapsule375Mg}",
+    )
+
+    result = await _report_repository().find_by_name("리나치올캡슐375밀리그램(카르보시스테인)")
+
+    assert result.guide is not None
+    assert result.guide.medication_guide_id == guide.id
+
+
+async def test_report_export_only_input_cannot_match_an_empty_base(initialized_db):
+    await _create_guide("100", "오라메디연고")
+
+    result = await _report_repository().find_by_name("{수출명:오라메디파스타(ORAMEDYPASTE)}")
+
+    assert result.guide is None
+
+
+async def test_report_same_base_products_with_different_export_annotations_are_ambiguous(initialized_db):
+    await _create_guide("100", "오라메디연고{수출명:오라메디파스타(ORAMEDYPASTE)}")
+    await _create_guide("200", "오라메디연고[수출명:ORAMEDYPASTE2]")
+
+    result = await _report_repository().find_by_name("오라메디연고")
+
+    assert result.guide is None
+    assert result.is_ambiguous is True
+    assert len(result.candidate_names) == 2
+
+
+async def test_report_duplicate_ids_remain_ambiguous_after_export_normalization(initialized_db):
+    name = "오라메디연고{수출명:오라메디파스타(ORAMEDYPASTE)}"
+    await _create_guide("100", name)
+    await _create_guide("101", name)
+
+    result = await _report_repository().find_by_name("오라메디연고")
+
+    assert result.guide is None
+    assert result.is_ambiguous is True
+
+
+async def test_report_export_normalization_never_ignores_dose_or_form(initialized_db):
+    await _create_guide("100", "오라메디정500밀리그램{수출명:오라메디파스타}")
+
+    result = await _report_repository().find_by_name("오라메디연고250밀리그램")
+
+    assert result.guide is None
+
+
+@pytest.mark.parametrize(
+    "registered_name",
+    [
+        "오라메디연고{기타:오라메디파스타(ORAMEDYPASTE)}",
+        "오라메디연고{수출명:오라메디파스타(ORAMEDYPASTE)",
+        "오라메디연고{수출명:오라메디파스타(ORAMEDYPASTE]",
+    ],
+)
+async def test_report_unknown_or_malformed_braces_are_not_silently_removed(initialized_db, registered_name):
+    await _create_guide("100", registered_name)
+
+    result = await _report_repository().find_by_name("오라메디연고")
+
+    assert result.guide is None
+
+
+@pytest.mark.parametrize(
     "value, expected",
     [
         # 세 자리 묶음은 적재 과정에서 깨진 쉼표다.

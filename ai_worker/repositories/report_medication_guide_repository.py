@@ -245,6 +245,8 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
     def _matches_product_name(cls, query: str, product_name: str) -> bool:
         query_name, query_annotations = cls._split_annotations(query)
         candidate_name, candidate_annotations = cls._split_annotations(product_name)
+        if not query_name or not candidate_name:
+            return False
         return (
             cls._unit_spelling_key(query_name) == cls._unit_spelling_key(candidate_name)
             and query_annotations == candidate_annotations[: len(query_annotations)]
@@ -371,20 +373,45 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
     def _split_annotations(cls, name: str) -> tuple[str, tuple[str, ...]]:
         product = cls._normalize_name(unicodedata.normalize("NFC", name).translate(cls._FULLWIDTH_ASCII))
         annotations: list[str] = []
-        while product.endswith(")"):
-            depth = 0
-            for index in range(len(product) - 1, -1, -1):
-                if product[index] == ")":
-                    depth += 1
-                elif product[index] == "(":
-                    depth -= 1
-                    if depth == 0:
-                        annotations.insert(0, product[index + 1 : -1])
-                        product = product[:index]
-                        break
-            else:
+        while product:
+            export_start = cls._trailing_balanced_block_start(product)
+            if export_start is not None and product[-1] in "}]":
+                export_metadata = product[export_start + 1 : -1]
+                if export_metadata.startswith("수출명:"):
+                    product = product[:export_start]
+                    continue
+
+            if not product.endswith(")"):
+                break
+            annotation_start = cls._trailing_balanced_block_start(product)
+            if annotation_start is None:
                 break  # Malformed metadata is not silently discarded.
+            annotation = product[annotation_start + 1 : -1]
+            if annotation.startswith("수출명:"):
+                product = product[:annotation_start]
+                continue
+            annotations.insert(0, annotation)
+            product = product[:annotation_start]
         return product, tuple(annotations)
+
+    @staticmethod
+    def _trailing_balanced_block_start(value: str) -> int | None:
+        if not value or value[-1] not in ")]}":
+            return None
+        pairs = {")": "(", "]": "[", "}": "{"}
+        openers = set(pairs.values())
+        stack: list[str] = []
+        for index in range(len(value) - 1, -1, -1):
+            char = value[index]
+            if char in pairs:
+                stack.append(char)
+            elif char in openers:
+                if not stack or pairs[stack[-1]] != char:
+                    return None
+                stack.pop()
+                if not stack:
+                    return index
+        return None
 
     @classmethod
     def _suggestion_key(cls, value: str) -> str:
