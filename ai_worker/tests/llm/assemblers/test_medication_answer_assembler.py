@@ -1179,6 +1179,8 @@ def test_supplement_lines_state_the_scope_of_the_public_nutrient_data() -> None:
     lines = MedicationAnswerAssembler.supplement_intake_lines([supplement], with_dose=False)
 
     assert lines[0] == "- 코랄칼슘 · 칼슘 400mg"
+    # 기준을 밝히지 않으면 400mg이 라벨 함량인지 하루 섭취량인지 알 수 없다.
+    assert "등록한 1회 복용량과 하루 복용 횟수로 환산한 값" in lines[-1]
     assert "제품 표시사항을 확인하세요" in lines[-1]
 
 

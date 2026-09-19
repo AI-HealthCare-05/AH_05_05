@@ -265,10 +265,7 @@ class DbActiveIntakeContextProvider:
         schedule = registered_intake_factor(registration.supplement_nutrient, supplement)
         if schedule is None:
             return supplement
-        factor, basis = schedule
+        factor, _ = schedule
         return supplement.model_copy(
-            update={
-                "nutrients": cls._nutrient_amounts(registration.supplement_nutrient, factor=factor),
-                "nutrient_basis": basis,
-            }
+            update={"nutrients": cls._nutrient_amounts(registration.supplement_nutrient, factor=factor)}
         )

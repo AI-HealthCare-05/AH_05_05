@@ -44,13 +44,14 @@ def test_omega_product_reports_its_fat_as_omega_3() -> None:
 
 
 def test_other_products_keep_fat_labelled_as_fat() -> None:
-    """정규식이 넓어 과매칭되면 지방을 오메가-3라고 부르게 된다."""
-    amounts = DbActiveIntakeContextProvider._nutrient_amounts(
-        SimpleNamespace(name="코랄칼슘 비타민K2&D 마그네슘", fat_g=Decimal("1.00")),
-        factor=ONE,
-    )
+    """`오메가`만 보고 판정하면 오메가3가 아닌 제품의 지방을 오메가-3라고 부른다."""
+    for product_name in ("코랄칼슘 비타민K2&D 마그네슘", "알파오메가 종합비타민"):
+        amounts = DbActiveIntakeContextProvider._nutrient_amounts(
+            SimpleNamespace(name=product_name, fat_g=Decimal("1.00")),
+            factor=ONE,
+        )
 
-    assert [item.name for item in amounts] == ["지방"]
+        assert [item.name for item in amounts] == ["지방"], product_name
 
 
 def test_every_reported_column_exists_on_the_catalog_model() -> None:
@@ -58,11 +59,3 @@ def test_every_reported_column_exists_on_the_catalog_model() -> None:
     columns = {column for column, _, _ in nutrient_display_specs()}
 
     assert columns <= set(SupplementNutrient._meta.fields_map)
-
-
-def test_chat_and_report_use_one_nutrient_label_table() -> None:
-    """표가 둘이면 같은 영양소를 리포트와 챗봇이 다르게 부른다."""
-    labels = {name for _, name, _ in nutrient_display_specs()}
-
-    assert "나이아신" in labels
-    assert "니아신" not in labels

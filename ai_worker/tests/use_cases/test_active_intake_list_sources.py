@@ -1,10 +1,12 @@
 from datetime import date
+from uuid import uuid4
 
 from ai_worker.schemas.conversation_gate import ConversationIntent
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     ActiveMedication,
     ActiveSupplement,
+    MedicationChatRequest,
     MedicationChatSourceKind,
 )
 from ai_worker.use_cases.answer_medication_question import AnswerMedicationQuestionUseCase
@@ -55,6 +57,22 @@ def test_sources_match_what_the_answer_actually_lists() -> None:
     )
 
     assert [item.title for item in sources] == ["사용자 복용 영양제 · 비타 D 2000"]
+
+
+def test_the_list_answer_carries_the_sources_it_built() -> None:
+    """출처를 만들어 두고 답변에 싣지 않으면 사용자에게는 근거가 없는 것과 같다."""
+    context = ActiveIntakeContext(user_id=1, supplements=[supplement("코랄칼슘", 7)])
+
+    result = AnswerMedicationQuestionUseCase._active_intake_list_result(
+        request=MedicationChatRequest(request_id=uuid4(), user_id=1, question="내가 먹는 영양제 뭐야?"),
+        context=context,
+        intent=ConversationIntent.ACTIVE_SUPPLEMENT_LIST,
+    )
+
+    assert "코랄칼슘" in result.answer
+    assert [(item.kind, item.user_supplement_id) for item in result.sources] == [
+        (MedicationChatSourceKind.PATIENT_SUPPLEMENT, 7)
+    ]
 
 
 def test_nothing_is_cited_when_no_item_is_listed() -> None:
