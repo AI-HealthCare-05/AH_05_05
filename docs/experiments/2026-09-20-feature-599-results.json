@@ -1,6 +1,6 @@
 {
   "schema_version": "feature599-experiment-summary-v1",
-  "status": "partial_tokenizer_quality_review_required",
+  "status": "controlled_search_and_tokenizer_comparison_complete_no_runtime_activation",
   "baseline_commit": "9ff9857d",
   "embedding_model": "text-embedding-3-large",
   "dimensions": 3072,
@@ -25,6 +25,7 @@
   ],
   "search_decision": "Retain Dense; this experiment does not justify Hybrid as default.",
   "tokenizer_candidate": {
+    "historical_status": "Superseded initial candidate; see reviewed_tokenizer_candidate and final_comparison for current outcome.",
     "manifest": "data/knowledge/processed/feature599-tokenizer-experiment-20260920-v2/experiment-manifest.json",
     "document_count": 1212,
     "baseline_chunk_count": 13604,
@@ -41,12 +42,62 @@
     "quality_gate": "Existing approved preprocessing report has 13604 chunks, not candidate 13190. No approval hashes or bulk approval were transferred.",
     "decision": "Pending fresh candidate quality review; no tokenizer adoption claim."
   },
+  "reviewed_tokenizer_candidate": {
+    "review_scope": "EXPERIMENT_ONLY_NOT_PRODUCTION_APPROVAL",
+    "directory": "data/knowledge/processed/feature599-tokenizer-reviewed-20260920",
+    "document_count": 1212,
+    "chunk_count": 13223,
+    "changed_document_count": 110,
+    "changed_sources": {"kpicia_adverse_case_report": 89, "kpicia_drug_encyclopedia": 19, "kpicia_pharm_review": 2},
+    "new_chunk_ids": 1131,
+    "removed_chunk_ids": 1512,
+    "tree_sha256": "c60b029543b563fb467c2c9a1e263a6f6330c8f8ef6fb9f9682ce7782c5065b7",
+    "additional_frozen_document": "mfds_drug_food_interaction_guide-53bfb2433f48a8b0",
+    "freeze_reason": "Candidate chunk 25 merged statin and nitrate interaction descriptions; preserve original document boundaries.",
+    "dense_collection": "medication_knowledge_exp599_o200k_reviewed_dense_20260920",
+    "hybrid_collection": "medication_knowledge_exp599_o200k_reviewed_hybrid_20260920",
+    "reembedded_count": 13223,
+    "embedding_batch_size": 256,
+    "maximum_embedding_text_cl100k_tokens": 942,
+    "embedding_text_cl100k_token_sum": 5217805,
+    "checks": [
+      "Fresh experiment-only quality report passed the unchanged indexer validation gate.",
+      "All candidate documents preserve reconstructed section text and stable metadata sets.",
+      "Independent targeted semantic review found no further freeze requirement after the MFDS freeze; not exhaustive clinical review.",
+      "Removed IDs have zero exact references in scanned tracked tests, evaluation, approval, release and seed artifacts; live RDB was not inspected.",
+      "Hybrid clone has exactly 13223 points and matches dense payload/vector fingerprints; provenance: 2026-09-20-feature-599-reviewed-comparison.json fingerprints.o200k."
+    ],
+    "external_transmission": "User explicitly approved existing OpenAI API use including DEMO_RESTRICTED.",
+    "runtime_activation": false
+  },
+  "final_comparison": {
+    "summary": "docs/experiments/2026-09-20-feature-599-reviewed-comparison.json",
+    "measurements": "docs/experiments/2026-09-20-feature-599-measurements.json",
+    "raw_evidence_location": "Full source-bearing reports stay in local ignored data/knowledge/reports; sanitized per-question metrics, repeated latencies and raw hashes are committed.",
+    "retrieval_list_changes": "Across 240 matched searches: 30 top-chunk lists and 15 top-document lists differ; invariant relevance metrics do not mean identical retrieval.",
+    "measured_searches": 480,
+    "errors": 0,
+    "warmup_errors": 0,
+    "identical_query_vectors": true,
+    "per_question_relevance_metric_changes": 0,
+    "search_decision": "Retain Dense; Hybrid has lower unfiltered relevance and higher search latency in this fixed set.",
+    "tokenizer_decision": "Prefer reviewed o200k candidate for the next validation stage per user preference; do not assert corpus-wide non-inferiority or activate runtime with only two changed-document cases.",
+    "activation_performed": false,
+    "remaining_validation": "Frontend 30 questions and broader changed-document span/clinical review before production activation.",
+    "tests": {"ai_passed": 2200, "ai_skipped": 2, "app_passed": 2034, "app_skipped": 1, "app_subtests_passed": 3, "ruff_check": "passed", "ruff_format_files": 921},
+    "code_review": "Code review: skipped (mechanical diff)",
+    "code_review_reason": "This follow-up commit contains experiment result artifacts only; independent data/provenance reviews were performed separately.",
+    "operations": "No additional operational monitoring required: runtime, RDB and active collection unchanged. Temporary test MySQL stopped."
+  },
   "limitations": [
     "Metadata and document-ID relevance are not clinical correctness.",
     "Gold filters are supplied labels, not predictions by the live query planner.",
     "Search latency excludes embedding, routing and answer generation; P95 uses inclusive linear interpolation.",
     "Three repeated searches provide timing observations, not 60 independent relevance cases.",
     "Frontend 30-question checklist has not been executed.",
-    "Metadata enrichment hypotheses were audited but not mixed into this controlled comparison."
+    "Metadata enrichment hypotheses were audited but not mixed into this controlled comparison.",
+    "Only two fixed-set expected-document cases intersect changed documents after freezing the MFDS guide; this set cannot establish full tokenizer non-inferiority.",
+    "Experimental collections share the original dataset_version; isolation is by collection name, not dataset_version alone.",
+    "Tokenizer arms ran sequentially; lower observed o200k search times do not establish a causal tokenizer speed improvement."
   ]
 }
