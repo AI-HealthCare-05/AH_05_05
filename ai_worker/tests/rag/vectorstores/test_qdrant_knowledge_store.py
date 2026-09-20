@@ -4,6 +4,7 @@ import pytest
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models
 
+from ai_worker.rag.errors import KnowledgeDatasetVersionMismatchError
 from ai_worker.rag.vectorstores.qdrant_knowledge_store import (
     QdrantKnowledgeStore,
 )
@@ -169,6 +170,80 @@ async def test_search_filters_dataset_version_and_ingredient() -> None:
         assert [result.metadata.document_id for result in results] == ["document-a"]
         assert results[0].content == "a 근거 원문"
         assert results[0].similarity_score > 0.0
+    finally:
+        await client.close()
+
+
+async def test_search_rejects_absent_dataset_version_in_nonempty_collection() -> None:
+    client = AsyncQdrantClient(location=":memory:")
+    store = QdrantKnowledgeStore(
+        client=client,
+        collection_name="knowledge_release",
+        vector_size=3,
+    )
+
+    try:
+        await store.create_release_collection()
+        await store.upsert_chunks([build_chunk("a", dataset_version="knowledge-pilot-v1")], [[1.0, 0.0, 0.0]])
+
+        with pytest.raises(KnowledgeDatasetVersionMismatchError, match="knowledge-pilot-v2"):
+            await store.search(
+                query_vector=[1.0, 0.0, 0.0],
+                search_query=KnowledgeSearchQuery(
+                    query="비타민 B6 주의사항",
+                    dataset_version="knowledge-pilot-v2",
+                ),
+            )
+    finally:
+        await client.close()
+
+
+async def test_search_keeps_empty_result_when_requested_dataset_exists_but_query_has_no_match() -> None:
+    client = AsyncQdrantClient(location=":memory:")
+    store = QdrantKnowledgeStore(
+        client=client,
+        collection_name="knowledge_release",
+        vector_size=3,
+    )
+
+    try:
+        await store.create_release_collection()
+        await store.upsert_chunks([build_chunk("a", ingredient_names=["비타민 B6"])], [[1.0, 0.0, 0.0]])
+
+        results = await store.search(
+            query_vector=[1.0, 0.0, 0.0],
+            search_query=KnowledgeSearchQuery(
+                query="철분 주의사항",
+                dataset_version="knowledge-pilot-v1",
+                ingredient_names=["철분"],
+            ),
+        )
+
+        assert results == []
+    finally:
+        await client.close()
+
+
+async def test_search_keeps_empty_result_for_empty_collection() -> None:
+    client = AsyncQdrantClient(location=":memory:")
+    store = QdrantKnowledgeStore(
+        client=client,
+        collection_name="knowledge_release",
+        vector_size=3,
+    )
+
+    try:
+        await store.create_release_collection()
+
+        results = await store.search(
+            query_vector=[1.0, 0.0, 0.0],
+            search_query=KnowledgeSearchQuery(
+                query="비타민 B6 주의사항",
+                dataset_version="knowledge-pilot-v1",
+            ),
+        )
+
+        assert results == []
     finally:
         await client.close()
 
@@ -598,12 +673,14 @@ async def test_upsert_rejects_vector_dimension_mismatch() -> None:
         await client.close()
 
 
-async def test_search_validates_collection_only_once() -> None:
+@pytest.mark.parametrize("dataset_count,collection_count", [(1, 1), (0, 0), (0, 1)])
+async def test_search_validates_collection_only_once(dataset_count, collection_count) -> None:
     class CountingClient:
         def __init__(self) -> None:
             self.exists_calls = 0
             self.get_calls = 0
             self.query_calls = 0
+            self.count_calls = 0
 
         async def collection_exists(self, collection_name: str) -> bool:
             self.exists_calls += 1
@@ -626,6 +703,10 @@ async def test_search_validates_collection_only_once() -> None:
             self.query_calls += 1
             return SimpleNamespace(points=[])
 
+        async def count(self, **kwargs):
+            self.count_calls += 1
+            return SimpleNamespace(count=dataset_count if "count_filter" in kwargs else collection_count)
+
     client = CountingClient()
     store = QdrantKnowledgeStore(
         client=client,
@@ -637,18 +718,33 @@ async def test_search_validates_collection_only_once() -> None:
         dataset_version="knowledge-pilot-v1",
     )
 
-    await store.search(
-        query_vector=[1.0, 0.0, 0.0],
-        search_query=search_query,
-    )
-    await store.search(
-        query_vector=[1.0, 0.0, 0.0],
-        search_query=search_query,
-    )
+    for _ in range(2):
+        if not dataset_count and collection_count:
+            with pytest.raises(KnowledgeDatasetVersionMismatchError):
+                await store.search(query_vector=[1.0, 0.0, 0.0], search_query=search_query)
+        else:
+            await store.search(query_vector=[1.0, 0.0, 0.0], search_query=search_query)
 
     assert client.exists_calls == 1
     assert client.get_calls == 1
     assert client.query_calls == 2
+    assert client.count_calls == (1 if dataset_count else 2)
+
+
+async def test_upsert_invalidates_cached_dataset_validation() -> None:
+    client = AsyncQdrantClient(location=":memory:")
+    store = QdrantKnowledgeStore(client=client, collection_name="release", vector_size=3)
+    query = KnowledgeSearchQuery(query="test", dataset_version="second-release")
+    try:
+        await store.create_release_collection()
+        assert await store.search(query_vector=[1.0, 0.0, 0.0], search_query=query) == []
+        await store.upsert_chunks([build_chunk("a")], [[1.0, 0.0, 0.0]])
+        with pytest.raises(KnowledgeDatasetVersionMismatchError):
+            await store.search(query_vector=[1.0, 0.0, 0.0], search_query=query)
+        await store.upsert_chunks([build_chunk("b", dataset_version="second-release")], [[1.0, 0.0, 0.0]])
+        assert len(await store.search(query_vector=[1.0, 0.0, 0.0], search_query=query)) == 1
+    finally:
+        await client.close()
 
 
 async def test_search_forwards_pagination_offset_to_qdrant() -> None:
@@ -669,6 +765,9 @@ async def test_search_forwards_pagination_offset_to_qdrant() -> None:
         async def query_points(self, **kwargs):
             self.query_kwargs = kwargs
             return SimpleNamespace(points=[])
+
+        async def count(self, **kwargs):
+            return SimpleNamespace(count=1)
 
     client = OffsetRecordingClient()
     store = QdrantKnowledgeStore(

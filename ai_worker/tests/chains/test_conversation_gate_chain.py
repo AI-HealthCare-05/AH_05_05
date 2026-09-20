@@ -92,6 +92,34 @@ def test_classification_accepts_follow_up_schedule_intent() -> None:
     assert output.intent.value == "FOLLOW_UP_SCHEDULE"
 
 
+@pytest.mark.parametrize("intent", ["MEDICATION_GUIDE", "MEDICATION_GUIDE_FOLLOW_UP"])
+@pytest.mark.parametrize("domain", ["MEDICATION", "SUPPLEMENT", None])
+def test_guide_domain_is_optional_and_preserved_for_guide_intents(intent, domain) -> None:
+    payload = {"intent": intent, "safety_signal": "NONE", "confidence": "HIGH"}
+    if domain is not None:
+        payload["guide_domain"] = domain
+    output = ConversationClassification.model_validate(payload)
+
+    assert output.guide_domain == domain
+    assert output.model_dump(mode="json")["guide_domain"] == domain
+
+
+@pytest.mark.parametrize("intent", ["OFF_TOPIC", "SPECIFIC_SYMPTOM", "ACTIVE_SUPPLEMENT_LIST"])
+def test_guide_domain_is_cleared_outside_guide_intents(intent) -> None:
+    output = ConversationClassification.model_validate(
+        {"intent": intent, "safety_signal": "NONE", "confidence": "HIGH", "guide_domain": "SUPPLEMENT"}
+    )
+
+    assert output.guide_domain is None
+
+
+def test_guide_domain_rejects_unknown_domain() -> None:
+    with pytest.raises(ValidationError, match="guide_domain"):
+        ConversationClassification.model_validate(
+            {"intent": "MEDICATION_GUIDE", "safety_signal": "NONE", "confidence": "HIGH", "guide_domain": "FOOD"}
+        )
+
+
 def test_classification_accepts_recent_medication_note_summary_scope() -> None:
     output = ConversationClassification.model_validate(
         {

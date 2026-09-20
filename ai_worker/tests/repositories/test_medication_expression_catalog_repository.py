@@ -2,6 +2,8 @@ import pytest
 import pytest_asyncio
 from tortoise import Tortoise
 
+from ai_worker.domain.medication_question_resolver import RuleBasedMedicationQuestionResolver
+from ai_worker.rag import ingredient_name_aliases
 from ai_worker.repositories.medication_expression_catalog_repository import (
     DbMedicationExpressionCatalog,
 )
@@ -20,8 +22,125 @@ from app.models.interactions import (
 
 
 class StaticSupplementIngredientCatalog:
+    def __init__(self, names: list[str] | None = None) -> None:
+        self._names = names if names is not None else ["비타민 K"]
+
     async def list_names(self) -> list[str]:
-        return ["비타민 K"]
+        return self._names
+
+
+@pytest.fixture
+def matched_ingredient_aliases(monkeypatch):
+    monkeypatch.setattr(
+        ingredient_name_aliases,
+        "_active_collection",
+        ingredient_name_aliases.load_ingredient_name_aliases().source_collection,
+    )
+    ingredient_name_aliases._alias_pairs.cache_clear()
+    yield
+    ingredient_name_aliases._alias_pairs.cache_clear()
+
+
+@pytest.mark.parametrize("drug_names", [("와파린",), ("warfarin",), ("와파린", "warfarin")])
+async def test_catalog_resolves_english_and_korean_to_the_same_canonical_pair(
+    initialized_db, matched_ingredient_aliases, drug_names
+):
+    for name in drug_names:
+        await InteractionEntity.create(
+            entity_kind=InteractionEntityKind.DRUG,
+            canonical_name=name,
+            normalized_name=name,
+        )
+    resolver = RuleBasedMedicationQuestionResolver(
+        catalog=DbMedicationExpressionCatalog(supplement_catalog=StaticSupplementIngredientCatalog())
+    )
+
+    for question in ("warfarin과 vitamin K 상호작용 알려줘", "와파린과 비타민 K 상호작용 알려줘"):
+        result = await resolver.resolve(question=question)
+        assert [(entity.canonical_name, entity.kind, entity.resolution_status) for entity in result.entities] == [
+            ("와파린", SearchEntityKind.DRUG, "RESOLVED"),
+            ("비타민 K", SearchEntityKind.SUPPLEMENT, "RESOLVED"),
+        ]
+        assert {"와파린", "warfarin"}.issubset(result.entities[0].search_aliases)
+        assert "vitamin K" in result.entities[1].search_aliases
+
+
+@pytest.mark.parametrize("canonical_name, query", [("비타민 K", "vitamin K"), ("비타민B12", "vitamin B12")])
+async def test_catalog_adds_generic_vitamin_equivalence_only_for_existing_names(initialized_db, canonical_name, query):
+    catalog = DbMedicationExpressionCatalog(
+        supplement_catalog=StaticSupplementIngredientCatalog([canonical_name, "비타민복합체", "비타민 K 추출물"])
+    )
+    result = await RuleBasedMedicationQuestionResolver(catalog=catalog).resolve(question=f"{query} 효능 알려줘")
+
+    assert [entity.canonical_name for entity in result.entities] == [canonical_name]
+    expressions = await catalog.list_expressions()
+    assert "vitamin Z99" not in expressions
+    assert "vitamin복합체" not in expressions
+    assert "vitamin K 추출물" not in expressions
+
+
+async def test_catalog_does_not_create_vitamin_k_when_absent(initialized_db):
+    expressions = await DbMedicationExpressionCatalog().list_expressions()
+    assert "vitamin K" not in expressions
+    assert "비타민 K" not in expressions
+
+
+@pytest.mark.parametrize("canonical_name, forbidden", [("와파린", "warfarin"), ("warfarin", "와파린")])
+async def test_catalog_disables_reviewed_aliases_for_collection_mismatch(
+    initialized_db, matched_ingredient_aliases, canonical_name, forbidden
+):
+    ingredient_name_aliases.use_collection("unreviewed-collection")
+    await InteractionEntity.create(
+        entity_kind=InteractionEntityKind.DRUG,
+        canonical_name=canonical_name,
+        normalized_name=canonical_name,
+    )
+    expressions = await DbMedicationExpressionCatalog().list_expressions()
+    assert canonical_name in expressions
+    assert forbidden not in expressions
+
+
+async def test_catalog_does_not_resolve_chlorphentermine_as_phentermine(initialized_db, matched_ingredient_aliases):
+    await InteractionEntity.create(
+        entity_kind=InteractionEntityKind.DRUG,
+        canonical_name="펜터민",
+        normalized_name="펜터민",
+    )
+    catalog = DbMedicationExpressionCatalog()
+    resolver = RuleBasedMedicationQuestionResolver(catalog=catalog)
+    positive = await resolver.resolve(question="phentermine 효능 알려줘")
+    assert [entity.canonical_name for entity in positive.entities] == ["펜터민"]
+    negative = await resolver.resolve(question="chlorphentermine 효능 알려줘")
+    assert negative.entities == []
+    assert "chlorphentermine" not in await catalog.list_expressions()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unit", ["밀리그램", "밀리그람"])
+async def test_catalog_unit_spelling_resolves_the_exact_strength_and_form(initialized_db, unit):
+    for index, name in enumerate(
+        [
+            "타이레놀정500밀리그람(아세트아미노펜)",
+            "타이레놀정160밀리그람(아세트아미노펜)",
+            "타이레놀산500밀리그램(아세트아미노펜)",
+        ]
+    ):
+        await MedicationProductGuide.create(
+            item_seq=str(index),
+            product_name=name,
+            manufacturer_name="테스트제약",
+            efficacy="효능",
+            usage_instructions="용법",
+            pre_use_warning="경고",
+            precautions="주의",
+            drug_food_interactions="상호작용",
+            adverse_reactions="이상반응",
+            storage_instructions="보관",
+        )
+    resolver = RuleBasedMedicationQuestionResolver(catalog=DbMedicationExpressionCatalog(product_names_only=True))
+    result = await resolver.resolve(question=f"타이레놀정500{unit} 효능 알려줘")
+    assert result.status != "CLARIFICATION_REQUIRED"
+    assert [entity.canonical_name for entity in result.entities] == ["타이레놀정500밀리그람(아세트아미노펜)"]
 
 
 class FailingSupplementIngredientCatalog:

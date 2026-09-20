@@ -2,6 +2,7 @@ import pytest
 
 from ai_worker.rag.errors import (
     GuidelineRetrievalError,
+    KnowledgeDatasetVersionMismatchError,
     RetrievalFailureStage,
 )
 from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
@@ -36,6 +37,21 @@ def test_interaction_heading_overrides_mislabelled_encyclopedia_section() -> Non
         content="상호작용경구제를 항응고제와 함께 투여 시 작용이 증가할 수 있다.",
     )
     assert KnowledgeSectionType.INTERACTION in MedicationKnowledgeRetriever._effective_section_types(chunk)
+
+
+def test_structured_goal_accepts_named_supplement_function_candidate() -> None:
+    base = build_chunk(
+        document_type=KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE, section_type=KnowledgeSectionType.FUNCTION
+    )
+    chunk = base.model_copy(update={"metadata": base.metadata.model_copy(update={"ingredient_names": ["마그네슘"]})})
+    plan = MedicationKnowledgeQueryPlan(
+        original_query="잠 잘자려면 어떤 영양제가 좋아?",
+        expanded_query="잠 잘자려면 어떤 영양제가 좋아? 수면의 질 개선",
+        supplement_function_goal="수면의 질 개선",
+        document_types=[KnowledgeDocumentType.SUPPLEMENT_CODE, KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE],
+        section_types=[KnowledgeSectionType.FUNCTION],
+    )
+    assert MedicationKnowledgeRetriever._is_source_backed_function_goal_candidate(chunk, plan)
 
 
 def test_approved_class_scoped_supplement_interaction_is_eligible_for_single_drug_overview() -> None:
@@ -113,6 +129,14 @@ class FakeKnowledgeStore:
 class FailingKnowledgeStore:
     async def search(self, *, query_vector, search_query):
         raise RuntimeError("qdrant unavailable")
+
+
+class DatasetMismatchKnowledgeStore:
+    async def search(self, *, query_vector, search_query):
+        raise KnowledgeDatasetVersionMismatchError(
+            "Knowledge release 컬렉션에 요청 dataset_version이 없습니다: "
+            "collection=knowledge_release, dataset_version=knowledge-full-v1"
+        )
 
 
 def build_execution_plan(
@@ -249,6 +273,24 @@ async def test_search_preserves_vector_store_failure_stage() -> None:
 
     assert exc_info.value.stage == RetrievalFailureStage.VECTOR_STORE
     assert isinstance(exc_info.value.__cause__, RuntimeError)
+
+
+async def test_search_wraps_dataset_version_mismatch_as_vector_store_failure() -> None:
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=DatasetMismatchKnowledgeStore(),
+        dataset_version="knowledge-full-v1",
+    )
+
+    with pytest.raises(GuidelineRetrievalError) as exc_info:
+        await retriever.search_with_diagnostics(
+            execution_plan=build_execution_plan(
+                "마그네슘은 왜 먹나요?",
+            ),
+        )
+
+    assert exc_info.value.stage == RetrievalFailureStage.VECTOR_STORE
+    assert isinstance(exc_info.value.__cause__, KnowledgeDatasetVersionMismatchError)
 
 
 async def test_search_keeps_each_requested_section_from_one_official_document() -> None:
