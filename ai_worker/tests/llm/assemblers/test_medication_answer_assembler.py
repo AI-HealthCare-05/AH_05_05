@@ -1297,7 +1297,7 @@ def test_omega_amounts_state_that_they_come_from_total_fat() -> None:
         ]
     )
 
-    assert "총지방으로 기록된 값" in lines[-1]
+    assert "총지방으로 기록된 값이라 실제 EPA·DHA 함량은 이보다 적습니다" in lines[-1]
 
 
 def test_omega_notice_is_bound_to_the_shared_nutrient_name() -> None:
@@ -1311,4 +1311,4 @@ def test_omega_notice_is_bound_to_the_shared_nutrient_name() -> None:
         ]
     )
 
-    assert "총지방으로 기록된 값" in lines[-1]
+    assert "총지방으로 기록된 값이라 실제 EPA·DHA 함량은 이보다 적습니다" in lines[-1]

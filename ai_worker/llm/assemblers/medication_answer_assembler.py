@@ -944,7 +944,10 @@ class MedicationAnswerAssembler:
         ]
         if any(n.name == OMEGA_NUTRIENT_NAME for supplement in shown for n in supplement.nutrients):
             # 이 자료는 EPA·DHA를 따로 담지 않는다. 총지방을 그 이름으로 부르는 것이므로 밝힌다.
-            notes.append("오메가-3는 총지방으로 기록된 값이라 EPA·DHA 함량과 다를 수 있습니다.")
+            # EPA·DHA도 지방이라 총지방은 언제나 그 합 이상이다. `다를 수 있다`고 쓰면
+            # 적게 나올 수도 많게 나올 수도 있다는 뜻이 되어, 늘 과대 표시인 사실을 가린다.
+            # 식약처도 이 기능성 원료를 `EPA 및 DHA 함유 유지`로 부르고 둘의 합으로 따진다.
+            notes.append("오메가-3는 총지방으로 기록된 값이라 실제 EPA·DHA 함량은 이보다 적습니다.")
         notes.append("전체 성분은 제품 표시사항을 확인하세요.")
         # 빈 줄이 없으면 마크다운이 이 고지를 마지막 항목의 일부로 붙여 한 제품 설명처럼 읽힌다.
         return [*blocks, "", " ".join(notes)]
