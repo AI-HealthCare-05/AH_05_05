@@ -50,11 +50,13 @@ def build_cloner(
         client=client,
         collection_name=args.source_collection,
         vector_size=settings.OPENAI_EMBEDDING_DIMENSIONS,
+        distance=settings.KNOWLEDGE_VECTOR_DISTANCE,
     )
     target_store = QdrantHybridKnowledgeStore(
         client=client,
         collection_name=args.target_collection,
         vector_size=settings.OPENAI_EMBEDDING_DIMENSIONS,
+        distance=settings.KNOWLEDGE_VECTOR_DISTANCE,
         search_mode=KnowledgeSearchMode.HYBRID,
     )
     return KnowledgeHybridReleaseCloner(

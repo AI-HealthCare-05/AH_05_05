@@ -88,6 +88,55 @@ async def test_product_guide_repository_returns_exact_match(
 
 
 @pytest.mark.asyncio
+async def test_product_guide_repository_matches_unit_spelling_with_ingredient_suffix(initialized_db: None) -> None:
+    guide = await _create_guide("100", "타이레놀정500밀리그람(아세트아미노펜)")
+
+    result = await DbMedicationProductGuideRepository().find_by_name("타이레놀정500밀리그램")
+
+    assert result.guide is not None
+    assert result.guide.medication_guide_id == guide.id
+    assert result.is_ambiguous is False
+
+
+@pytest.mark.asyncio
+async def test_product_guide_repository_unit_variant_prefix_match_is_not_crowded_out_by_substrings(
+    initialized_db: None,
+) -> None:
+    for index in range(7):
+        await _create_guide(str(index), f"000무관제품{index}가나다정10밀리그람")
+    guide = await _create_guide("100", "가나다정10밀리그람(성분)")
+
+    result = await DbMedicationProductGuideRepository().find_by_name("가나다정10밀리그램")
+
+    assert result.guide is not None
+    assert result.guide.medication_guide_id == guide.id
+    assert result.is_ambiguous is False
+
+
+@pytest.mark.asyncio
+async def test_product_guide_repository_does_not_choose_between_unit_spellings(initialized_db: None) -> None:
+    names = ["가나다정10밀리그램(성분)", "가나다정10밀리그람(성분)"]
+    for index, name in enumerate(names):
+        await _create_guide(str(index), name)
+
+    result = await DbMedicationProductGuideRepository().find_by_name("가나다정10밀리그램")
+
+    assert result.guide is None
+    assert result.is_ambiguous is True
+    assert set(result.candidate_names) == set(names)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", ["가나다정100밀리그램", "가나다서방정10밀리그램"])
+async def test_product_guide_repository_keeps_strength_and_form_distinct(initialized_db: None, query: str) -> None:
+    await _create_guide("100", "가나다정10밀리그람(성분)")
+
+    result = await DbMedicationProductGuideRepository().find_by_name(query)
+
+    assert result.guide is None
+
+
+@pytest.mark.asyncio
 async def test_product_guide_repository_groups_cautions_for_requested_magnesium_forms(
     initialized_db: None,
 ) -> None:

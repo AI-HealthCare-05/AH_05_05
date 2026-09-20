@@ -1,0 +1,576 @@
+{
+  "experiment": "feature-602-behavior-regression",
+  "date": "2026-09-20",
+  "branch": "feature/602",
+  "parent_commit": "ffb47ba9bc0d0f9b01b46b42a0f39a346c090643",
+  "status": "READY_FOR_FRONTEND_EXPERIMENT_WITH_KNOWN_FAILURES",
+  "scope": {
+    "search_baseline": "Dense + cl100k_base retained; Hybrid rejected experiment remains unchanged",
+    "embedding": "text-embedding-3-large, 3072 dimensions, DOT",
+    "rdb_schema_changed": false,
+    "operating_data_changed": false,
+    "new_vector_collection_created": false,
+    "push_performed": false
+  },
+  "changes": [
+    "컬렉션과 dataset_version 불일치를 정상 근거 부재와 구분",
+    "정확한 제품 단위 표기와 검수된 영문 성분 별칭 보존",
+    "Gate 영역 승인과 원문 목표에 기반한 영양제 기능 검색",
+    "기존 질의에 목표별 검색 문맥 질의 1개만 추가",
+    "명시된 다중 조합 및 등록약 탐색 경로 보존",
+    "동등한 수치 표기·공식 경고·제품 함량과 복용 지시의 분리 검증",
+    "질문 pair의 검증된 요약을 다른 조합에 재사용하지 않도록 보호"
+  ],
+  "method": {
+    "mode": "Real core-service calls using configured OpenAI, Qdrant and read-only RDB. Not a browser/HTTP end-to-end benchmark.",
+    "context": "synthetic four-medication fixture, no user records or chat writes",
+    "history": "Fresh context per case; only listed history questions run in same synthetic session.",
+    "question_set": "2026-09-20-feature-602-frontend.yaml",
+    "latency": "One final sequential run; cold/warm mixture. History preparation excluded from timed follow-up. No statistical tokenizer comparison or medical correctness certification.",
+    "prior_runs": "Earlier runs diagnosed failures; final counts below include every one of the 20 cases, not best-of reruns."
+  },
+  "configuration": {
+    "KNOWLEDGE_QDRANT_COLLECTION": "medication_knowledge_full_v17_function_ingredients_3072_dot",
+    "KNOWLEDGE_DATASET_VERSION": "knowledge-full-v17-function-ingredients",
+    "KNOWLEDGE_TOKENIZER_ENCODING": "cl100k_base",
+    "KNOWLEDGE_SEARCH_MODE": "DENSE",
+    "RAG_MIN_SIMILARITY_SCORE": "0.65",
+    "OPENAI_EMBEDDING_MODEL": "text-embedding-3-large"
+  },
+  "checks": {
+    "ruff_check": "PASS",
+    "ruff_format_check": "PASS: 921 files",
+    "ai_worker": {
+      "passed": 2309,
+      "skipped": 2,
+      "seconds": 23.39
+    },
+    "app_full": {
+      "passed": 2034,
+      "skipped": 1,
+      "subtests_passed": 3,
+      "seconds": 500.83,
+      "note": "Isolated temporary MySQL; full run before final narrow generator guard. Final guard covered by fresh AI suite and chat API rerun."
+    },
+    "chat_api_final": {
+      "passed": 71,
+      "seconds": 7.76
+    },
+    "mypy": {
+      "status": "NOT_GREEN",
+      "reason": "Existing missing types-PyYAML stubs and duplicate audit_medication_direct_evidence module blocked repository-wide type check."
+    },
+    "review": "Eight-persona review plus independent final cross-model audit; six confirmed boundary/safety/performance findings addressed. Claude peer route unavailable because jq was not installed.",
+    "runtime": "FastAPI restarted; healthcheck passed; frontend /chat HTTP 200."
+  },
+  "summary": {
+    "responses": 20,
+    "exceptions": 0,
+    "timeouts": 0,
+    "manual_pass": 14,
+    "manual_partial": 4,
+    "manual_fail": 2,
+    "latency_ms": {
+      "min": 2581.7,
+      "median": 5103,
+      "max": 7528.6
+    },
+    "note": "Response completion is not answer accuracy. Manual status checks only the scoped expectation; no overall clinical-safety certification."
+  },
+  "remaining_work": [
+    "F602-14: review source-bound FOOD metadata/alias coverage and unresolved counterpart handling; do not alias 녹차 to 녹차추출물.",
+    "F602-04: avoid raw-draft presentation after official-warning preservation while retaining all necessary action/condition grounding.",
+    "F602-09: distinguish pregnancy-specific evidence from general formulation warnings and state missing population evidence.",
+    "F602-01/03/05: stabilize inventory order, explicit-section query plan, adverse-event action retention and duplicate title formatting.",
+    "Returned source_count includes patient-context sources and is not a count of direct clinical evidence.",
+    "Function-goal Korean display title is a literal source phrase and can remain awkward; do not change retrieval target to invented medical facts."
+  ],
+  "query_variant_experiment": {
+    "original_goal": "잠 잘자려면",
+    "candidate_query": "건강기능식품 기능성 원료 잠 잘자려면 도움",
+    "observed_ingredient": "미강주정추출물",
+    "observed_dense_score": 0.6622522,
+    "default_threshold": 0.65,
+    "threshold_changed": false,
+    "note": "One read-only query experiment motivated a generic descriptor variant; does not establish corpus-wide retrieval improvement."
+  },
+  "frontend_procedure": [
+    "새로고침 후 질문셋의 문항을 새 세션에서 실행",
+    "F602-05와 F602-18은 history 순서를 동일 세션에서 유지",
+    "등록약 목록을 기록하고 비교 중 변경하지 않기",
+    "최종 답변과 근거, Network 지연시간을 함께 기록",
+    "PARTIAL/FAIL 문항을 정상 통과로 간주하지 않기"
+  ],
+  "cases": [
+    {
+      "id": "F602-01",
+      "question": "타이레놀정500밀리그램 효능 알려줘",
+      "history": [],
+      "route": "MEDICATION_GUIDE",
+      "elapsed_ms": 6087.2,
+      "entities": [
+        "타이레놀정500밀리그람(아세트아미노펜)"
+      ],
+      "sections": [
+        "FUNCTION"
+      ],
+      "pairs": [],
+      "goal": null,
+      "source_count": 5,
+      "answer_characters": 115,
+      "rewrite_status": "REWRITTEN",
+      "fallback_reason": null,
+      "error": null,
+      "manual_status": "PARTIAL",
+      "manual_note": "정확한 500mg 정제와 효능 요약은 확인. 등록 복약정보가 본문 뒤로 이동하고 구분선이 빠짐."
+    },
+    {
+      "id": "F602-02",
+      "question": "타이레놀 효능과 주의사항 알려줘",
+      "history": [],
+      "route": "MEDICATION_GUIDE",
+      "elapsed_ms": 3612.8,
+      "entities": [
+        "타이레놀정500밀리그람(아세트아미노펜)"
+      ],
+      "sections": [
+        "FUNCTION",
+        "CAUTION"
+      ],
+      "pairs": [],
+      "goal": null,
+      "source_count": 5,
+      "answer_characters": 294,
+      "rewrite_status": "REWRITTEN",
+      "fallback_reason": null,
+      "error": null,
+      "manual_status": "PASS",
+      "manual_note": "FUNCTION+CAUTION 유지, 원문 수치 표기 동등성과 짧은 요약 확인."
+    },
+    {
+      "id": "F602-03",
+      "question": "타이레놀의 이상반응만 알려줘",
+      "history": [],
+      "route": "MEDICATION_GUIDE",
+      "elapsed_ms": 2835.6,
+      "entities": [
+        "타이레놀정500밀리그람(아세트아미노펜)"
+      ],
+      "sections": [
+        "FUNCTION",
+        "CAUTION",
+        "DAILY_INTAKE"
+      ],
+      "pairs": [],
+      "goal": null,
+      "source_count": 5,
+      "answer_characters": 210,
+      "rewrite_status": "REWRITTEN",
+      "fallback_reason": null,
+      "error": null,
+      "manual_status": "PARTIAL",
+      "manual_note": "화면은 이상반응만 표시하지만 검색 계획에 FUNCTION/DAILY_INTAKE가 남음. 5개 bullet과 중단·상담 문구 누락은 추가 보완 필요."
+    },
+    {
+      "id": "F602-04",
+      "question": "타이레놀이 뭐야?",
+      "history": [],
+      "route": "MEDICATION_GUIDE",
+      "elapsed_ms": 6543.4,
+      "entities": [
+        "타이레놀정500밀리그람(아세트아미노펜)"
+      ],
+      "sections": [
+        "FUNCTION",
+        "CAUTION",
+        "DAILY_INTAKE"
+      ],
+      "pairs": [],
+      "goal": null,
+      "source_count": 5,
+      "answer_characters": 812,
+      "rewrite_status": "DRAFT_FALLBACK",
+      "fallback_reason": "OFFICIAL_WARNING_PRESERVED",
+      "error": null,
+      "manual_status": "FAIL",
+      "manual_note": "전반 설명 검색은 정상이나 공식 경고 보존 검증으로 긴 초안에 복귀. 짧은 전체 섹션 안내는 아직 일관되지 않음."
+    },
+    {
+      "id": "F602-05",
+      "question": "그 성분의 주의사항도 알려줘",
+      "history": [
+        "타이레놀이 뭐야?"
+      ],
+      "route": "MEDICATION_GUIDE",
+      "elapsed_ms": 4798.5,
+      "entities": [
+        "타이레놀정500밀리그람(아세트아미노펜)"
+      ],
+      "sections": [
+        "CAUTION"
+      ],
+      "pairs": [],
+      "goal": null,
+      "source_count": 5,
+      "answer_characters": 193,
+      "rewrite_status": "REWRITTEN",
+      "fallback_reason": null,
+      "error": null,
+      "manual_status": "PARTIAL",
+      "manual_note": "이전 타이레놀 주의사항 참조는 정상. 제품 제목 중복과 표현 정돈이 남음."
+    },
+    {
+      "id": "F602-06",
+      "question": "잠 잘자려면 어떤 영양제가 좋아?",
+      "history": [],
+      "route": "SUPPLEMENT_GUIDE",
+      "elapsed_ms": 4863.8,
+      "entities": [],
+      "sections": [
+        "FUNCTION"
+      ],
+      "pairs": [],
+      "goal": "잠 잘자려면",
+      "source_count": 3,
+      "answer_characters": 279,
+      "rewrite_status": "REWRITTEN",
+      "fallback_reason": null,
+      "error": null,
+      "manual_status": "PASS",
+      "manual_note": "원문 목표를 유지한 보조 질의로 성분이 있는 수면 기능성 근거 3개 안내. 정형 질문과 순위·성분 집합은 동일하지 않을 수 있음."
+    },
+    {
+      "id": "F602-07",
+      "question": "수면의 질 개선에 도움 되는 영양제 성분 알려줘",
+      "history": [],
+      "route": "SUPPLEMENT_GUIDE",
+      "elapsed_ms": 2581.7,
+      "entities": [],
+      "sections": [
+        "FUNCTION"
+      ],
+      "pairs": [],
+      "goal": null,
+      "source_count": 2,
+      "answer_characters": 245,
+      "rewrite_status": "REWRITTEN",
+      "fallback_reason": null,
+      "error": null,
+      "manual_status": "PASS",
+      "manual_note": "성분별 기능성 근거를 사용하고 긴 일반 배경 원문을 출력하지 않음."
+    },
+    {
+      "id": "F602-08",
+      "question": "눈에 좋은 영양제 알려줘",
+      "history": [],
+      "route": "SUPPLEMENT_GUIDE",
+      "elapsed_ms": 5070.8,
+      "entities": [],
+      "sections": [
+        "FUNCTION"
+      ],
+      "pairs": [],
+      "goal": null,
+      "source_count": 3,
+      "answer_characters": 323,
+      "rewrite_status": "REWRITTEN",
+      "fallback_reason": null,
+      "error": null,
+      "manual_status": "PASS",
+      "manual_note": "눈 건강 기능성 성분과 근거의 주의사항을 안내."
+    },
+    {
+      "id": "F602-09",
+      "question": "임신 중 마그네슘 영양제를 먹어도 돼?",
+      "history": [],
+      "route": "SUPPLEMENT_GUIDE",
+      "elapsed_ms": 6711.7,
+      "entities": [
+        "마그네슘"
+      ],
+      "sections": [
+        "CAUTION"
+      ],
+      "pairs": [],
+      "goal": null,
+      "source_count": 5,
+      "answer_characters": 245,
+      "rewrite_status": "REWRITTEN",
+      "fallback_reason": null,
+      "error": null,
+      "manual_status": "PARTIAL",
+      "manual_note": "DAILY_INTAKE 대신 CAUTION을 검색하지만 제형별 일반 주의사항만 표시. 임신에 직접 해당하는 근거 부재 안내가 필요."
+    },
+    {
+      "id": "F602-10",
+      "question": "와파린과 비타민 K를 같이 먹어도 돼?",
+      "history": [],
+      "route": "INTERACTION",
+      "elapsed_ms": 6005.4,
+      "entities": [
+        "와파린",
+        "비타민 K"
+      ],
+      "sections": [
+        "INTERACTION"
+      ],
+      "pairs": [
+        "d6653608f46bb208d7f63306f9078d18aa0b88444c9cf7a01cb3936432e24af9"
+      ],
+      "goal": null,
+      "source_count": 5,
+      "answer_characters": 138,
+      "rewrite_status": "REWRITTEN",
+      "fallback_reason": null,
+      "error": null,
+      "manual_status": "PASS",
+      "manual_note": "와파린–비타민 K 직접 pair와 짧은 근거 문장 확인."
+    },
+    {
+      "id": "F602-11",
+      "question": "warfarin과 vitamin K 상호작용 알려줘",
+      "history": [],
+      "route": "INTERACTION",
+      "elapsed_ms": 5135.2,
+      "entities": [
+        "와파린",
+        "비타민 K"
+      ],
+      "sections": [
+        "INTERACTION"
+      ],
+      "pairs": [
+        "d6653608f46bb208d7f63306f9078d18aa0b88444c9cf7a01cb3936432e24af9"
+      ],
+      "goal": null,
+      "source_count": 5,
+      "answer_characters": 138,
+      "rewrite_status": "REWRITTEN",
+      "fallback_reason": null,
+      "error": null,
+      "manual_status": "PASS",
+      "manual_note": "한국어 질문과 같은 canonical 대상 및 pair key 확인."
+    },
+    {
+      "id": "F602-12",
+      "question": "타이레놀과 술을 같이 먹어도 돼?",
+      "history": [],
+      "route": "INTERACTION",
+      "elapsed_ms": 7528.6,
+      "entities": [
+        "아세트아미노펜",
+        "알코올"
+      ],
+      "sections": [
+        "INTERACTION"
+      ],
+      "pairs": [
+        "19c21e5f2ad531db594efed010d675e1e099fe02f8f2476da9980af48f6176d8"
+      ],
+      "goal": null,
+      "source_count": 6,
+      "answer_characters": 146,
+      "rewrite_status": "REWRITTEN",
+      "fallback_reason": null,
+      "error": null,
+      "manual_status": "PASS",
+      "manual_note": "아세트아미노펜–알코올 직접 pair와 해당 근거 확인."
+    },
+    {
+      "id": "F602-13",
+      "question": "펙소페나딘과 자몽주스나 사과주스를 같이 먹어도 돼?",
+      "history": [],
+      "route": "INTERACTION",
+      "elapsed_ms": 5368.8,
+      "entities": [
+        "펙소페나딘",
+        "과일주스"
+      ],
+      "sections": [
+        "INTERACTION"
+      ],
+      "pairs": [
+        "f9802ebfd475228768bee877a5e3594f606bb2941b56b0edb4fe142f969efab1"
+      ],
+      "goal": null,
+      "source_count": 5,
+      "answer_characters": 130,
+      "rewrite_status": "REWRITTEN",
+      "fallback_reason": null,
+      "error": null,
+      "manual_status": "PASS",
+      "manual_note": "검수된 펙소페나딘–과일주스 범주 근거 사용. 개별 주스 각각의 독립 근거 검증을 의미하지 않음."
+    },
+    {
+      "id": "F602-14",
+      "question": "와파린과 녹차를 같이 먹어도 돼?",
+      "history": [],
+      "route": "INTERACTION",
+      "elapsed_ms": 4532,
+      "entities": [
+        "와파린"
+      ],
+      "sections": [
+        "INTERACTION"
+      ],
+      "pairs": [],
+      "goal": null,
+      "source_count": 10,
+      "answer_characters": 1002,
+      "rewrite_status": "DRAFT_FALLBACK",
+      "fallback_reason": "OMITTED_EVIDENCE_SECTION",
+      "error": null,
+      "manual_status": "FAIL",
+      "manual_note": "녹차 FOOD 엔터티가 없어 와파린 단일 대상 탐색으로 확대되고 긴 초안 복귀. 녹차추출물로 대신 연결하지 않았음."
+    },
+    {
+      "id": "F602-15",
+      "question": "비타민 D와 칼슘을 같이 먹어도 돼?",
+      "history": [],
+      "route": "INTERACTION",
+      "elapsed_ms": 5292.2,
+      "entities": [
+        "비타민 D",
+        "칼슘"
+      ],
+      "sections": [
+        "INTERACTION"
+      ],
+      "pairs": [
+        "551e4775820c8616a6b14157b565d1a68d2ae3540367e010c534ad58dae205f5"
+      ],
+      "goal": null,
+      "source_count": 5,
+      "answer_characters": 181,
+      "rewrite_status": "REWRITTEN",
+      "fallback_reason": null,
+      "error": null,
+      "manual_status": "PASS",
+      "manual_note": "비타민 D–칼슘 직접 근거 연결. 개인 병용 안전을 보장하지 않음."
+    },
+    {
+      "id": "F602-16",
+      "question": "마그네슘이랑 아연 같이 머거도대?",
+      "history": [],
+      "route": "INTERACTION",
+      "elapsed_ms": 3879.5,
+      "entities": [
+        "마그네슘",
+        "아연"
+      ],
+      "sections": [
+        "INTERACTION"
+      ],
+      "pairs": [
+        "982c15e752a823f479b19280931d03e9234af6be986840241642c3a72f339d3b"
+      ],
+      "goal": null,
+      "source_count": 4,
+      "answer_characters": 173,
+      "rewrite_status": "SKIPPED",
+      "fallback_reason": "PATIENT_CONTEXT_ONLY",
+      "error": null,
+      "manual_status": "PASS",
+      "manual_note": "오타에도 마그네슘–아연 대상 유지. 직접 근거 미확인을 안전 보장으로 바꾸지 않음."
+    },
+    {
+      "id": "F602-17",
+      "question": "마그네슘, 아연, 칼슘을 같이 먹어도 돼?",
+      "history": [],
+      "route": "INTERACTION",
+      "elapsed_ms": 3898.7,
+      "entities": [
+        "마그네슘",
+        "아연",
+        "칼슘"
+      ],
+      "sections": [
+        "INTERACTION"
+      ],
+      "pairs": [
+        "982c15e752a823f479b19280931d03e9234af6be986840241642c3a72f339d3b",
+        "490792a3190ee4b32894bfd318dbe363356aac2b1e49b1e4f8c4d1c5d36709c6",
+        "c9c0db281fb8ad22d8761d13438a566d71518148afef1b66c33bb912280c2bbc"
+      ],
+      "goal": null,
+      "source_count": 4,
+      "answer_characters": 154,
+      "rewrite_status": "SKIPPED",
+      "fallback_reason": "PATIENT_CONTEXT_ONLY",
+      "error": null,
+      "manual_status": "PASS",
+      "manual_note": "세 대상의 3개 pair 유지. 직접 근거 없는 조합을 생성하지 않고 한 번 안내."
+    },
+    {
+      "id": "F602-18",
+      "question": "그 약과 비타민D 같이 먹어도 돼?",
+      "history": [
+        "타이레놀이 뭐야?"
+      ],
+      "route": "INTERACTION",
+      "elapsed_ms": 7178.4,
+      "entities": [
+        "아세트아미노펜",
+        "비타민 D"
+      ],
+      "sections": [
+        "INTERACTION"
+      ],
+      "pairs": [
+        "4d6a15817f623d5a28cf24cfa5cebda85ad8814da2e7a868ee087da3eff3f532"
+      ],
+      "goal": null,
+      "source_count": 4,
+      "answer_characters": 179,
+      "rewrite_status": "SKIPPED",
+      "fallback_reason": "EVIDENCE_GAP_NOTICE",
+      "error": null,
+      "manual_status": "PASS",
+      "manual_note": "동일 세션 타이레놀을 아세트아미노펜으로 연결해 비타민 D pair 유지, 근거 한계 안내."
+    },
+    {
+      "id": "F602-19",
+      "question": "내가 먹는 약과 같이 먹으면 안 되는 것 알려줘",
+      "history": [],
+      "route": "ACTIVE_INTAKE",
+      "elapsed_ms": 6822.2,
+      "entities": [
+        "아목시실린",
+        "클라불란산",
+        "이부프로펜",
+        "아세트아미노펜",
+        "와파린"
+      ],
+      "sections": [
+        "INTERACTION"
+      ],
+      "pairs": [],
+      "goal": null,
+      "source_count": 13,
+      "answer_characters": 283,
+      "rewrite_status": "REWRITTEN",
+      "fallback_reason": null,
+      "error": null,
+      "manual_status": "PASS",
+      "manual_note": "등록약 대상 탐색과 약/그 외 상호작용 섹션 확인. 임의 이부프로펜 제품 선택 질문으로 막히지 않음."
+    },
+    {
+      "id": "F602-20",
+      "question": "클로르펜터민의 주의사항 알려줘",
+      "history": [],
+      "route": "CLARIFICATION",
+      "elapsed_ms": 2844.7,
+      "entities": [],
+      "sections": [],
+      "pairs": [],
+      "goal": null,
+      "source_count": 0,
+      "answer_characters": 39,
+      "rewrite_status": null,
+      "fallback_reason": null,
+      "error": null,
+      "manual_status": "PASS",
+      "manual_note": "클로르펜터민을 펜터민으로 연결하지 않고 확인 질문 반환. 근거 존재 여부 전체 조사를 의미하지 않음."
+    }
+  ]
+}

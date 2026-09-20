@@ -1,4 +1,5 @@
 import re
+from typing import TypeVar
 
 from ai_worker.schemas.knowledge import (
     KnowledgeDocumentType,
@@ -6,7 +7,9 @@ from ai_worker.schemas.knowledge import (
     RetrievedKnowledgeChunk,
 )
 from ai_worker.schemas.medication_chat import (
+    OMEGA_NUTRIENT_NAME,
     ActiveIntakeContext,
+    ActiveSupplement,
     InteractionRuleFact,
     MedicationEvidenceCoverage,
     MedicationGuideFact,
@@ -15,6 +18,8 @@ from ai_worker.schemas.medication_search import (
     MedicationInteractionQueryPair,
     SupplementIngredientFamily,
 )
+
+_IntakeItem = TypeVar("_IntakeItem")
 
 
 class MedicationAnswerAssembler:
@@ -30,6 +35,7 @@ class MedicationAnswerAssembler:
     }
     # 숫자로 시작하는 괄호는 용량 표기이므로 남긴다. `(4,000mg)`을 지우면 답변에서 수치가 사라진다.
     _GUIDE_PARENTHETICAL_GLOSS = re.compile(r"\s*\((?!\d)[^()]*\)")
+    _PARENTHETICAL_DESCRIPTION = re.compile(r"\s*[\(（][^()（）]*[\)）]")
     _GUIDE_RDB_SPACING = (
         ("감기로인한", "감기로 인한 "),
         ("발열및", "발열 및 "),
@@ -859,9 +865,89 @@ class MedicationAnswerAssembler:
         if medication_lines:
             sections.append("💊 **복약정보**\n" + "\n".join(medication_lines))
 
-        supplement_lines = []
-        for supplement in context.supplements:
-            supplement_lines.append(f"- {supplement.name} · {supplement.dose_amount}{supplement.dose_unit}")
+        # 머리말은 확정 사실 그대로 넘긴다. 같은 이름이라도 등록이 다르면 용량이 다르므로
+        # 합치지 않고, 성분도 붙이지 않는다(상호작용·복약 질문까지 답변이 길어진다).
+        supplement_lines = [
+            f"- {supplement.name} · {supplement.dose_amount}{supplement.dose_unit}"
+            for supplement in context.supplements
+        ]
         if supplement_lines:
             sections.append("💪🏻 **영양제 정보**\n" + "\n".join(supplement_lines))
         return sections
+
+    @staticmethod
+    def visible_intake_items(items: list[_IntakeItem]) -> list[tuple[_IntakeItem, str]]:
+        """답변에 실제로 보이는 항목과 정제된 이름.
+
+        답변과 출처가 같은 집합에서 나오게 한다. 따로 세면 `등록된 게 없습니다`라고
+        답하면서 근거를 N건 붙이는 일이 생긴다.
+        """
+        visible: list[tuple[_IntakeItem, str]] = []
+        seen: set[str] = set()
+        for item in items:
+            name = " ".join(MedicationAnswerAssembler._PARENTHETICAL_DESCRIPTION.sub("", item.name).split())
+            key = name.casefold()
+            if not name or key in seen:
+                continue
+            seen.add(key)
+            visible.append((item, name))
+        return visible
+
+    @staticmethod
+    def supplement_intake_rows(
+        supplements: list[ActiveSupplement],
+    ) -> list[tuple[ActiveSupplement, str, str]]:
+        """답변에 보이는 (등록, 이름, 블록).
+
+        성분은 제품 아래 하위 불렛으로 편다. 한 줄에 몰면 성분이 많은 제품에서
+        쉼표로 이어진 긴 줄이 되어 무엇을 얼마나 먹는지 읽히지 않는다.
+
+        이름이 같아도 함량이 다르면 다른 등록이므로 남긴다. 이름만 보고 합치면
+        한 등록의 복용량이 답변에서 통째로 사라진다. 블록까지 똑같을 때만 합친다.
+        답변과 출처가 이 한 집합에서 나오게 한다.
+        """
+        rows: list[tuple[ActiveSupplement, str, str]] = []
+        seen: set[str] = set()
+        for supplement in supplements:
+            name = " ".join(MedicationAnswerAssembler._PARENTHETICAL_DESCRIPTION.sub("", supplement.name).split())
+            if not name:
+                continue
+            block = "\n".join(
+                [
+                    f"- {name}",
+                    *(f"  - {nutrient.name} {nutrient.amount}{nutrient.unit}" for nutrient in supplement.nutrients),
+                ]
+            )
+            if block in seen:
+                continue
+            seen.add(block)
+            rows.append((supplement, name, block))
+        return rows
+
+    @staticmethod
+    def supplement_intake_lines(supplements: list[ActiveSupplement]) -> list[str]:
+        """등록 영양제 목록 답변의 줄.
+
+        성분 함량은 등록한 복용 계획으로 환산한 값이다(리포트와 같은 계수를 쓴다).
+        기준을 밝히지 않으면 숫자가 무엇의 양인지 알 수 없어 오해를 만든다.
+        """
+        rows = MedicationAnswerAssembler.supplement_intake_rows(supplements)
+        blocks = [block for _, _, block in rows]
+        shown = [supplement for supplement, _, _ in rows if supplement.nutrients]
+        if not shown:
+            return blocks
+        notes = [
+            # 값이 없어 빠진 것과 환산하지 못해 빠진 것을 구분하지 않으면, 환산 실패가
+            # `자료에 값이 없음`으로 읽힌다. 리포트도 같은 사실을 밝힌다.
+            "등록한 1회 복용량과 하루 복용 횟수로 환산한 값이며, 공공 영양성분 자료에 값이 있고 "
+            "복용량·단위를 환산할 수 있는 성분만 표시했습니다."
+        ]
+        if any(n.name == OMEGA_NUTRIENT_NAME for supplement in shown for n in supplement.nutrients):
+            # 이 자료는 EPA·DHA를 따로 담지 않는다. 총지방을 그 이름으로 부르는 것이므로 밝힌다.
+            # EPA·DHA도 지방이라 총지방은 언제나 그 합 이상이다. `다를 수 있다`고 쓰면
+            # 적게 나올 수도 많게 나올 수도 있다는 뜻이 되어, 늘 과대 표시인 사실을 가린다.
+            # 식약처도 이 기능성 원료를 `EPA 및 DHA 함유 유지`로 부르고 둘의 합으로 따진다.
+            notes.append("오메가-3는 총지방으로 기록된 값이라 실제 EPA·DHA 함량은 이보다 적습니다.")
+        notes.append("전체 성분은 제품 표시사항을 확인하세요.")
+        # 빈 줄이 없으면 마크다운이 이 고지를 마지막 항목의 일부로 붙여 한 제품 설명처럼 읽힌다.
+        return [*blocks, "", " ".join(notes)]

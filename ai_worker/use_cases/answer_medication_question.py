@@ -112,6 +112,7 @@ from ai_worker.schemas.chat import ChatHistoryMessage
 from ai_worker.schemas.conversation_gate import (
     ConversationClassification,
     ConversationDisposition,
+    ConversationGuideDomain,
     ConversationIntent,
     ConversationSafetySignal,
 )
@@ -372,30 +373,23 @@ class AnswerMedicationQuestionUseCase:
         sources: list[MedicationChatSource] = []
         if medication_requested:
             if context.medications:
-                medication_names = cls._clean_active_intake_names(item.name for item in context.medications)
+                medication_names = [
+                    name for _, name in MedicationAnswerAssembler.visible_intake_items(context.medications)
+                ]
                 sections.append("💊 **복약정보**\n" + "\n".join(f"- {name}" for name in medication_names))
                 sources.extend(
-                    MedicationChatSource(
-                        kind=MedicationChatSourceKind.PATIENT_MEDICATION,
-                        title=f"사용자 확정 복약정보 · {item.name}",
-                        medication_id=item.medication_id,
-                        care_episode_id=item.care_episode_id,
-                    )
-                    for item in context.medications
+                    cls._active_intake_sources(context=context, intent=ConversationIntent.ACTIVE_MEDICATION_LIST)
                 )
             else:
                 missing_categories.append("복약정보")
         if supplement_requested:
             if context.supplements:
-                supplement_names = cls._clean_active_intake_names(item.name for item in context.supplements)
-                sections.append("💪🏻 **영양제 정보**\n" + "\n".join(f"- {name}" for name in supplement_names))
+                sections.append(
+                    "💪🏻 **영양제 정보**\n"
+                    + "\n".join(MedicationAnswerAssembler.supplement_intake_lines(context.supplements))
+                )
                 sources.extend(
-                    MedicationChatSource(
-                        kind=MedicationChatSourceKind.PATIENT_SUPPLEMENT,
-                        title=f"사용자 복용 영양제 · {item.name}",
-                        user_supplement_id=item.registration_id,
-                    )
-                    for item in context.supplements
+                    cls._active_intake_sources(context=context, intent=ConversationIntent.ACTIVE_SUPPLEMENT_LIST)
                 )
             else:
                 missing_categories.append("영양제 정보")
@@ -508,6 +502,8 @@ class AnswerMedicationQuestionUseCase:
             request=planning_request,
             planning=planning,
             routing_decision=routing_outcome.decision,
+            allow_entity_free_guide_search=prepared_question.medication_guide_search,
+            guide_domain=prepared_question.guide_domain,
         )
         therapeutic_class_selection = await self._select_therapeutic_class(
             request=request,
@@ -646,6 +642,7 @@ class AnswerMedicationQuestionUseCase:
         has_supplement_evidence = self._has_supplement_evidence(
             request.question,
             chunks=chunks,
+            function_goal=bool(query_plan.supplement_function_goal),
         )
         async with self._tracer.span(
             "medication_guide.lookup",
@@ -655,6 +652,10 @@ class AnswerMedicationQuestionUseCase:
                 MedicationGuideLookup()
                 if (
                     request.symptom_interaction_follow_up
+                    or (
+                        query_plan.interaction_overview
+                        and set(query_plan.section_types) <= {KnowledgeSectionType.INTERACTION}
+                    )
                     or query_plan.interaction_pair is not None
                     or (has_supplement_evidence and not query_plan.has_medication_product_cue)
                 )
@@ -689,10 +690,7 @@ class AnswerMedicationQuestionUseCase:
         if (
             guide_lookup.is_ambiguous
             and not guide_lookup.form_caution_guides
-            and not self._has_supplement_evidence(
-                request.question,
-                chunks=chunks,
-            )
+            and not has_supplement_evidence
             and not can_use_ingredient_family_fallback
         ):
             await self._report_progress(
@@ -716,6 +714,7 @@ class AnswerMedicationQuestionUseCase:
         answer_chunks = self._functional_supplement_answer_chunks(
             question=request.question,
             chunks=answer_chunks,
+            function_goal=bool(query_plan.supplement_function_goal),
         )
         coverage_retry = await self._retry_for_missing_coverage(
             retrieval=retrieval,
@@ -737,7 +736,9 @@ class AnswerMedicationQuestionUseCase:
         answer_chunks = coverage_retry.answer_chunks
         rag_unavailable = coverage_retry.rag_unavailable
         evidence_coverage = coverage_retry.evidence_coverage
-        if self._is_supplement_function_goal_question(request.question) and not rag_unavailable:
+        if (
+            query_plan.supplement_function_goal or self._is_supplement_function_goal_question(request.question)
+        ) and not rag_unavailable:
             cautions = await self._supplement_goal_cautions(
                 execution_plan=execution_plan, answer_chunks=answer_chunks, retrieved_chunks=chunks
             )
@@ -826,6 +827,7 @@ class AnswerMedicationQuestionUseCase:
             interaction_question=interaction_question,
             chunks=answer_chunks,
             symptom_medication_guidance=prepared_question.symptom_context is not None,
+            function_goal=bool(query_plan.supplement_function_goal),
         )
         safety_reason_codes = self._safety_reason_codes(
             rag_unavailable=rag_unavailable,
@@ -899,13 +901,16 @@ class AnswerMedicationQuestionUseCase:
                         chunks=answer_chunks,
                         interaction_question=interaction_question,
                     ),
-                    functional_goal_title=self._functional_supplement_goal_title(
-                        request.question,
+                    functional_goal_title=(
+                        query_plan.supplement_function_goal or self._functional_supplement_goal_title(request.question)
                     ),
                     crosscheck_pairs=query_plan.crosscheck_pairs,
                     crosscheck_chunks=crosscheck_chunks,
                     functional_goal_details=(
-                        self._is_supplement_function_goal_question(request.question)
+                        (
+                            bool(query_plan.supplement_function_goal)
+                            or self._is_supplement_function_goal_question(request.question)
+                        )
                         and bool(re.search(r"영양제|건강기능식품|기능.*정보", request.question))
                         and not bool(re.search(r"(?:성분|원료)(?:명)?\s*만", request.question))
                     ),
@@ -1581,16 +1586,21 @@ class AnswerMedicationQuestionUseCase:
         request: MedicationChatRequest,
         planning: MedicationQuestionPlanResult,
         routing_decision: QuestionRoutingDecision | None = None,
+        allow_entity_free_guide_search: bool = False,
+        guide_domain: ConversationGuideDomain | None = None,
     ) -> MedicationQuestionPlanResult:
         chain = self._conditional_interpretation_chain
+        entity_free_guide_search = allow_entity_free_guide_search and not planning.query_plan.entities
         trigger_reasons = self._conditional_interpretation_reasons(
             request=request,
             planning=planning,
         )
+        if entity_free_guide_search:
+            trigger_reasons.append(ConditionalInterpretationReasonCode.ENTITY_FREE_GUIDE_SEARCH)
         if (
             chain is None
             or not trigger_reasons
-            or not planning.query_plan.entities
+            or (not planning.query_plan.entities and not entity_free_guide_search)
             or (routing_decision is not None and routing_decision.stage == QuestionRoutingStage.SEMANTIC)
         ):
             return planning
@@ -1608,6 +1618,8 @@ class AnswerMedicationQuestionUseCase:
                         ConditionalQuestionInterpretationInput(
                             question=request.question,
                             candidate_entities=candidate_entities,
+                            allow_entity_free_guide_search=entity_free_guide_search,
+                            guide_domain=guide_domain,
                             requested_section_types=planning.query_plan.section_types,
                             trigger_reasons=trigger_reasons,
                             candidate_pair_keys=candidate_pair_keys,
@@ -1645,14 +1657,25 @@ class AnswerMedicationQuestionUseCase:
                 candidate_entities=candidate_entities,
                 candidate_pair_keys=candidate_pair_keys,
                 allowed_search_terms=allowed_search_terms,
+                allow_entity_free_guide_search=entity_free_guide_search,
+                guide_domain=guide_domain,
             )
             accepted_entity_count = len([key for key in output.candidate_entity_keys if key in candidate_entities])
+            goal_accepted = bool(
+                output.supplement_function_goal
+                and validated is not planning
+                and validated.query_plan.supplement_function_goal == output.supplement_function_goal
+            )
             trace_outputs = {
                 "status": "APPLIED",
+                "guide_domain": guide_domain.value if guide_domain is not None else None,
+                "supplement_function_goal_accepted": goal_accepted,
                 "interpretation_version": output.interpretation_version,
                 "trigger_reasons": [reason.value for reason in trigger_reasons],
                 "model_confidence": output.confidence.value,
                 "model_reason_codes": [reason.value for reason in output.reason_codes],
+                "proposed_section_types": [section.value for section in output.requested_section_types],
+                "accepted_section_types": [section.value for section in validated.query_plan.section_types],
                 "proposed_entity_count": len(output.candidate_entity_keys),
                 "accepted_entity_count": accepted_entity_count,
                 "discarded_entity_count": (len(output.candidate_entity_keys) - accepted_entity_count),
@@ -1662,6 +1685,10 @@ class AnswerMedicationQuestionUseCase:
             }
             if self._tracer.capture_content:
                 trace_outputs["validated_entity_names"] = validated.interpretation.normalized_entity_names
+                trace_outputs["proposed_supplement_function_goal"] = output.supplement_function_goal
+                trace_outputs["accepted_supplement_function_goal"] = (
+                    validated.query_plan.supplement_function_goal if goal_accepted else None
+                )
             conditional_span.end(trace_outputs)
             return validated
 
@@ -1678,6 +1705,11 @@ class AnswerMedicationQuestionUseCase:
             reasons.append(ConditionalInterpretationReasonCode.MULTI_ENTITY)
         if request.session_reference.entities:
             reasons.append(ConditionalInterpretationReasonCode.SESSION_REFERENCE)
+        if len(planning.query_plan.entities) == 1 and planning.query_plan.section_types in (
+            [],
+            [KnowledgeSectionType.DAILY_INTAKE],
+        ):
+            reasons.append(ConditionalInterpretationReasonCode.SECTION_AMBIGUITY)
         return reasons
 
     @classmethod
@@ -1689,6 +1721,8 @@ class AnswerMedicationQuestionUseCase:
         candidate_entities: dict[str, MedicationQueryEntity],
         candidate_pair_keys: list[str],
         allowed_search_terms: list[str],
+        allow_entity_free_guide_search: bool = False,
+        guide_domain: ConversationGuideDomain | None = None,
     ) -> MedicationQuestionPlanResult:
         query_plan = planning.query_plan
         validated_entities = [
@@ -1700,13 +1734,54 @@ class AnswerMedicationQuestionUseCase:
             KnowledgeSectionType.CAUTION,
             KnowledgeSectionType.INTERACTION,
         }
+        accepted_sections = [section for section in output.requested_section_types if section in supported_sections]
+        unknown_entity_keys = set(output.candidate_entity_keys) - set(candidate_entities)
+        unknown_pair_keys = set(output.interaction_pair_keys) - set(candidate_pair_keys)
+        replace_guesses = bool(
+            output.confidence is MedicationQuestionConfidence.HIGH
+            and accepted_sections
+            and not unknown_entity_keys
+            and not unknown_pair_keys
+            and query_plan.section_types in ([], [KnowledgeSectionType.DAILY_INTAKE])
+        )
         section_types = list(
-            dict.fromkeys(
-                [
-                    *query_plan.section_types,
-                    *(section for section in output.requested_section_types if section in supported_sections),
-                ]
-            )
+            dict.fromkeys(accepted_sections if replace_guesses else [*query_plan.section_types, *accepted_sections])
+        )
+        if len(candidate_pair_keys) > 1 and KnowledgeSectionType.INTERACTION in query_plan.section_types:
+            section_types = list(dict.fromkeys([*section_types, KnowledgeSectionType.INTERACTION]))
+        goal = output.supplement_function_goal
+        accept_goal = bool(
+            allow_entity_free_guide_search
+            and guide_domain is ConversationGuideDomain.SUPPLEMENT
+            and not candidate_entities
+            and not output.candidate_entity_keys
+            and not output.interaction_pair_keys
+            and not unknown_entity_keys
+            and not unknown_pair_keys
+            and not output.needs_clarification
+            and output.route is MedicationChatRoute.SUPPLEMENT_GUIDE
+            and output.confidence is MedicationQuestionConfidence.HIGH
+            and KnowledgeSectionType.FUNCTION in section_types
+            and set(section_types) <= {KnowledgeSectionType.FUNCTION, KnowledgeSectionType.CAUTION}
+            and goal
+            and " ".join(goal.casefold().split()) in " ".join(query_plan.original_query.casefold().split())
+        )
+        if not candidate_entities and (unknown_entity_keys or unknown_pair_keys):
+            return planning
+        if goal and not accept_goal:
+            return planning
+        if accept_goal:
+            section_types = [
+                section
+                for section in (KnowledgeSectionType.FUNCTION, KnowledgeSectionType.CAUTION)
+                if section in section_types
+            ]
+        unresolved_section = bool(
+            len(query_plan.entities) == 1
+            and query_plan.section_types in ([], [KnowledgeSectionType.DAILY_INTAKE])
+            and not accepted_sections
+            and not output.needs_clarification
+            and output.route in (None, MedicationChatRoute.MEDICATION_GUIDE, MedicationChatRoute.SUPPLEMENT_GUIDE)
         )
         validated_pair_keys = (
             [pair_key for pair_key in output.interaction_pair_keys if pair_key in candidate_pair_keys]
@@ -1751,10 +1826,21 @@ class AnswerMedicationQuestionUseCase:
         else:
             selected_pairs = query_plan.interaction_pairs
             selected_interaction_pair = query_plan.interaction_pair
-            alternate_queries = query_plan.alternate_queries
+            alternate_queries = (
+                cls._alternate_queries_for_selected_pairs(query_plan=query_plan, selected_pairs=selected_pairs)
+                if preserve_explicit_pair_set
+                else query_plan.alternate_queries
+            )
         validated_query_plan = query_plan.model_copy(
             update={
                 "section_types": section_types,
+                "supplement_function_goal": goal if accept_goal else query_plan.supplement_function_goal,
+                "expanded_query": f"{query_plan.expanded_query} {goal}" if accept_goal else query_plan.expanded_query,
+                "document_types": (
+                    [KnowledgeDocumentType.SUPPLEMENT_CODE, KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE]
+                    if accept_goal
+                    else query_plan.document_types
+                ),
                 "interaction_pair": selected_interaction_pair,
                 "interaction_pairs": selected_pairs,
                 "interaction_types": list(dict.fromkeys(pair.pair_type for pair in selected_pairs)),
@@ -1781,9 +1867,14 @@ class AnswerMedicationQuestionUseCase:
             update={
                 "normalized_entity_names": normalized_names,
                 "resolved_question": output.normalized_question,
+                "intent": MedicationQuestionIntent.SUPPLEMENT_GUIDE if accept_goal else planning.interpretation.intent,
                 "requested_section_types": section_types,
-                "needs_clarification": output.needs_clarification,
-                "clarification_question": output.clarification_question,
+                "needs_clarification": output.needs_clarification or unresolved_section,
+                "clarification_question": (
+                    "확인할 항목이 효능, 섭취량, 주의사항 중 무엇인지 알려주세요."
+                    if unresolved_section
+                    else output.clarification_question
+                ),
                 "query_plan_hash": validated_query_plan.query_plan_hash,
             }
         )
@@ -2116,6 +2207,7 @@ class AnswerMedicationQuestionUseCase:
         symptom_context: str | None = None
         answer_context_history: tuple[ChatHistoryMessage, ...] = ()
         medication_guide_search = False
+        guide_domain: ConversationGuideDomain | None = None
         if self._requires_qdrant_conversation_safety_preflight(resolution):
             conversation_result = await self._conversation_terminal_result(
                 request=request,
@@ -2150,6 +2242,7 @@ class AnswerMedicationQuestionUseCase:
             symptom_context = conversation_preparation.symptom_context
             answer_context_history = conversation_preparation.answer_context_history
             medication_guide_search = conversation_preparation.medication_guide_search
+            guide_domain = conversation_preparation.guide_domain
         if resolution.scope in {
             MedicationQuestionScope.GREETING,
             MedicationQuestionScope.OUT_OF_SCOPE,
@@ -2189,6 +2282,7 @@ class AnswerMedicationQuestionUseCase:
             symptom_context=symptom_context,
             answer_context_history=answer_context_history,
             medication_guide_search=medication_guide_search,
+            guide_domain=guide_domain,
         )
 
     async def _health_triage_result(
@@ -2294,6 +2388,7 @@ class AnswerMedicationQuestionUseCase:
                 resolution=self._allow_unresolved_guide_search(resolution),
                 early_result=None,
                 medication_guide_search=True,
+                guide_domain=classification.guide_domain,
             )
         if classification.intent is ConversationIntent.SYMPTOM_MEDICATION_GUIDANCE:
             return self._prepare_symptom_medication_guidance(
@@ -2472,6 +2567,10 @@ class AnswerMedicationQuestionUseCase:
                 question=request.question,
                 resolution=resolution,
             )
+            or self._has_explicit_interaction_pairs(
+                question=request.question,
+                resolution=resolution,
+            )
         ):
             return request
 
@@ -2512,6 +2611,23 @@ class AnswerMedicationQuestionUseCase:
         if not follow_up:
             return request
         return request.model_copy(update={"symptom_interaction_follow_up": True})
+
+    @staticmethod
+    def _has_explicit_interaction_pairs(
+        *,
+        question: str,
+        resolution: MedicationQuestionResolution,
+    ) -> bool:
+        """질문에 확인된 두 대상 조합이 있으면 대화 이력으로 확장하지 않는다."""
+        if not is_interaction_question(question):
+            return False
+        return bool(
+            MedicationKnowledgeQueryBuilder(
+                catalog_entities=resolution.entities,
+            )
+            .build(question)
+            .interaction_pairs
+        )
 
     @staticmethod
     def _is_explicit_entity_guide_request(
@@ -2652,6 +2768,7 @@ class AnswerMedicationQuestionUseCase:
             classify_span.end(
                 {
                     "intent": classification.intent.value,
+                    "guide_domain": classification.guide_domain.value if classification.guide_domain else None,
                     "safety_signal": classification.safety_signal.value,
                     "confidence": classification.confidence.value,
                     "note_summary_scope": (
@@ -2792,19 +2909,15 @@ class AnswerMedicationQuestionUseCase:
         intent: ConversationIntent,
     ) -> MedicationChatResult:
         if intent is ConversationIntent.ACTIVE_MEDICATION_LIST:
-            names = cls._clean_active_intake_names(item.name for item in context.medications)
+            names = [name for _, name in MedicationAnswerAssembler.visible_intake_items(context.medications)]
             answer = (
                 "💊 **복약정보**\n" + "\n".join(f"- {name}" for name in names)
                 if names
                 else "현재 등록된 복약정보가 없습니다."
             )
         else:
-            names = cls._clean_active_intake_names(item.name for item in context.supplements)
-            answer = (
-                "💪🏻 **영양제 정보**\n" + "\n".join(f"- {name}" for name in names)
-                if names
-                else "현재 등록된 영양제 정보가 없습니다."
-            )
+            lines = MedicationAnswerAssembler.supplement_intake_lines(context.supplements)
+            answer = "💪🏻 **영양제 정보**\n" + "\n".join(lines) if lines else "현재 등록된 영양제 정보가 없습니다."
         return cls._conversation_result(
             request=request,
             context=context,
@@ -2812,19 +2925,36 @@ class AnswerMedicationQuestionUseCase:
             route=MedicationChatRoute.ACTIVE_INTAKE,
             safety_status=SafetyStatus.SAFE,
             reason_code=MedicationChatReasonCode.ACTIVE_INTAKE_LIST_REQUESTED,
+            # 등록 정보에서 온 사실이므로 출처를 밝힌다. 성분 함량은 정량 주장이다.
+            sources=cls._active_intake_sources(context=context, intent=intent),
         )
 
-    @classmethod
-    def _clean_active_intake_names(cls, values) -> list[str]:
-        names: list[str] = []
-        seen: set[str] = set()
-        for value in values:
-            name = " ".join(cls._PARENTHETICAL_DESCRIPTION_PATTERN.sub("", value).split())
-            key = name.casefold()
-            if name and key not in seen:
-                names.append(name)
-                seen.add(key)
-        return names
+    @staticmethod
+    def _active_intake_sources(
+        *,
+        context: ActiveIntakeContext,
+        intent: ConversationIntent,
+    ) -> list[MedicationChatSource]:
+        # 답변에 보이는 항목과 같은 집합에서 만든다. 따로 세면 `등록된 게 없습니다`라고
+        # 답하면서 근거를 붙이거나, 합쳐 보인 항목의 출처가 둘로 나뉜다.
+        if intent is ConversationIntent.ACTIVE_MEDICATION_LIST:
+            return [
+                MedicationChatSource(
+                    kind=MedicationChatSourceKind.PATIENT_MEDICATION,
+                    title=f"사용자 확정 복약정보 · {name}",
+                    medication_id=item.medication_id,
+                    care_episode_id=item.care_episode_id,
+                )
+                for item, name in MedicationAnswerAssembler.visible_intake_items(context.medications)
+            ]
+        return [
+            MedicationChatSource(
+                kind=MedicationChatSourceKind.PATIENT_SUPPLEMENT,
+                title=f"사용자 복용 영양제 · {name}",
+                user_supplement_id=item.registration_id,
+            )
+            for item, name, _ in MedicationAnswerAssembler.supplement_intake_rows(context.supplements)
+        ]
 
     async def _follow_up_schedule_result(
         self,
@@ -2988,6 +3118,7 @@ class AnswerMedicationQuestionUseCase:
         route: MedicationChatRoute,
         safety_status: SafetyStatus,
         reason_code: MedicationChatReasonCode,
+        sources: list[MedicationChatSource] | None = None,
     ) -> MedicationChatResult:
         return MedicationChatResult(
             request_id=request.request_id,
@@ -2995,6 +3126,7 @@ class AnswerMedicationQuestionUseCase:
             route=route,
             safety_status=safety_status,
             safety_reason_codes=[reason_code.value],
+            sources=sources or [],
             prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
             schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
             context_hash=cls._context_hash(context),
@@ -4760,6 +4892,11 @@ class AnswerMedicationQuestionUseCase:
                 chunks=combined_chunks,
                 prefer_supplement=prefer_supplement,
             )
+            combined_answer_chunks = self._functional_supplement_answer_chunks(
+                question=query_plan.original_query,
+                chunks=combined_answer_chunks,
+                function_goal=bool(query_plan.supplement_function_goal),
+            )
             after = evaluator.evaluate(
                 query_plan=query_plan,
                 guide_lookup=guide_lookup,
@@ -4927,6 +5064,7 @@ class AnswerMedicationQuestionUseCase:
         interaction_question: bool,
         chunks: list,
         symptom_medication_guidance: bool = False,
+        function_goal: bool = False,
     ) -> MedicationChatRoute:
         if request.symptom_interaction_follow_up and context.medications:
             return MedicationChatRoute.ACTIVE_INTAKE
@@ -4955,6 +5093,7 @@ class AnswerMedicationQuestionUseCase:
         if cls._has_supplement_evidence(
             request.question,
             chunks=chunks,
+            function_goal=function_goal,
         ):
             return MedicationChatRoute.SUPPLEMENT_GUIDE
         if cls._has_drug_encyclopedia_evidence(
@@ -5003,10 +5142,11 @@ class AnswerMedicationQuestionUseCase:
         *,
         question: str,
         chunks: list,
+        function_goal: bool = False,
     ) -> list:
         """목표 기반 기능성 질문에는 성분이 명시된 원료 근거만 우선 보여 준다."""
 
-        if not cls._is_supplement_function_goal_question(question):
+        if not (function_goal or cls._is_supplement_function_goal_question(question)):
             return chunks
         source_backed_ingredients = [
             chunk
@@ -5028,6 +5168,7 @@ class AnswerMedicationQuestionUseCase:
         question: str,
         *,
         chunks: list,
+        function_goal: bool = False,
     ) -> bool:
         supplement_types = {
             KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
@@ -5051,7 +5192,7 @@ class AnswerMedicationQuestionUseCase:
                 return True
             if metadata.document_type not in supplement_types:
                 continue
-            if AnswerMedicationQuestionUseCase._is_supplement_function_goal_question(question):
+            if function_goal or AnswerMedicationQuestionUseCase._is_supplement_function_goal_question(question):
                 return True
             if not metadata.ingredient_names:
                 return True

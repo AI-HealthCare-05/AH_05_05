@@ -179,13 +179,17 @@ class QdrantSupplementIngredientCatalog:
                 break
         deduplicated: dict[tuple[str, str, str], MedicationCatalogEntry] = {}
         for entry in entries:
-            deduplicated.setdefault(
-                (
-                    entry.canonical_name.casefold(),
-                    entry.entity_type.value,
-                    entry.kind.value if entry.kind is not None else "",
-                ),
-                entry,
+            key = (
+                entry.canonical_name.casefold(),
+                entry.entity_type.value,
+                entry.kind.value if entry.kind is not None else "",
+            )
+            existing = deduplicated.get(key)
+            # 먼저 읽은 평면 메타데이터 때문에 뒤의 검수 별칭이 사라지지 않게 한다.
+            deduplicated[key] = (
+                existing.model_copy(update={"aliases": list(dict.fromkeys([*existing.aliases, *entry.aliases]))})
+                if existing is not None
+                else entry
             )
         return sorted(
             deduplicated.values(),

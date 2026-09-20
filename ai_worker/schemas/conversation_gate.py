@@ -32,6 +32,11 @@ class ConversationSafetySignal(StrEnum):
     HEALTH_URGENCY = "HEALTH_URGENCY"
 
 
+class ConversationGuideDomain(StrEnum):
+    MEDICATION = "MEDICATION"
+    SUPPLEMENT = "SUPPLEMENT"
+
+
 class ConversationDisposition(StrEnum):
     ALLOW = "ALLOW"
     REDIRECT = "REDIRECT"
@@ -58,6 +63,7 @@ class ConversationClassification(BaseModel):
     symptom_context: str | None = Field(default=None, max_length=CHAT_CONTENT_MAX_LENGTH)
     note_summary_scope: MedicationNoteSummaryScope | None = None
     interaction_reference_names: list[str] = Field(default_factory=list, max_length=2)
+    guide_domain: ConversationGuideDomain | None = None
 
     @field_validator("interaction_reference_names")
     @classmethod
@@ -83,6 +89,11 @@ class ConversationClassification(BaseModel):
         intent = value.get("intent")
         intent = getattr(intent, "value", intent)
         normalized = dict(value)
+        if intent not in {
+            ConversationIntent.MEDICATION_GUIDE.value,
+            ConversationIntent.MEDICATION_GUIDE_FOLLOW_UP.value,
+        }:
+            normalized["guide_domain"] = None
         if intent != ConversationIntent.SYMPTOM_MEDICATION_GUIDANCE.value:
             normalized["symptom_context"] = None
         if intent != ConversationIntent.MEDICATION_NOTE_SUMMARY.value:

@@ -5,6 +5,7 @@ from ai_worker.llm.generators.medication_answer_generator import (
     OpenAIMedicationAnswerGenerator,
 )
 from ai_worker.schemas.enums import SafetyStatus
+from ai_worker.schemas.evidence_reasoning import EvidenceReasoningOutput
 from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
@@ -21,6 +22,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatSourceKind,
     MedicationEvidenceCoverage,
 )
+from ai_worker.schemas.medication_search import MedicationSearchExecutionObservation
 
 
 class FakeAnswerClient:
@@ -317,8 +319,162 @@ async def test_generator_revalidates_repaired_section_without_allowing_new_dosag
     assert outcome.observation.fallback_reason == MedicationAnswerFallbackReason.GENERATED_DOSAGE_NOT_IN_DRAFT
 
 
-async def test_generator_keeps_official_warning_verbatim_when_rewrite_changes_a_stop_instruction() -> None:
-    """공식 주의사항을 풀어 쓴 중단 지시는 초안으로 되돌려 안전성 차단을 막는다."""
+@pytest.mark.parametrize("day", ["일일", "하루", "1일"])
+async def test_generator_accepts_dosage_rewrite_that_only_removes_thousands_separator(day) -> None:
+    draft = "⚠️ **주의사항**\n- 아세트아미노펜으로 일일 최대용량(4,000mg)을 초과하여 복용하지 마십시오."
+    rewritten = f"⚠️ **주의사항**\n- 아세트아미노펜은 {day} 최대용량 4000mg을 넘지 마세요."
+    client = FakeAnswerClient(response={"answer": rewritten, "section_types": ["CAUTION"]})
+    result = build_result().model_copy(
+        update={
+            "answer": draft,
+            "evidence_coverage": MedicationEvidenceCoverage(
+                requested_section_types=[KnowledgeSectionType.CAUTION],
+                covered_section_types=[KnowledgeSectionType.CAUTION],
+            ),
+        }
+    )
+    generator = OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client)
+
+    outcome = await generator.generate(request=build_request(), context=ActiveIntakeContext(user_id=1), result=result)
+
+    assert outcome.result.answer == rewritten
+    assert outcome.observation.status is MedicationAnswerRewriteStatus.REWRITTEN
+    assert outcome.observation.fallback_used is False
+
+
+@pytest.mark.parametrize("rewritten_subject", ["타이레놀정500밀리그램(아세트아미노펜)", "타이레놀정500mg"])
+async def test_generator_accepts_product_heading_unit_spelling_equivalence(rewritten_subject: str) -> None:
+    draft = "**타이레놀정500밀리그람(아세트아미노펜)**\n\n✅ **효능**\n- 감기로 인한 발열 및 통증에 사용합니다."
+    rewritten = f"**{rewritten_subject}**\n\n✅ **효능**\n- 감기로 인한 발열과 통증에 쓰입니다."
+    client = FakeAnswerClient(response={"answer": rewritten, "section_types": ["FUNCTION"]})
+    result = build_result().model_copy(
+        update={
+            "answer": draft,
+            "evidence_coverage": MedicationEvidenceCoverage(
+                requested_section_types=[KnowledgeSectionType.FUNCTION],
+                covered_section_types=[KnowledgeSectionType.FUNCTION],
+            ),
+        }
+    )
+    generator = OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client)
+
+    outcome = await generator.generate(request=build_request(), context=ActiveIntakeContext(user_id=1), result=result)
+
+    assert outcome.result.answer == rewritten
+    assert outcome.observation.status is MedicationAnswerRewriteStatus.REWRITTEN
+    assert outcome.observation.fallback_used is False
+
+
+@pytest.mark.parametrize(
+    "strength_context",
+    [
+        "**타이레놀정500밀리그람**\n\n",
+        "💊 **복약정보**\n- 타이레놀정500밀리그람\n\n---\n\n",
+    ],
+)
+@pytest.mark.parametrize(
+    "instruction", ["- 500mg 복용하세요.", "**500mg 복용하세요.**", "**타이레놀정500mg(500mg 복용하세요)**"]
+)
+def test_product_strength_does_not_authorize_new_dosing_instruction(strength_context: str, instruction: str) -> None:
+    failure = OpenAIMedicationAnswerGenerator._grounding_failure_reason(
+        draft_answer=f"{strength_context}✅ **효능**\n- 해열에 사용합니다.",
+        generated_answer=f"{strength_context}✅ **효능**\n- 해열에 사용합니다.\n{instruction}",
+    )
+    assert failure is MedicationAnswerFallbackReason.GENERATED_DOSAGE_NOT_IN_DRAFT
+
+
+def test_new_instruction_inside_inventory_is_not_treated_as_registered_name() -> None:
+    failure = OpenAIMedicationAnswerGenerator._grounding_failure_reason(
+        draft_answer="💊 **복약정보**\n- 타이레놀정500밀리그람\n\n---\n\n✅ **효능**\n- 해열에 사용합니다.",
+        generated_answer="💊 **복약정보**\n- 500mg 복용하세요.\n\n---\n\n✅ **효능**\n- 해열에 사용합니다.",
+    )
+    assert failure is MedicationAnswerFallbackReason.GENERATED_DOSAGE_NOT_IN_DRAFT
+
+
+def test_product_heading_strength_change_remains_unsupported() -> None:
+    failure = OpenAIMedicationAnswerGenerator._grounding_failure_reason(
+        draft_answer="**타이레놀정500밀리그람**\n\n✅ **효능**\n- 해열에 사용합니다.",
+        generated_answer="**타이레놀정600mg**\n\n✅ **효능**\n- 해열에 사용합니다.",
+    )
+    assert failure is MedicationAnswerFallbackReason.GENERATED_DOSAGE_NOT_IN_DRAFT
+
+
+@pytest.mark.parametrize(
+    ("draft_dosage", "rewritten_dosage"),
+    [
+        ("400μg", "400mcg"),
+        ("400㎍", "400mcg"),
+        ("400mcg", "400㎍"),
+    ],
+)
+async def test_generator_accepts_microgram_unit_spelling_equivalence(
+    draft_dosage: str,
+    rewritten_dosage: str,
+) -> None:
+    client = FakeAnswerClient(
+        response={"answer": f"⚠️ **주의사항**\n- 하루 {rewritten_dosage}을 넘지 마세요.", "section_types": ["CAUTION"]}
+    )
+    result = build_result().model_copy(
+        update={
+            "answer": f"⚠️ **주의사항**\n- 하루 {draft_dosage}을 넘지 마세요.",
+            "evidence_coverage": MedicationEvidenceCoverage(
+                requested_section_types=[KnowledgeSectionType.CAUTION],
+                covered_section_types=[KnowledgeSectionType.CAUTION],
+            ),
+        }
+    )
+    generator = OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client)
+
+    outcome = await generator.generate(request=build_request(), context=ActiveIntakeContext(user_id=1), result=result)
+
+    assert outcome.observation.status is MedicationAnswerRewriteStatus.REWRITTEN
+    assert outcome.observation.fallback_used is False
+
+
+async def test_generator_still_rejects_new_numeric_dosage_after_normalization() -> None:
+    client = FakeAnswerClient(
+        response={"answer": "⚠️ **주의사항**\n- 하루 5000mg을 넘지 마세요.", "section_types": ["CAUTION"]}
+    )
+    result = build_result().model_copy(
+        update={
+            "answer": "⚠️ **주의사항**\n- 하루 4,000mg을 넘지 마세요.",
+            "evidence_coverage": MedicationEvidenceCoverage(
+                requested_section_types=[KnowledgeSectionType.CAUTION],
+                covered_section_types=[KnowledgeSectionType.CAUTION],
+            ),
+        }
+    )
+    generator = OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client)
+
+    outcome = await generator.generate(request=build_request(), context=ActiveIntakeContext(user_id=1), result=result)
+
+    assert outcome.result.answer == result.answer
+    assert outcome.observation.fallback_reason is MedicationAnswerFallbackReason.GENERATED_DOSAGE_NOT_IN_DRAFT
+
+
+async def test_generator_does_not_treat_decimal_point_as_thousands_separator() -> None:
+    client = FakeAnswerClient(
+        response={"answer": "⚠️ **주의사항**\n- 하루 4000mg을 넘지 마세요.", "section_types": ["CAUTION"]}
+    )
+    result = build_result().model_copy(
+        update={
+            "answer": "⚠️ **주의사항**\n- 하루 4.000mg을 넘지 마세요.",
+            "evidence_coverage": MedicationEvidenceCoverage(
+                requested_section_types=[KnowledgeSectionType.CAUTION],
+                covered_section_types=[KnowledgeSectionType.CAUTION],
+            ),
+        }
+    )
+    generator = OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client)
+
+    outcome = await generator.generate(request=build_request(), context=ActiveIntakeContext(user_id=1), result=result)
+
+    assert outcome.result.answer == result.answer
+    assert outcome.observation.fallback_reason is MedicationAnswerFallbackReason.GENERATED_DOSAGE_NOT_IN_DRAFT
+
+
+async def test_generator_keeps_official_warning_verbatim_when_rewrite_changes_the_condition() -> None:
+    """공식 주의사항의 조건을 바꾼 중단 지시는 초안으로 되돌려 안전성 차단을 막는다."""
 
     warning = "이 약 복용 후 피부 발진 또는 과민반응의 징후가 나타나는 경우 즉시 복용을 중단하십시오."
     initial = build_result().model_copy(
@@ -335,7 +491,7 @@ async def test_generator_keeps_official_warning_verbatim_when_rewrite_changes_a_
         model="gpt-4o-mini",
         client=FakeAnswerClient(
             response={
-                "answer": "⚠️ **주의사항**\n- 피부 발진이나 과민반응이 나타나면 이 약 복용을 중단하세요.",
+                "answer": "⚠️ **주의사항**\n- 두통이 나타나면 이 약 복용을 중단하세요.",
                 "section_types": ["CAUTION"],
             }
         ),
@@ -351,6 +507,72 @@ async def test_generator_keeps_official_warning_verbatim_when_rewrite_changes_a_
     # 초안이 그대로 나갔으므로 지표도 재작성 성공이 아니라 초안 노출로 기록돼야 한다.
     assert outcome.observation.status is MedicationAnswerRewriteStatus.DRAFT_FALLBACK
     assert outcome.observation.fallback_reason is MedicationAnswerFallbackReason.OFFICIAL_WARNING_PRESERVED
+
+
+@pytest.mark.parametrize("repair_succeeds", [True, False])
+async def test_generator_uses_shared_repair_for_official_warning_failure(repair_succeeds: bool) -> None:
+    warning = "이 약 복용 후 발진이 나타나면 즉시 복용을 중단하십시오."
+    invalid = "⚠️ **주의사항**\n- 두통이 나타나면 이 약 복용을 중단하세요."
+    repaired = "⚠️ **주의사항**\n- " + warning
+    result = build_result().model_copy(
+        update={
+            "answer": repaired + "\n- " + "주변의 긴 부연 설명입니다. " * 20,
+            "official_warning_texts": [warning],
+            "evidence_coverage": MedicationEvidenceCoverage(
+                requested_section_types=[KnowledgeSectionType.CAUTION],
+                covered_section_types=[KnowledgeSectionType.CAUTION],
+            ),
+        }
+    )
+    client = FakeAnswerClient(
+        responses=[
+            {"answer": invalid, "section_types": ["CAUTION"]},
+            {"answer": repaired if repair_succeeds else invalid, "section_types": ["CAUTION"]},
+        ]
+    )
+
+    outcome = await OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client).generate(
+        request=build_request(), context=ActiveIntakeContext(user_id=1), result=result
+    )
+
+    assert len(client.all_messages) == 2
+    assert warning in str(client.all_messages[-1])
+    assert outcome.result.answer == (repaired if repair_succeeds else result.answer)
+    assert outcome.observation.fallback_used is not repair_succeeds
+    assert outcome.observation.fallback_reason == (
+        None if repair_succeeds else MedicationAnswerFallbackReason.OFFICIAL_WARNING_PRESERVED
+    )
+
+
+async def test_generator_does_not_start_a_second_repair_after_format_repair_breaks_warning() -> None:
+    warning = "이 약 복용 후 발진이 나타나면 즉시 복용을 중단하십시오."
+    # 조건이 다른 생성문은 형식 보정 뒤에도 기존 validator로 거부한다.
+    draft = "⚠️ **주의사항**\n- " + warning
+    invalid = "⚠️ **주의사항**\n- 두통이 나타나면 이 약 복용을 중단하세요."
+    client = FakeAnswerClient(
+        responses=[
+            {"answer": draft + "\n- " + "긴 설명입니다. " * 20, "section_types": ["CAUTION"]},
+            {"answer": invalid, "section_types": ["CAUTION"]},
+        ]
+    )
+    result = build_result().model_copy(update={"answer": draft, "official_warning_texts": [warning]})
+
+    outcome = await OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client).generate(
+        request=build_request(), context=ActiveIntakeContext(user_id=1), result=result
+    )
+
+    assert len(client.all_messages) == 2
+    assert outcome.result.answer == draft
+    assert outcome.observation.fallback_reason is MedicationAnswerFallbackReason.OFFICIAL_WARNING_PRESERVED
+
+
+def test_generator_restores_missing_subject_after_inventory_separator() -> None:
+    draft = "**약 A**\n\n✅ **효능**\n- 근거에 있는 핵심 효능."
+    generated = "💊 **복약정보**\n- 약 B\n\n---\n\n✅ **효능**\n- 근거에 있는 핵심 효능."
+
+    answer = OpenAIMedicationAnswerGenerator._format_generated_answer(draft_answer=draft, generated_answer=generated)
+
+    assert answer == "💊 **복약정보**\n- 약 B\n\n---\n\n**약 A**\n\n✅ **효능**\n- 근거에 있는 핵심 효능."
 
 
 async def test_generator_restores_named_ingredient_heading_omitted_by_llm() -> None:
@@ -636,6 +858,191 @@ async def test_generator_restores_required_question_interaction_pair_labels() ->
     assert outcome.observation.status == MedicationAnswerRewriteStatus.REWRITTEN
     assert "**[펙소페나딘-자몽주스]**" in outcome.result.answer
     assert "**[펙소페나딘-사과주스]**" in outcome.result.answer
+
+
+def build_grounded_pair_summary_result() -> MedicationChatResult:
+    return build_result().model_copy(
+        update={
+            "answer": (
+                "💊 **복약정보**\n- 와파린\n\n---\n\n"
+                "🔁 **질문 상호작용**\n\n**[와파린-비타민 K]**\n"
+                "- 키워드와목차를포함한OCR원문. 비타민 K는 와파린의 항응고 효과를 감소시킬 수 있습니다."
+            ),
+            "route": MedicationChatRoute.INTERACTION,
+            "search_observation": MedicationSearchExecutionObservation.model_validate(
+                {
+                    "query_plan": {
+                        "original_query": "와파린과 비타민 K 상호작용",
+                        "expanded_query": "와파린과 비타민 K 상호작용",
+                        "interaction_pairs": [
+                            {
+                                "left_name": "와파린",
+                                "right_name": "비타민 K",
+                                "pair_type": "DRUG_SUPPLEMENT",
+                                "pair_key": "a" * 64,
+                            }
+                        ],
+                        "interaction_pair_keys": ["a" * 64],
+                    },
+                    "query_plan_hash": "b" * 64,
+                    "execution_plan_hash": "c" * 64,
+                }
+            ),
+            "evidence_coverage": MedicationEvidenceCoverage(
+                requested_section_types=[KnowledgeSectionType.INTERACTION],
+                covered_section_types=[KnowledgeSectionType.INTERACTION],
+                verified_interaction_pair_keys=["a" * 64],
+            ),
+            "evidence_reasoning": EvidenceReasoningOutput.model_validate(
+                {
+                    "reasoning_status": "SUPPORTED",
+                    "interaction_decision": "INTERACTION_CONFIRMED",
+                    "claims": [
+                        {
+                            "section_type": "INTERACTION",
+                            "pair_key": "a" * 64,
+                            "statement": "비타민 K는 와파린의 항응고 효과를 감소시킬 수 있습니다.",
+                            "evidence_ids": ["chunk:source-a"],
+                        }
+                    ],
+                }
+            ),
+        }
+    )
+
+
+async def test_generator_restores_pair_heading_from_exact_grounded_overview_without_raw_ocr() -> None:
+    client = FakeAnswerClient(
+        response={
+            "answer": (
+                "💊 **복약정보**\n- 와파린\n\n---\n\n🧬 **약과 상호작용**\n"
+                "- 비타민 K는 와파린의 항응고 효과를 감소시킬 수 있습니다."
+            ),
+            "section_types": ["INTERACTION"],
+        }
+    )
+    result = build_grounded_pair_summary_result()
+    outcome = await OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client).generate(
+        request=build_request(), context=ActiveIntakeContext(user_id=1), result=result
+    )
+
+    assert "OCR원문" not in outcome.result.answer
+    assert outcome.result.answer.count("비타민 K는 와파린의 항응고 효과를 감소시킬 수 있습니다.") == 1
+    assert "**[와파린-비타민 K]**\n- 비타민 K는 와파린의 항응고 효과를 감소시킬 수 있습니다." in outcome.result.answer
+    assert outcome.result.answer.startswith("💊 **복약정보**\n- 와파린\n\n---")
+    assert outcome.observation.status is MedicationAnswerRewriteStatus.REWRITTEN
+    assert outcome.result.evidence_reasoning == result.evidence_reasoning
+    assert len(client.all_messages) == 1
+
+
+@pytest.mark.parametrize("mismatch", ["claim_pair", "unverified_pair", "missing_plan", "different_statement"])
+async def test_generator_does_not_relabel_unbound_overview_claim(mismatch: str) -> None:
+    result = build_grounded_pair_summary_result()
+    statement = "비타민 K는 와파린의 항응고 효과를 감소시킬 수 있습니다."
+    if mismatch == "claim_pair":
+        claim = result.evidence_reasoning.claims[0].model_copy(update={"pair_key": "d" * 64})
+        result = result.model_copy(
+            update={"evidence_reasoning": result.evidence_reasoning.model_copy(update={"claims": [claim]})}
+        )
+    elif mismatch == "unverified_pair":
+        result = result.model_copy(
+            update={
+                "evidence_coverage": result.evidence_coverage.model_copy(update={"verified_interaction_pair_keys": []})
+            }
+        )
+    elif mismatch == "missing_plan":
+        result = result.model_copy(update={"search_observation": None})
+    else:
+        statement = "비타민 K는 와파린의 항응고 효과를 증가시킬 수 있습니다."
+    client = FakeAnswerClient(
+        response={"answer": "🧬 **약과 상호작용**\n- " + statement, "section_types": ["INTERACTION"]}
+    )
+
+    outcome = await OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client).generate(
+        request=build_request(), context=ActiveIntakeContext(user_id=1), result=result
+    )
+
+    question_section = outcome.result.answer.split("🔁 **질문 상호작용**", 1)[1]
+    assert [line for line in question_section.splitlines() if line.strip()] == [
+        "**[와파린-비타민 K]**",
+        "- 키워드와목차를포함한OCR원문. 비타민 K는 와파린의 항응고 효과를 감소시킬 수 있습니다.",
+    ]
+
+
+def test_generator_restores_only_missing_pair_without_overwriting_another_summary() -> None:
+    draft = (
+        "🔁 **질문 상호작용**\n\n**[약 A-성분 B]**\n- 첫 조합의 긴 원문 설명.\n\n"
+        "**[약 A-성분 C]**\n- 두 번째 조합은 직접 근거를 확인하지 못했습니다."
+    )
+    generated = "🔁 **질문 상호작용**\n\n**[약 A-성분 B]**\n- 첫 조합의 짧은 요약."
+
+    answer = OpenAIMedicationAnswerGenerator._format_generated_answer(draft_answer=draft, generated_answer=generated)
+
+    first, second = answer.split("**[약 A-성분 C]**")
+    assert "첫 조합의 짧은 요약." in first
+    assert "긴 원문" not in answer
+    assert "첫 조합" not in second
+    assert "두 번째 조합은 직접 근거를 확인하지 못했습니다." in second
+
+
+async def test_generator_reuses_grounded_summary_only_for_its_pair_in_multi_pair_draft() -> None:
+    result = build_grounded_pair_summary_result()
+    result = result.model_copy(
+        update={"answer": result.answer + "\n\n**[와파린-다른 성분]**\n- 다른 조합의 직접 근거를 확인하지 못했습니다."}
+    )
+    client = FakeAnswerClient(
+        response={
+            "answer": "🧬 **약과 상호작용**\n- 비타민 K는 와파린의 항응고 효과를 감소시킬 수 있습니다.",
+            "section_types": ["INTERACTION"],
+        }
+    )
+
+    outcome = await OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client).generate(
+        request=build_request(), context=ActiveIntakeContext(user_id=1), result=result
+    )
+
+    first, second = outcome.result.answer.split("**[와파린-다른 성분]**")
+    assert "**[와파린-비타민 K]**\n- 비타민 K는 와파린의 항응고 효과를 감소시킬 수 있습니다." in first
+    assert "OCR원문" not in first
+    assert second.strip() == "- 다른 조합의 직접 근거를 확인하지 못했습니다."
+
+
+@pytest.mark.parametrize("qualifier", ["scope_note", "continuation", "other_pair_heading"])
+async def test_generator_does_not_move_scoped_or_other_pair_overview_text(qualifier: str) -> None:
+    result = build_grounded_pair_summary_result()
+    statement = "비타민 K는 와파린의 항응고 효과를 감소시킬 수 있습니다."
+    overview = "🧬 **약과 상호작용**\n- " + statement
+    if qualifier == "scope_note":
+        claim = result.evidence_reasoning.claims[0].model_copy(update={"scope_note": "특정 연구 조건에 한함"})
+        result = result.model_copy(
+            update={"evidence_reasoning": result.evidence_reasoning.model_copy(update={"claims": [claim]})}
+        )
+    elif qualifier == "continuation":
+        overview += "\n  특정 연구 조건에 한함."
+    else:
+        overview = "🧬 **약과 상호작용**\n**[다른 약-다른 성분]**\n- " + statement
+    client = FakeAnswerClient(response={"answer": overview, "section_types": ["INTERACTION"]})
+
+    outcome = await OpenAIMedicationAnswerGenerator(model="gpt-4o-mini", client=client).generate(
+        request=build_request(), context=ActiveIntakeContext(user_id=1), result=result
+    )
+
+    question_section = outcome.result.answer.split("🔁 **질문 상호작용**", 1)[1]
+    assert [line for line in question_section.splitlines() if line.strip()] == [
+        "**[와파린-비타민 K]**",
+        "- 키워드와목차를포함한OCR원문. 비타민 K는 와파린의 항응고 효과를 감소시킬 수 있습니다.",
+    ]
+
+
+def test_generator_keeps_each_pair_fact_under_its_own_heading() -> None:
+    answer = "🔁 **질문 상호작용**\n\n**[약 A-성분 B]**\n- 첫 조합의 사실.\n\n**[약 A-성분 C]**\n- 두 번째 조합의 사실."
+
+    formatted = OpenAIMedicationAnswerGenerator._to_limited_markdown(answer)
+
+    first, second = formatted.split("**[약 A-성분 C]**")
+    assert "첫 조합의 사실." in first
+    assert "첫 조합의 사실." not in second
+    assert "두 번째 조합의 사실." in second
 
 
 def test_generator_preserves_warning_and_contraindication_section_markdown() -> None:

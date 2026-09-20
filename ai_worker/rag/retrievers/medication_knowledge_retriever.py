@@ -410,7 +410,7 @@ class MedicationKnowledgeRetriever:
         """목표형 질문은 성분명이 있는 공공 기능성 근거만 낮은 점수에서도 수용한다."""
 
         return (
-            is_supplement_function_goal_question(plan.original_query)
+            (bool(plan.supplement_function_goal) or is_supplement_function_goal_question(plan.original_query))
             and result.metadata.document_type
             in {
                 KnowledgeDocumentType.SUPPLEMENT_CODE,

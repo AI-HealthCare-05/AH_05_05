@@ -339,6 +339,29 @@ def test_prompt_limits_product_output_to_requested_sections() -> None:
     assert "covered section 밖의 항목은 추가하지" in SYSTEM_PROMPT
 
 
+def test_function_only_prompt_does_not_expose_unrequested_official_warning() -> None:
+    request = MedicationChatRequest(
+        request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e", user_id=1, question="효능만 알려줘"
+    )
+    result = MedicationChatResult(
+        request_id=request.request_id,
+        answer="✅ **효능**\n- 공식 효능입니다.",
+        route=MedicationChatRoute.MEDICATION_GUIDE,
+        safety_status=SafetyStatus.SAFE,
+        prompt_version="draft-v1",
+        schema_version="medication-chat-result-v1",
+        official_warning_texts=["이상 증상 발생 시 복용을 중단하십시오."],
+        evidence_coverage=MedicationEvidenceCoverage(
+            requested_section_types=[KnowledgeSectionType.FUNCTION],
+            covered_section_types=[KnowledgeSectionType.FUNCTION],
+        ),
+    )
+    messages = build_medication_chat_messages(request=request, context=ActiveIntakeContext(user_id=1), result=result)
+    payload = json.loads(messages[-1].content.removeprefix("입력 데이터(JSON)\n"))
+    assert payload["official_warning_texts"] == []
+    assert result.official_warning_texts == ["이상 증상 발생 시 복용을 중단하십시오."]
+
+
 def test_system_prompt_treats_active_intake_as_requested_sections() -> None:
     assert "💊 **복약정보**" in SYSTEM_PROMPT
     assert "💪🏻 **영양제 정보**" in SYSTEM_PROMPT

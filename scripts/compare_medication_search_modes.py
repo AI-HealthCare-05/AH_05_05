@@ -33,7 +33,7 @@ from ai_worker.rag.vectorstores.qdrant_hybrid_knowledge_store import (
 from ai_worker.rag.vectorstores.qdrant_knowledge_store import (
     QdrantKnowledgeStore,
 )
-from ai_worker.schemas.knowledge import KnowledgeSearchMode
+from ai_worker.schemas.knowledge import KnowledgeSearchMode, KnowledgeVectorDistance
 from ai_worker.schemas.medication_search_evaluation import (
     MedicationSearchBaselineManifest,
     MedicationSearchBaselineReport,
@@ -138,11 +138,13 @@ def _vector_store(
     client: AsyncQdrantClient,
     collection_name: str,
     vector_size: int,
+    distance: KnowledgeVectorDistance = KnowledgeVectorDistance.COSINE,
 ):
     kwargs = {
         "client": client,
         "collection_name": collection_name,
         "vector_size": vector_size,
+        "distance": distance,
     }
     if mode == KnowledgeSearchMode.DENSE:
         return QdrantKnowledgeStore(**kwargs)
@@ -187,6 +189,7 @@ async def _evaluate_mode(
                 client=client,
                 collection_name=collection_name,
                 vector_size=settings.OPENAI_EMBEDDING_DIMENSIONS,
+                distance=settings.KNOWLEDGE_VECTOR_DISTANCE,
             ),
             dataset_version=dataset_version,
             min_similarity_score=manifest.min_similarity_score,
@@ -194,6 +197,8 @@ async def _evaluate_mode(
         embedding_model_name=embedding_provider.model_name,
         embedding_dimension=embedding_provider.dimension,
         search_mode=mode,
+        vector_distance=settings.KNOWLEDGE_VECTOR_DISTANCE.value,
+        embedding_vectors_normalized=True,
     )
     return await evaluator.evaluate(
         manifest.model_copy(
