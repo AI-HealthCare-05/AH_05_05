@@ -81,10 +81,13 @@ for (const width of [390, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/reports/new?source=medications');
     await page.getByRole('button', { name: '보고서 생성하기', exact: true }).click();
-    const sources = page.locator('details').filter({ has: page.locator('summary', { hasText: '비교 기준과 출처' }) });
+    const sources = page.locator('details').filter({ has: page.locator('summary', { hasText: '참고 자료 및 출처' }) });
     await sources.locator('summary').click();
-    await expect(sources.getByRole('listitem')).toHaveCount(7);
-    await expect(sources.getByRole('listitem').filter({ hasText: /^의약품 안내 · 공공기관 · 승인된 규칙$/ })).toHaveCount(2);
+    await expect(sources.getByRole('listitem')).toHaveCount(6);
+    await expect(sources.getByRole('listitem').filter({ hasText: /^의약품 안내 · 공공기관$/ })).toHaveCount(2);
+    await expect(sources).not.toContainText('승인된 규칙');
+    await expect(sources).not.toContainText('공개 안내');
+    await expect(sources).not.toContainText('근거 수준 미확인');
     await expect(sources.locator('a[href="https://example.com/other"]')).toHaveCount(1);
     await sources.screenshot({ path: testInfo.outputPath(`unique-sources-${width}.png`) });
   });
@@ -900,8 +903,8 @@ test('v11 renders server-owned cards once, keeps public guidance non-personal, a
     await page.screenshot({ path: testInfo.outputPath(`v11-card-report-${width}.png`), fullPage: true });
   }
 
-  const sourceDetails = page.getByText('비교 기준과 출처', { exact: true }).locator('..');
-  await sourceDetails.getByText('비교 기준과 출처', { exact: true }).click();
+  const sourceDetails = page.getByText('참고 자료 및 출처', { exact: true }).locator('..');
+  await sourceDetails.getByText('참고 자료 및 출처', { exact: true }).click();
   await expect(sourceDetails.getByRole('link', { name: '의약품 안내' })).toHaveAttribute('href', 'https://example.com/medicine');
   await expect(page.locator('a[href^="javascript:"]')).toHaveCount(0);
   const medicationDetails = page.locator('.v11-medicine details').first();

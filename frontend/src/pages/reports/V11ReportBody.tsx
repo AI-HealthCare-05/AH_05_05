@@ -17,14 +17,6 @@ function decodeEntitiesOnce(text: string): string {
   });
 }
 
-const evidenceLabels: Record<string, string> = {
-  APPROVED_RULE: '승인된 규칙', PUBLIC_GUIDE: '공개 안내', RESEARCH: '연구 근거',
-  REGISTERED_INTAKE: '등록한 복용 정보', UNVERIFIED: '확인되지 않은 정보',
-  REGULATORY: '규제기관 자료', SYSTEMATIC_REVIEW: '체계적 문헌고찰', REVIEW_ARTICLE: '종설',
-  CLINICAL_STUDY: '임상 연구', OBSERVATIONAL_STUDY: '관찰 연구', CASE_REPORT: '사례 보고',
-  PRECLINICAL: '전임상 연구', UNKNOWN: '근거 수준 미확인',
-};
-
 const BODY_PREVIEW_LIMIT = 200;
 const SENTENCE_BOUNDARY_RE = /(?<=[.!?。])(?!\.|(?<=\d\.)(?=\d))\s*/;
 
@@ -318,7 +310,7 @@ export function V11ReportBody({ report }: { report: IntakeReport }) {
   // Chunk IDs and quotes remain available to individual guidance; only deduplicate the overview.
   const seenSources = new Set<string>();
   const uniqueSources = cards.sources.filter(source => {
-    const key = JSON.stringify([source.title, source.organization ?? '', source.url ?? '', source.evidenceLevel]);
+    const key = JSON.stringify([source.title, source.organization ?? '', source.url ?? '']);
     if (seenSources.has(key)) return false;
     seenSources.add(key);
     return true;
@@ -445,10 +437,10 @@ export function V11ReportBody({ report }: { report: IntakeReport }) {
     </details></section> : null}
 
     {uniqueSources.length > 0 ? <section className="v11-card v11-source-card"><details>
-      <summary>비교 기준과 출처</summary>
+      <summary>참고 자료 및 출처</summary>
       <ul className="v11-source-list">{uniqueSources.map(source => {
         const href = safeLink(source.url);
-        return <li key={source.id}>{href ? <a href={href} target="_blank" rel="noopener noreferrer">{source.title}</a> : <span>{source.title}</span>}{source.organization ? ` · ${source.organization}` : ''} · {evidenceLabels[source.evidenceLevel] ?? '근거 수준 미확인'}</li>;
+        return <li key={source.id}>{href ? <a href={href} target="_blank" rel="noopener noreferrer">{source.title}</a> : <span>{source.title}</span>}{source.organization ? ` · ${source.organization}` : ''}</li>;
       })}</ul>
     </details></section> : null}
 
