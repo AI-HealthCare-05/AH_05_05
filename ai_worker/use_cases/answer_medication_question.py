@@ -2567,6 +2567,10 @@ class AnswerMedicationQuestionUseCase:
                 question=request.question,
                 resolution=resolution,
             )
+            or self._has_explicit_interaction_pairs(
+                question=request.question,
+                resolution=resolution,
+            )
         ):
             return request
 
@@ -2607,6 +2611,23 @@ class AnswerMedicationQuestionUseCase:
         if not follow_up:
             return request
         return request.model_copy(update={"symptom_interaction_follow_up": True})
+
+    @staticmethod
+    def _has_explicit_interaction_pairs(
+        *,
+        question: str,
+        resolution: MedicationQuestionResolution,
+    ) -> bool:
+        """질문에 확인된 두 대상 조합이 있으면 대화 이력으로 확장하지 않는다."""
+        if not is_interaction_question(question):
+            return False
+        return bool(
+            MedicationKnowledgeQueryBuilder(
+                catalog_entities=resolution.entities,
+            )
+            .build(question)
+            .interaction_pairs
+        )
 
     @staticmethod
     def _is_explicit_entity_guide_request(

@@ -3735,6 +3735,103 @@ async def test_explicit_interaction_question_displays_the_question_pair(
     ] == [(left_name, right_name)]
 
 
+@pytest.mark.parametrize(
+    ("question", "left_name", "right_name"),
+    [
+        ("와파린과 비타민 K를 같이 먹어도 돼?", "와파린", "비타민 K"),
+        ("타이레놀과 술을 같이 먹어도 돼?", "아세트아미노펜", "알코올"),
+        ("비타민 D와 칼슘을 같이 먹어도 돼?", "비타민 D", "칼슘"),
+    ],
+)
+async def test_explicit_interaction_pair_is_preserved_when_history_exists(
+    question: str,
+    left_name: str,
+    right_name: str,
+) -> None:
+    """명시 조합은 이력이 있어도 등록약 전체 조합으로 바꾸지 않는다."""
+    retriever = RecordingQueryPlanRetriever()
+    request = build_request(question).model_copy(
+        update={
+            "history": [
+                ChatHistoryMessage(role=ChatRole.USER, content="안녕"),
+                ChatHistoryMessage(role=ChatRole.ASSISTANT, content="안녕하세요."),
+            ]
+        }
+    )
+    result = await build_use_case(
+        retriever=retriever,
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=1,
+                    name="이부프로펜정400mg",
+                    interaction_names=["이부프로펜"],
+                )
+            ],
+        ),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticTypedExpressionCatalog(
+                [
+                    MedicationCatalogEntry(
+                        canonical_name="와파린",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.DRUG,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    ),
+                    MedicationCatalogEntry(
+                        canonical_name="비타민 K",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.SUPPLEMENT,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    ),
+                    MedicationCatalogEntry(
+                        canonical_name="아세트아미노펜",
+                        aliases=["타이레놀"],
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.DRUG,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    ),
+                    MedicationCatalogEntry(
+                        canonical_name="알코올",
+                        aliases=["술"],
+                        entity_type=MedicationQueryEntityType.FOOD_CATEGORY,
+                        kind=InteractionEntityKind.FOOD,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    ),
+                    MedicationCatalogEntry(
+                        canonical_name="비타민 D",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.SUPPLEMENT,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    ),
+                    MedicationCatalogEntry(
+                        canonical_name="칼슘",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.SUPPLEMENT,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    ),
+                ]
+            )
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="SYMPTOM_INTERACTION_FOLLOW_UP",
+                safety_signal="NONE",
+                confidence="HIGH",
+            )
+        ),
+    ).execute(request)
+
+    assert result.route is MedicationChatRoute.INTERACTION
+    assert retriever.received_kwargs is not None
+    assert [
+        (pair.left_name, pair.right_name)
+        for pair in retriever.received_kwargs["execution_plan"].query_plan.interaction_pairs
+    ] == [(left_name, right_name)]
+
+
 async def test_active_intake_interaction_pairs_registered_medications_with_explicit_target() -> None:
     retriever = RecordingQueryPlanRetriever()
     await build_use_case(
