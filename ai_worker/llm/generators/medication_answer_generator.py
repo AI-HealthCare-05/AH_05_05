@@ -51,7 +51,7 @@ class OpenAIMedicationAnswerGenerator:
     # 단위 집합은 프롬프트의 용량 가림 패턴과 같아야 한다. 여기에만 없는 단위가 있으면
     # 그 단위의 환각 용량(예: `5,000IU` → `10,000IU`)을 검증이 놓친다.
     _DOSAGE_TOKEN_PATTERN = re.compile(
-        r"\d+(?:[.,]\d+)?\s*(?:mg|mcg|μg|㎍|g|mL|ml|IU|mEq|밀리그램|그램|밀리리터|국제단위|정|캡슐|포|회|일|시간|%)",
+        r"\d+(?:[.,]\d+)?\s*(?:mg|mcg|μg|㎍|g|mL|ml|IU|mEq|밀리그램|밀리그람|그램|밀리리터|국제단위|정|캡슐|포|회|일|시간|%)",
         re.IGNORECASE,
     )
     _SAFETY_ASSERTION_PATTERN = re.compile(
@@ -227,6 +227,7 @@ class OpenAIMedicationAnswerGenerator:
             generated_answer = self._format_generated_answer(
                 draft_answer=result.answer,
                 generated_answer=payload.answer,
+                result=result,
             )
             grounding_failure = self._grounding_failure_reason(
                 draft_answer=result.answer,
@@ -234,12 +235,19 @@ class OpenAIMedicationAnswerGenerator:
                 declared_section_types=payload.section_types,
                 covered_section_types=covered_section_types,
             )
-            # 짧은 요약이어도 섹션 선언이 틀리면 한 번 보정한다.
-            # 최종 근거 검증은 그대로 유지하며, 형식 보정과 호출 예산을 공유한다.
-            if self._requires_format_repair(generated_answer) or grounding_failure in {
-                MedicationAnswerFallbackReason.UNSUPPORTED_EVIDENCE_SECTION,
-                MedicationAnswerFallbackReason.OMITTED_EVIDENCE_SECTION,
-            }:
+            # 공식 경고 실패도 형식·섹션 보정과 단 한 번의 호출 예산을 공유한다.
+            # 보정 뒤에는 같은 validator로 다시 검사하고, 여전히 실패하면 초안을 보존한다.
+            if (
+                self._requires_format_repair(generated_answer)
+                or grounding_failure
+                in {
+                    MedicationAnswerFallbackReason.UNSUPPORTED_EVIDENCE_SECTION,
+                    MedicationAnswerFallbackReason.OMITTED_EVIDENCE_SECTION,
+                }
+                or self._must_preserve_official_warning(
+                    context=context, result=result, generated_answer=generated_answer
+                )
+            ):
                 payload = await self._invoke_chain(
                     chain=chain,
                     request=request,
@@ -251,6 +259,7 @@ class OpenAIMedicationAnswerGenerator:
                 generated_answer = self._format_generated_answer(
                     draft_answer=result.answer,
                     generated_answer=payload.answer,
+                    result=result,
                 )
                 unrepaired_answer = generated_answer
                 generated_answer = self._compact_unrepaired_adverse_case_report(
@@ -389,6 +398,7 @@ class OpenAIMedicationAnswerGenerator:
         *,
         draft_answer: str,
         generated_answer: str,
+        result: MedicationChatResult | None = None,
     ) -> str:
         return cls._to_limited_markdown(
             cls._restore_required_response_subject(
@@ -398,6 +408,7 @@ class OpenAIMedicationAnswerGenerator:
                     generated_answer=cls._restore_required_question_interaction_pairs(
                         draft_answer=draft_answer,
                         generated_answer=generated_answer,
+                        result=result,
                     ),
                 ),
             )
@@ -415,8 +426,23 @@ class OpenAIMedicationAnswerGenerator:
         draft_subject = cls._leading_standalone_subject(draft_answer)
         if draft_subject is None:
             return generated_answer
-        if any(line.strip() == f"**{draft_subject}**" for line in generated_answer.splitlines()):
+        if any(
+            (match := cls._STANDALONE_BOLD_LINE_PATTERN.fullmatch(line.strip())) is not None
+            and cls._subjects_match(draft_subject, match.group("value").strip())
+            for line in generated_answer.splitlines()
+        ):
             return generated_answer
+        lines = generated_answer.strip().splitlines()
+        if lines and lines[0].strip() in {"💊 **복약정보**", "💪🏻 **영양제 정보**"}:
+            divider = next((index for index, line in enumerate(lines) if line.strip() == "---"), None)
+            if divider is not None:
+                return "\n\n".join(
+                    (
+                        "\n".join(lines[: divider + 1]).strip(),
+                        f"**{draft_subject}**",
+                        "\n".join(lines[divider + 1 :]).strip(),
+                    )
+                )
         return "\n\n".join((f"**{draft_subject}**", generated_answer.strip()))
 
     @classmethod
@@ -433,6 +459,20 @@ class OpenAIMedicationAnswerGenerator:
                     return value
             return None
         return None
+
+    @classmethod
+    def _subjects_match(cls, left: str, right: str) -> bool:
+        left_key = cls._subject_comparison_key(left)
+        right_key = cls._subject_comparison_key(right)
+        return left_key == right_key or left_key.startswith(f"{right_key}(") or right_key.startswith(f"{left_key}(")
+
+    @classmethod
+    def _subject_comparison_key(cls, subject: str) -> str:
+        normalized = re.sub(r"\s+", "", subject)
+        return cls._DOSAGE_TOKEN_PATTERN.sub(
+            lambda match: cls._normalize_dosage_token(match.group()),
+            normalized,
+        ).casefold()
 
     @classmethod
     def _requires_format_repair(cls, answer: str) -> bool:
@@ -573,7 +613,51 @@ class OpenAIMedicationAnswerGenerator:
         generated_dosages = cls._dosage_tokens(generated_answer)
         if not generated_dosages.issubset(draft_dosages):
             return MedicationAnswerFallbackReason.GENERATED_DOSAGE_NOT_IN_DRAFT
+        # 제품 제목·등록 목록의 함량은 복용량 지시의 근거가 아니다.
+        # 전체 수치 검사도 유지하여 제목 자체의 함량 변경을 함께 차단한다.
+        strength_context = cls._product_strength_context(draft_answer)
+        draft_body_dosages = cls._dosage_tokens(cls._without_product_strength_context(draft_answer, strength_context))
+        generated_body_dosages = cls._dosage_tokens(
+            cls._without_product_strength_context(generated_answer, strength_context)
+        )
+        if not generated_body_dosages.issubset(draft_body_dosages):
+            return MedicationAnswerFallbackReason.GENERATED_DOSAGE_NOT_IN_DRAFT
         return None
+
+    @classmethod
+    def _product_strength_context(cls, draft: str) -> list[str]:
+        names: list[str] = []
+        in_medication_inventory = False
+        for line in draft.splitlines():
+            stripped = line.strip()
+            if stripped == "💊 **복약정보**":
+                in_medication_inventory = True
+                continue
+            subject = cls._STANDALONE_BOLD_LINE_PATTERN.fullmatch(stripped)
+            if subject:
+                names.append(subject.group("value"))
+            if stripped == "---" or subject or cls._SECTION_HEADER_PATTERN.fullmatch(stripped):
+                in_medication_inventory = False
+            if in_medication_inventory and cls._BULLET_MARKER_PATTERN.match(stripped):
+                names.append(cls._BULLET_MARKER_PATTERN.sub("", stripped))
+        return names
+
+    @classmethod
+    def _without_product_strength_context(cls, text: str, names: list[str]) -> str:
+        name_keys = {
+            cls._subject_comparison_key(value)
+            for name in names
+            for value in (name, re.sub(r"\([^()]*\)$", "", name).strip())
+        }
+        body: list[str] = []
+        for line in text.splitlines():
+            stripped = line.strip()
+            subject = cls._STANDALONE_BOLD_LINE_PATTERN.fullmatch(stripped)
+            value = subject.group("value") if subject else cls._BULLET_MARKER_PATTERN.sub("", stripped)
+            # 생성문이 제목·등록 목록에 새 지시를 숨겨도 초안 이름과 일치하지 않으면 검사한다.
+            if cls._subject_comparison_key(value) not in name_keys:
+                body.append(line)
+        return "\n".join(body)
 
     @classmethod
     def _dosage_tokens(cls, text: str) -> set[str]:
@@ -583,7 +667,22 @@ class OpenAIMedicationAnswerGenerator:
         놓쳐 초안과 생성문의 토큰이 어긋난다. 정규화가 먼저 와야 한다.
         """
 
-        return {token.casefold() for token in cls._DOSAGE_TOKEN_PATTERN.findall(re.sub(r"\s+", "", text))}
+        tokens = {
+            cls._normalize_dosage_token(token) for token in cls._DOSAGE_TOKEN_PATTERN.findall(re.sub(r"\s+", "", text))
+        }
+        # 용량 문맥의 '일일/하루'와 '1일'은 같은 기간이다. 횟수·용량은 별도로 검증한다.
+        if re.search(r"(?:일일|하루)(?=최대|권장|복용|섭취|\d)", re.sub(r"\s+", "", text)):
+            tokens.add("1일")
+        return tokens
+
+    @staticmethod
+    def _normalize_dosage_token(token: str) -> str:
+        normalized = re.sub(r"(?<=\d),(?=\d{3}(?:\D|$))", "", token).casefold()
+        normalized = re.sub(r"(?<=\d)(?:밀리그램|밀리그람)$", "mg", normalized)
+        normalized = re.sub(r"(?<=\d)밀리리터$", "ml", normalized)
+        normalized = re.sub(r"(?<=\d)국제단위$", "iu", normalized)
+        normalized = re.sub(r"(?<=\d)(?:μg|㎍)$", "mcg", normalized)
+        return normalized
 
     @classmethod
     def _omits_interaction_overview(cls, *, draft_answer: str, generated_answer: str) -> bool:
@@ -616,8 +715,9 @@ class OpenAIMedicationAnswerGenerator:
         *,
         draft_answer: str,
         generated_answer: str,
+        result: MedicationChatResult | None = None,
     ) -> str:
-        """LLM이 관계 제목을 생략하면 검증된 초안 섹션을 그대로 보존한다."""
+        """조합별 요약을 보존하고, 빠진 조합만 동일 pair의 근거로 복원한다."""
 
         draft_section = cls._section_block(
             answer=draft_answer,
@@ -625,23 +725,106 @@ class OpenAIMedicationAnswerGenerator:
         )
         if draft_section is None:
             return generated_answer
-        required_pairs = [
-            match.group("pair")
-            for line in draft_section.splitlines()
-            if (match := cls._INTERACTION_PAIR_HEADER_PATTERN.fullmatch(line.strip())) is not None
-        ]
-        if not required_pairs:
+        draft_pairs = cls._interaction_pair_blocks(draft_section)
+        if not draft_pairs:
             return generated_answer
 
         generated_section = cls._section_block(
             answer=generated_answer,
             header=cls._QUESTION_INTERACTION_HEADER,
         )
-        if generated_section is not None and all(f"**{pair}**" in generated_section for pair in required_pairs):
+        generated_pairs = cls._interaction_pair_blocks(generated_section or "")
+        if all(pair in generated_pairs for pair in draft_pairs):
             return generated_answer
+        grounded_pairs = cls._generated_grounded_pair_blocks(result=result, generated_answer=generated_answer)
+        restored_section = "\n\n".join(
+            [cls._QUESTION_INTERACTION_HEADER]
+            + [generated_pairs.get(pair) or grounded_pairs.get(pair) or block for pair, block in draft_pairs.items()]
+        )
+        relocated_facts = {
+            line
+            for pair, block in grounded_pairs.items()
+            if pair in draft_pairs and pair not in generated_pairs
+            for line in block.splitlines()
+            if line.startswith("- ")
+        }
+        generated_answer = cls._remove_relocated_overview_facts(
+            draft_answer=draft_answer, generated_answer=generated_answer, relocated_facts=relocated_facts
+        )
         if generated_section is None:
-            return "\n\n".join(value for value in (generated_answer.strip(), draft_section) if value)
-        return generated_answer.replace(generated_section, draft_section)
+            return "\n\n".join(value for value in (generated_answer.strip(), restored_section) if value)
+        return generated_answer.replace(generated_section, restored_section, 1)
+
+    @classmethod
+    def _interaction_pair_blocks(cls, section: str) -> dict[str, str]:
+        blocks: dict[str, list[str]] = {}
+        current_pair: str | None = None
+        for line in section.splitlines():
+            if match := cls._INTERACTION_PAIR_HEADER_PATTERN.fullmatch(line.strip()):
+                current_pair = match.group("pair")
+                blocks[current_pair] = [line.strip()]
+            elif current_pair is not None:
+                blocks[current_pair].append(line)
+        return {pair: "\n".join(lines).strip() for pair, lines in blocks.items()}
+
+    @classmethod
+    def _generated_grounded_pair_blocks(
+        cls, *, result: MedicationChatResult | None, generated_answer: str
+    ) -> dict[str, str]:
+        """이름 추측 없이 검증된 pair key와 정확히 일치하는 생성 claim만 재사용한다."""
+        if (
+            result is None
+            or result.search_observation is None
+            or result.evidence_coverage is None
+            or result.evidence_reasoning is None
+        ):
+            return {}
+        verified_keys = set(result.evidence_coverage.verified_interaction_pair_keys)
+        labels = {
+            pair.pair_key: f"[{pair.left_name}-{pair.right_name}]"
+            for pair in result.search_observation.query_plan.interaction_pairs
+            if pair.pair_key in verified_keys
+        }
+        # 다른 pair 제목 아래의 사실은 재배치하지 않는다. 탐색의 독립 bullet만 사용한다.
+        overview_facts: set[str] = set()
+        for header in cls._INTERACTION_OVERVIEW_HEADERS:
+            section = cls._section_block(answer=generated_answer, header=header) or ""
+            if cls._interaction_pair_blocks(section):
+                continue
+            overview_facts.update(
+                cls._normalize_interaction_fact([line])
+                for line in cls._format_interaction_section(section.splitlines()[1:])
+                if line.startswith("- ")
+            )
+        blocks: dict[str, list[str]] = {}
+        for claim in result.evidence_reasoning.claims:
+            if (
+                claim.section_type is KnowledgeSectionType.INTERACTION
+                and claim.pair_key in labels
+                and not claim.scope_note
+                and cls._normalize_interaction_fact([claim.statement]) in overview_facts
+            ):
+                label = labels[claim.pair_key]
+                blocks.setdefault(label, []).append(f"- {claim.statement}")
+        return {label: "\n".join([f"**{label}**", *facts]) for label, facts in blocks.items()}
+
+    @classmethod
+    def _remove_relocated_overview_facts(
+        cls, *, draft_answer: str, generated_answer: str, relocated_facts: set[str]
+    ) -> str:
+        for header in cls._INTERACTION_OVERVIEW_HEADERS:
+            # 실제 탐색 근거가 있던 섹션은 기존 누락 검증의 대상이므로 유지한다.
+            if cls._section_block(answer=draft_answer, header=header) is not None:
+                continue
+            section = cls._section_block(answer=generated_answer, header=header)
+            if section is None or cls._interaction_pair_blocks(section):
+                continue
+            lines = cls._format_interaction_section(section.splitlines()[1:])
+            remaining = [line for line in lines if line and line not in relocated_facts]
+            if any(line in relocated_facts for line in lines):
+                replacement = "\n\n".join((header, "\n".join(remaining))) if remaining else ""
+                generated_answer = generated_answer.replace(section, replacement, 1).strip()
+        return generated_answer
 
     @classmethod
     def _restore_required_formulation_cautions(
@@ -764,7 +947,9 @@ class OpenAIMedicationAnswerGenerator:
                 if cls._INTERACTION_SECTION_TITLE in title:
                     interaction_lines = []
                 continue
-            if standalone_bold_line := cls._STANDALONE_BOLD_LINE_PATTERN.fullmatch(line):
+            if (standalone_bold_line := cls._STANDALONE_BOLD_LINE_PATTERN.fullmatch(line)) and not (
+                interaction_lines is not None and cls._INTERACTION_PAIR_HEADER_PATTERN.fullmatch(line.strip())
+            ):
                 normalized_lines.append(f"**{standalone_bold_line.group('value').strip()}**")
                 continue
             if interaction_lines is not None:

@@ -69,6 +69,46 @@ async def test_validator_still_blocks_unmatched_instruction_with_official_warnin
     assert "MEDICATION_CHANGE_INSTRUCTION" in result.safety_reason_codes
 
 
+async def test_validator_checks_later_unsafe_instruction_after_supported_warning() -> None:
+    warning = "이 약 복용 후 피부 발진 또는 과민반응의 징후가 나타나는 경우 즉시 복용을 중단하십시오."
+
+    result = await RuleBasedGroundedClaimValidator().validate(
+        context=ActiveIntakeContext(user_id=1),
+        result=build_result(
+            f"{warning} 내일부터 복용량을 줄이세요.",
+            official_warning_texts=[warning],
+        ),
+    )
+
+    assert result.safety_status == SafetyStatus.BLOCKED
+    assert "MEDICATION_CHANGE_INSTRUCTION" in result.safety_reason_codes
+
+
+@pytest.mark.parametrize(
+    ("unsafe_sentence", "reason_code"),
+    [
+        ("현재 증상은 약물 과민반응으로 진단됩니다.", "DIAGNOSTIC_ASSERTION"),
+        ("현재 치료 변경이 필요합니다.", "TREATMENT_DECISION"),
+    ],
+)
+async def test_validator_checks_later_unsafe_clinical_assertion_after_supported_warning(
+    unsafe_sentence: str,
+    reason_code: str,
+) -> None:
+    warning = "이 약 복용 후 피부 발진 또는 과민반응의 징후가 나타나는 경우 즉시 복용을 중단하십시오."
+
+    result = await RuleBasedGroundedClaimValidator().validate(
+        context=ActiveIntakeContext(user_id=1),
+        result=build_result(
+            f"{warning} {unsafe_sentence}",
+            official_warning_texts=[warning],
+        ),
+    )
+
+    assert result.safety_status == SafetyStatus.BLOCKED
+    assert reason_code in result.safety_reason_codes
+
+
 async def test_validator_exposes_hashed_medication_change_diagnostics() -> None:
     validator = RuleBasedGroundedClaimValidator()
     original_answer = "오늘부터 약 복용을 중단하세요. 이 안내는 의료진의 진료를 대체하지 않습니다."

@@ -1,0 +1,84 @@
+experiment: feature-602-behavior-regression
+baseline:
+  branch: feature/602
+  parent_commit: ffb47ba9bc0d0f9b01b46b42a0f39a346c090643
+  tokenizer: cl100k_base
+  search: DENSE
+  embedding: text-embedding-3-large
+  dimensions: 3072
+  distance: DOT
+  collection: medication_knowledge_full_v17_function_ingredients_3072_dot
+  dataset: knowledge-full-v17-function-ingredients
+constraints:
+  - Hybrid 실험은 기각 상태로 유지한다.
+  - RDB 스키마와 운영 데이터는 변경하지 않는다.
+  - 조건부 LLM은 검색 목적을 분류하며 제품과 의학적 근거를 생성하지 않는다.
+  - 직접 근거가 없는 조합은 안전하다고 단정하지 않는다.
+procedure:
+  - 각 문항은 새 세션에서 질문한다. history가 있는 문항만 동일 세션에서 순서대로 질문한다.
+  - 복약 목록은 비교 전후 동일하게 유지한다. 등록약에 와파린이 있는지 기록한다.
+  - 답변, 근거 출처, 검색 대상, 섹션, 재작성 상태와 지연시간을 함께 비교한다.
+  - 프론트 체감 결과와 단위 테스트 결과를 구분한다.
+cases:
+  - id: F602-01
+    question: 타이레놀정500밀리그램 효능 알려줘
+    check: 정확한 500mg 정제의 RDB 효능을 짧게 안내하며 산제나 다른 함량으로 바꾸지 않는다.
+  - id: F602-02
+    question: 타이레놀 효능과 주의사항 알려줘
+    check: 효능과 주의사항을 짧은 bullet로 요약하며 중요한 경고 조건과 원문 수치를 보존한다.
+  - id: F602-03
+    question: 타이레놀의 이상반응만 알려줘
+    check: 요청한 이상반응 섹션만 표시한다. 복용법이나 원문 전체를 붙이지 않는다.
+  - id: F602-04
+    question: 타이레놀이 뭐야?
+    check: 근거가 있는 전반 정보 섹션을 간결하게 안내한다.
+  - id: F602-05
+    history: ["타이레놀이 뭐야?"]
+    question: 그 성분의 주의사항도 알려줘
+    check: 같은 세션에서 확정된 타이레놀 대상의 주의사항으로 연결한다.
+  - id: F602-06
+    question: 잠 잘자려면 어떤 영양제가 좋아?
+    check: 수면 목표의 기능성 근거를 검색하며 실제 근거가 있는 원료를 최대 3개 안내한다.
+  - id: F602-07
+    question: 수면의 질 개선에 도움 되는 영양제 성분 알려줘
+    check: F602-06과 같은 건강 목표로 검색하고 성분 없는 일반 배경 문단을 답변으로 복사하지 않는다.
+  - id: F602-08
+    question: 눈에 좋은 영양제 알려줘
+    check: 눈 건강 기능성 근거에 연결된 성분만 간결하게 안내한다.
+  - id: F602-09
+    question: 임신 중 마그네슘 영양제를 먹어도 돼?
+    check: CAUTION 검색을 선택한다. 일반 섭취량을 임신 중 안전 용량으로 제시하지 않는다.
+  - id: F602-10
+    question: 와파린과 비타민 K를 같이 먹어도 돼?
+    check: 질문한 직접 조합과 해당 근거를 표시한다. 등록약 전체 조합으로 치환하지 않는다.
+  - id: F602-11
+    question: warfarin과 vitamin K 상호작용 알려줘
+    check: F602-10과 동일한 정규화 대상과 pair key를 사용한다.
+  - id: F602-12
+    question: 타이레놀과 술을 같이 먹어도 돼?
+    check: 아세트아미노펜과 알코올의 직접 근거를 찾는다.
+  - id: F602-13
+    question: 펙소페나딘과 자몽주스나 사과주스를 같이 먹어도 돼?
+    check: 검수된 과일주스 범주 근거를 연결하고 다른 식품 관계를 섞지 않는다.
+  - id: F602-14
+    question: 와파린과 녹차를 같이 먹어도 돼?
+    check: 녹차를 포함한 질문 관계의 직접 문장을 사용한다.
+  - id: F602-15
+    question: 비타민 D와 칼슘을 같이 먹어도 돼?
+    check: 칼슘 흡수와 이용 관련 직접 근거를 안내하며 개인의 병용 안전을 보장하지 않는다.
+  - id: F602-16
+    question: 마그네슘이랑 아연 같이 머거도대?
+    check: 오타에도 두 대상을 유지하며 직접 근거가 없으면 확인되지 않았음을 안내한다.
+  - id: F602-17
+    question: 마그네슘, 아연, 칼슘을 같이 먹어도 돼?
+    check: 3개 조합을 빠짐없이 검토한다. 단순 동시 언급으로 관계를 생성하지 않는다.
+  - id: F602-18
+    history: ["타이레놀이 뭐야?"]
+    question: 그 약과 비타민D 같이 먹어도 돼?
+    check: 아세트아미노펜과 비타민 D를 질문 상호작용 대상으로 유지한다. 근거 부재는 안전 보장이 아니다.
+  - id: F602-19
+    question: 내가 먹는 약과 같이 먹으면 안 되는 것 알려줘
+    check: 등록약 기반 대상 탐색으로 약과 상호작용, 그 외 상호작용을 구분한다. 임의 제품 선택으로 막히지 않는다.
+  - id: F602-20
+    question: 클로르펜터민의 주의사항 알려줘
+    check: 펜터민으로 오연결하지 않는다. 실제 대상 근거가 없으면 한계를 안내한다.

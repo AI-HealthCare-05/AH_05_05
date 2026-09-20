@@ -42,6 +42,90 @@ class FailingSupplementCatalog:
         raise RuntimeError("Qdrant unavailable")
 
 
+@pytest_asyncio.fixture
+async def metadata_catalog():
+    from ai_worker.repositories.supplement_ingredient_catalog_repository import QdrantSupplementIngredientCatalog
+
+    client = AsyncQdrantClient(location=":memory:")
+    await client.create_collection(
+        collection_name="catalog_evidence",
+        vectors_config=models.VectorParams(size=2, distance=models.Distance.COSINE),
+    )
+
+    async def load(metadata_rows):
+        await client.upsert(
+            collection_name="catalog_evidence",
+            points=[
+                models.PointStruct(
+                    id=index,
+                    vector=[1.0, 0.0],
+                    payload={"metadata": {"dataset_version": "reviewed-release", **metadata}},
+                )
+                for index, metadata in enumerate(metadata_rows)
+            ],
+            wait=True,
+        )
+        return await QdrantSupplementIngredientCatalog(
+            client=client, collection_name="catalog_evidence", dataset_version="reviewed-release"
+        ).list_entries()
+
+    try:
+        yield load
+    finally:
+        await client.close()
+
+
+@pytest.mark.parametrize("typed_first", [False, True])
+async def test_qdrant_catalog_preserves_reviewed_aliases_across_duplicate_records(metadata_catalog, typed_first):
+    # These fields occur in the active v17 warfarin review metadata.
+    flat = {"drug_names": ["와파린"], "ingredient_names": ["비타민 K"]}
+    typed = {
+        **flat,
+        "food_names": [],
+        "entity_catalog_entries": [
+            {
+                "canonical_name": "와파린",
+                "aliases": ["와파린", "warfarin"],
+                "entity_type": "INGREDIENT_NAME",
+                "kind": "DRUG",
+            },
+            {
+                "canonical_name": "비타민 K",
+                "aliases": ["비타민 K", "비타민K", "vitamin K"],
+                "entity_type": "INGREDIENT_NAME",
+                "kind": "SUPPLEMENT",
+            },
+        ],
+    }
+    entries = await metadata_catalog([typed, flat] if typed_first else [flat, typed])
+    assert len(entries) == 2
+    by_name = {entry.canonical_name: entry for entry in entries}
+    assert "warfarin" in by_name["와파린"].aliases
+    assert {"비타민K", "vitamin K"}.issubset(by_name["비타민 K"].aliases)
+    assert all(entry.source == MedicationQueryEntitySource.QDRANT for entry in entries)
+
+
+async def test_qdrant_catalog_does_not_invent_green_tea_from_extract_or_prose(metadata_catalog):
+    entries = await metadata_catalog(
+        [
+            {"ingredient_names": ["녹차추출물"], "food_names": [], "entity_catalog_entries": []},
+            {
+                "drug_names": ["와파린"],
+                "ingredient_names": ["비타민 K"],
+                "food_names": [],
+                "entity_catalog_entries": [],
+                "content": "와파린 녹차 홍차 비타민 K",
+            },
+        ]
+    )
+    assert {(entry.canonical_name, entry.kind) for entry in entries} == {
+        ("녹차추출물", InteractionEntityKind.SUPPLEMENT),
+        ("와파린", InteractionEntityKind.DRUG),
+        ("비타민 K", InteractionEntityKind.SUPPLEMENT),
+    }
+    assert not any("녹차" in entry.expressions or "green tea" in entry.expressions for entry in entries)
+
+
 async def test_db_catalog_reads_unique_supplement_names(
     initialized_db: None,
 ) -> None:

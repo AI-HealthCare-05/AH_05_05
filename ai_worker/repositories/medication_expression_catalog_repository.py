@@ -7,6 +7,7 @@ from ai_worker.domain.interfaces import SupplementIngredientCatalog
 from ai_worker.domain.medication_expression_vocabulary import (
     SUPPORTED_SUPPLEMENT_NAMES,
 )
+from ai_worker.rag.ingredient_name_aliases import english_aliases_for, korean_alias_for
 from ai_worker.schemas.interaction import InteractionEntityKind as SearchEntityKind
 from ai_worker.schemas.medication_search import (
     MedicationCatalogEntry,
@@ -24,6 +25,7 @@ class DbMedicationExpressionCatalog:
     """질문 해석에 사용할 제품명·성분명·별칭을 DB에서 제공한다."""
 
     _INGREDIENT_SUFFIX = re.compile(r"\([^()]+\)\s*$")
+    _VITAMIN_NAME = re.compile(r"비타민\s*([A-Za-z][0-9]*)")
     PRODUCT_DOSAGE_FORM_BOUNDARY = re.compile(
         r"(?:구강붕해정|연질캡슐|경질캡슐|현탁액|서방정|장용정|"
         r"시럽|과립|캡슐|정|액)(?=\d|$)",
@@ -131,9 +133,29 @@ class DbMedicationExpressionCatalog:
         entries.extend(additional_entries)
         if not self._product_names_only:
             entries.extend(self._shared_supplement_entries(entries))
+            entries = [self._with_ingredient_name_aliases(entry) for entry in entries]
         self._cached_entries = self._deduplicate_entries(entries)
         self._cache_expires_at = now + self._cache_ttl_seconds
         return self._cached_entries.copy()
+
+    @classmethod
+    def _with_ingredient_name_aliases(cls, entry: MedicationCatalogEntry) -> MedicationCatalogEntry:
+        if entry.entity_type != MedicationQueryEntityType.INGREDIENT_NAME or entry.kind not in {
+            SearchEntityKind.DRUG,
+            SearchEntityKind.SUPPLEMENT,
+        }:
+            return entry
+        # 검수 사전의 정확한 이름만 연결한다. 컬렉션 불일치는 사전에서 차단한다.
+        canonical_name = korean_alias_for(entry.canonical_name) or entry.canonical_name
+        aliases = [*entry.aliases]
+        if canonical_name != entry.canonical_name:
+            aliases.append(entry.canonical_name)
+        aliases.extend(english_aliases_for(canonical_name))
+        # 이미 존재하는 비타민 정식명의 표기 동등성만 제공한다.
+        vitamin = cls._VITAMIN_NAME.fullmatch(canonical_name)
+        if vitamin is not None:
+            aliases.append(f"vitamin {vitamin.group(1).upper()}")
+        return entry.model_copy(update={"canonical_name": canonical_name, "aliases": list(dict.fromkeys(aliases))})
 
     @staticmethod
     def _shared_supplement_entries(
@@ -203,14 +225,17 @@ class DbMedicationExpressionCatalog:
         if not full_name:
             return []
         name_without_ingredient = cls._INGREDIENT_SUFFIX.sub("", full_name).strip()
+        expressions = [full_name, name_without_ingredient]
+        # 허가명에 함께 쓰이는 단위 표기만 확장한다. 함량·제형은 그대로 유지한다.
+        expressions.extend(
+            spelling
+            for name in (full_name, name_without_ingredient)
+            for spelling in (name.replace("밀리그람", "밀리그램"), name.replace("밀리그램", "밀리그람"))
+        )
         dosage_form = cls.PRODUCT_DOSAGE_FORM_BOUNDARY.search(name_without_ingredient)
         if dosage_form is None:
-            return list(dict.fromkeys([full_name, name_without_ingredient]))
+            return list(dict.fromkeys(expressions))
         family_name = name_without_ingredient[: dosage_form.start()].rstrip(" -")
         if len(family_name) < 2:
-            return list(dict.fromkeys([full_name, name_without_ingredient]))
-        return list(
-            dict.fromkeys(
-                [full_name, name_without_ingredient, family_name],
-            )
-        )
+            return list(dict.fromkeys(expressions))
+        return list(dict.fromkeys([*expressions, family_name]))

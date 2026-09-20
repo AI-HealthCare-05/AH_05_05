@@ -1,0 +1,147 @@
+{
+  "schema_version": "feature599-reviewed-comparison-v1",
+  "measurement": "Search plus production store refiner only; not end-to-end response or clinical correctness.",
+  "independent_questions": 20,
+  "repeats_per_condition": 3,
+  "total_measured_searches": 480,
+  "query_embedding_control": "Same 20 OpenAI query vectors cached across tokenizer arms. Exclude cached embedding timings.",
+  "execution_order": "cl100k arm then o200k arm; mode order alternated within questions/repeats. Cross-arm latency can be confounded by cache/system load.",
+  "source_reports": [
+    "data/knowledge/reports/feature599-cl100k-reviewed-comparison-20260920.json",
+    "data/knowledge/reports/feature599-o200k-reviewed-comparison-20260920.json"
+  ],
+  "results": [
+    {
+      "tokenizer": "cl100k",
+      "track": "gold_filters",
+      "mode": "dense",
+      "searches": 60,
+      "evaluator_hit_at_5": 1,
+      "metadata_mrr": 0.975,
+      "forbidden_hit_rate": 0,
+      "search_p50_ms": 131.294,
+      "search_p95_ms": 197.093,
+      "errors": 0
+    },
+    {
+      "tokenizer": "cl100k",
+      "track": "gold_filters",
+      "mode": "hybrid",
+      "searches": 60,
+      "evaluator_hit_at_5": 1,
+      "metadata_mrr": 0.975,
+      "forbidden_hit_rate": 0,
+      "search_p50_ms": 358.385,
+      "search_p95_ms": 453.832,
+      "errors": 0
+    },
+    {
+      "tokenizer": "cl100k",
+      "track": "semantic_unfiltered",
+      "mode": "dense",
+      "searches": 60,
+      "evaluator_hit_at_5": 0.85,
+      "metadata_mrr": 0.7,
+      "forbidden_hit_rate": 0.15,
+      "search_p50_ms": 70.466,
+      "search_p95_ms": 109.509,
+      "errors": 0
+    },
+    {
+      "tokenizer": "cl100k",
+      "track": "semantic_unfiltered",
+      "mode": "hybrid",
+      "searches": 60,
+      "evaluator_hit_at_5": 0.8,
+      "metadata_mrr": 0.635,
+      "forbidden_hit_rate": 0.25,
+      "search_p50_ms": 511.244,
+      "search_p95_ms": 608.537,
+      "errors": 0
+    },
+    {
+      "tokenizer": "o200k",
+      "track": "gold_filters",
+      "mode": "dense",
+      "searches": 60,
+      "evaluator_hit_at_5": 1,
+      "metadata_mrr": 0.975,
+      "forbidden_hit_rate": 0,
+      "search_p50_ms": 119.226,
+      "search_p95_ms": 153.794,
+      "errors": 0
+    },
+    {
+      "tokenizer": "o200k",
+      "track": "gold_filters",
+      "mode": "hybrid",
+      "searches": 60,
+      "evaluator_hit_at_5": 1,
+      "metadata_mrr": 0.975,
+      "forbidden_hit_rate": 0,
+      "search_p50_ms": 320.397,
+      "search_p95_ms": 410.166,
+      "errors": 0
+    },
+    {
+      "tokenizer": "o200k",
+      "track": "semantic_unfiltered",
+      "mode": "dense",
+      "searches": 60,
+      "evaluator_hit_at_5": 0.85,
+      "metadata_mrr": 0.7,
+      "forbidden_hit_rate": 0.15,
+      "search_p50_ms": 60.941,
+      "search_p95_ms": 102.235,
+      "errors": 0
+    },
+    {
+      "tokenizer": "o200k",
+      "track": "semantic_unfiltered",
+      "mode": "hybrid",
+      "searches": 60,
+      "evaluator_hit_at_5": 0.8,
+      "metadata_mrr": 0.635,
+      "forbidden_hit_rate": 0.25,
+      "search_p50_ms": 470.68,
+      "search_p95_ms": 557.632,
+      "errors": 0
+    }
+  ],
+  "changes": [],
+  "warmup_errors": {
+    "cl100k": [],
+    "o200k": []
+  },
+  "fingerprints": {
+    "cl100k": {
+      "medication_knowledge_full_v17_function_ingredients_3072_dot": {
+        "point_count": 13604,
+        "fingerprint": "380f4fb23734ce40a0722c161e67ff9dce779b44b25626e4c1c103438d245260",
+        "vector_dimension": 3072,
+        "distance": "Dot"
+      },
+      "medication_knowledge_exp599_v17_cl100k_hybrid_20260920": {
+        "point_count": 13604,
+        "fingerprint": "380f4fb23734ce40a0722c161e67ff9dce779b44b25626e4c1c103438d245260",
+        "vector_dimension": 3072,
+        "distance": "Dot"
+      }
+    },
+    "o200k": {
+      "medication_knowledge_exp599_o200k_reviewed_dense_20260920": {
+        "point_count": 13223,
+        "fingerprint": "c597d5f0d1cca917dbfd405b116cce53589f3dd18e622a9c185e8be2ebc945c1",
+        "vector_dimension": 3072,
+        "distance": "Dot"
+      },
+      "medication_knowledge_exp599_o200k_reviewed_hybrid_20260920": {
+        "point_count": 13223,
+        "fingerprint": "c597d5f0d1cca917dbfd405b116cce53589f3dd18e622a9c185e8be2ebc945c1",
+        "vector_dimension": 3072,
+        "distance": "Dot"
+      }
+    }
+  },
+  "identical_query_vectors": true
+}

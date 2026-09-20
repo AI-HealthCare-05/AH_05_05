@@ -1,6 +1,7 @@
 import re
 from collections.abc import Callable
 from datetime import date, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 
 from tortoise.timezone import now
 
@@ -8,11 +9,18 @@ from ai_worker.domain.errors import (
     PatientContextNotFoundError,
     UnconfirmedPatientContextError,
 )
+from ai_worker.reports.nutrients import (
+    _number,
+    nutrient_display_specs,
+    registered_intake_factor,
+)
 from ai_worker.schemas.interaction import normalize_interaction_name
 from ai_worker.schemas.medication_chat import (
+    OMEGA_NUTRIENT_NAME,
     ActiveIntakeContext,
     ActiveMedication,
     ActiveSupplement,
+    SupplementNutrientAmount,
 )
 from app.models.care import CareEpisode
 from app.models.enums import CareEpisodeStatus, SupplementStatus
@@ -199,11 +207,56 @@ class DbActiveIntakeContextProvider:
             scheduled_slots=sorted(slot.slot.value for slot in medication.slots),
         )
 
-    @staticmethod
+    # 이 자료에는 EPA·DHA 컬럼이 없고 오메가3 제품의 기능성 성분은 총지방으로만 기록된다.
+    # 제품명이 오메가3를 가리킬 때는 `지방`보다 `오메가-3`가 사용자에게 맞는 이름이다.
+    # 다만 총지방이 곧 EPA+DHA 함량은 아니므로 답변에 그 사실을 함께 밝힌다.
+    # `EPA`·`DHA`는 영문에 둘러싸이면 다른 낱말이다(`HEPA`). 숫자 뒤(`오메가3EPA`)는 남긴다.
+    _OMEGA_PRODUCT_NAME = re.compile(r"오메가\s*-?\s*3|(?<![A-Za-z])(?:EPA|DHA)(?![A-Za-z])", re.IGNORECASE)
+    _OMEGA_FAT_LABEL = OMEGA_NUTRIENT_NAME
+
+    @classmethod
+    def _nutrient_amounts(
+        cls,
+        nutrient: object,
+        *,
+        factor: Decimal,
+    ) -> list[SupplementNutrientAmount]:
+        """등록한 복용 계획으로 환산한 성분 함량.
+
+        컬럼 원본값은 자료가 정한 기준량(`basis_qty`) 기준이라 사용자가 실제로 먹는 양과
+        다르다. 리포트와 같은 계수를 곱해 두 화면이 같은 숫자를 말하게 한다.
+        """
+        product_name = str(getattr(nutrient, "name", "") or "")
+        is_omega_product = bool(cls._OMEGA_PRODUCT_NAME.search(product_name))
+        amounts: list[SupplementNutrientAmount] = []
+        for column, label, unit in nutrient_display_specs():
+            value = _number(getattr(nutrient, column, None))
+            if value is None or value <= 0:
+                continue
+            if column == "fat_g" and is_omega_product:
+                label = cls._OMEGA_FAT_LABEL
+            # 리포트와 같은 자릿수·반올림이어야 두 화면이 같은 숫자를 말한다.
+            scaled = (value * factor).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            if scaled <= 0:
+                # 환산하면 0이 되는 미량이다. `칼슘 0mg`은 들어 있지 않다는 뜻으로 읽힌다.
+                continue
+            scaled = scaled.normalize()
+            amounts.append(
+                SupplementNutrientAmount(
+                    name=label,
+                    # `normalize()`는 `1E+2` 같은 지수 표기를 만든다. `:f`가 그걸 막는다.
+                    amount=f"{scaled:f}",
+                    unit=unit,
+                )
+            )
+        return amounts
+
+    @classmethod
     def _to_active_supplement(
+        cls,
         registration: UserSupplementNutrient,
     ) -> ActiveSupplement:
-        return ActiveSupplement(
+        supplement = ActiveSupplement(
             registration_id=registration.id,
             supplement_nutrient_id=registration.supplement_nutrient_id,
             name=registration.supplement_nutrient.name,
@@ -213,4 +266,12 @@ class DbActiveIntakeContextProvider:
             end_date=registration.end_date,
             note=registration.note,
             scheduled_slots=sorted(slot.slot.value for slot in registration.slots),
+        )
+        # 환산할 수 없는 제품은 함량을 싣지 않는다. 리포트도 같은 제품을 제외한다.
+        schedule = registered_intake_factor(registration.supplement_nutrient, supplement)
+        if schedule is None:
+            return supplement
+        factor, _ = schedule
+        return supplement.model_copy(
+            update={"nutrients": cls._nutrient_amounts(registration.supplement_nutrient, factor=factor)}
         )

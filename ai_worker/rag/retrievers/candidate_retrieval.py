@@ -121,6 +121,11 @@ class MedicationKnowledgeCandidateRetriever:
                     plan.expanded_query,
                     *plan.alternate_queries,
                     *self._english_alias_queries(plan),
+                    *(
+                        [f"건강기능식품 기능성 원료 {plan.supplement_function_goal} 도움"]
+                        if plan.supplement_function_goal
+                        else []
+                    ),
                 ]
             )
         )
@@ -266,7 +271,7 @@ class MedicationKnowledgeCandidateRetriever:
     ) -> str:
         question = (
             query
-            if is_supplement_function_goal_question(plan.original_query)
+            if plan.supplement_function_goal or is_supplement_function_goal_question(plan.original_query)
             else (plan.original_query if query == plan.expanded_query else query)
         )
         return build_medical_retrieval_query_text(

@@ -250,6 +250,7 @@ class MedicationKnowledgeQueryPlan(BaseModel):
     entities: list[MedicationQueryEntity] = Field(default_factory=list)
     document_types: list[KnowledgeDocumentType] = Field(default_factory=list)
     section_types: list[KnowledgeSectionType] = Field(default_factory=list)
+    supplement_function_goal: str | None = None
     alternate_queries: list[str] = Field(default_factory=list)
     interaction_pair: SupplementInteractionPair | None = None
     ingredient_family: SupplementIngredientFamily | None = None
