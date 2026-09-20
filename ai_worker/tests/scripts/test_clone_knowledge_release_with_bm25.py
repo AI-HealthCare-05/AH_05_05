@@ -2,7 +2,7 @@ from argparse import Namespace
 
 import pytest
 
-from ai_worker.schemas.knowledge import KnowledgeSearchMode
+from ai_worker.schemas.knowledge import KnowledgeSearchMode, KnowledgeVectorDistance
 from scripts import clone_knowledge_release_with_bm25 as module
 
 
@@ -18,7 +18,8 @@ def test_parse_args_requires_different_immutable_release_names() -> None:
         )
 
 
-def test_build_cloner_uses_single_dense_source_and_hybrid_target() -> None:
+@pytest.mark.parametrize("distance", [KnowledgeVectorDistance.COSINE, KnowledgeVectorDistance.DOT])
+def test_build_cloner_uses_single_dense_source_and_hybrid_target(distance: KnowledgeVectorDistance) -> None:
     args = Namespace(
         source_collection="knowledge-v2",
         target_collection="knowledge-v2-hybrid",
@@ -28,6 +29,7 @@ def test_build_cloner_uses_single_dense_source_and_hybrid_target() -> None:
     cloner = module.build_cloner(
         settings=module.Config(
             OPENAI_EMBEDDING_DIMENSIONS=1536,
+            KNOWLEDGE_VECTOR_DISTANCE=distance,
             _env_file=None,
         ),
         args=args,
@@ -37,3 +39,5 @@ def test_build_cloner_uses_single_dense_source_and_hybrid_target() -> None:
     assert cloner._source_store.collection_name == "knowledge-v2"
     assert cloner._target_store.collection_name == "knowledge-v2-hybrid"
     assert cloner._target_store.search_mode == KnowledgeSearchMode.HYBRID
+    assert cloner._source_store._distance == distance
+    assert cloner._target_store._distance == distance

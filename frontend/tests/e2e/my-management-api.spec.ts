@@ -428,7 +428,7 @@ test('기존 10분 단위가 아닌 진료 시간은 반올림하지 않고 지�
   await expect(visitSheet.getByRole('button', { name: '저장' })).toBeDisabled();
 
   await visitSheet.getByRole('button', { name: '진료 시간 15:17' }).click();
-  const timeSheet = page.getByRole('dialog', { name: '시간 선택' });
+  const timeSheet = page.getByRole('dialog', { name: '진료일정', exact: true });
   await expect(timeSheet.getByText('현재 저장된 15:17은 10분 단위가 아니에요.')).toBeVisible();
   await expect(timeSheet.getByLabel('분')).toHaveAttribute('aria-invalid', 'true');
   await expect(timeSheet.getByLabel('분')).toHaveAttribute('aria-describedby', /.+/);
@@ -449,12 +449,12 @@ test('기존 10분 단위가 아닌 진료 시간은 반올림하지 않고 지�
   await clearedVisit.click();
   const reopenedVisitSheet = page.getByRole('dialog', { name: '진료일정 수정' });
   await reopenedVisitSheet.getByRole('button', { name: '진료 시간 시간 미정' }).click();
-  const reopenedTimeSheet = page.getByRole('dialog', { name: '시간 선택' });
+  const reopenedTimeSheet = page.getByRole('dialog', { name: '진료일정', exact: true });
   await reopenedTimeSheet.getByLabel('시').click();
   await page.getByRole('option', { name: '15시', exact: true }).click();
   await reopenedTimeSheet.getByLabel('분').click();
   await page.getByRole('option', { name: '20분', exact: true }).click();
-  await reopenedTimeSheet.getByRole('button', { name: '이 시간 적용' }).click();
+  await reopenedTimeSheet.getByRole('button', { name: '적용', exact: true }).click();
   await reopenedVisitSheet.getByRole('button', { name: '저장' }).click();
 
   expect(patchBodies).toEqual([

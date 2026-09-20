@@ -24,7 +24,10 @@ import {
 
 export interface TimePickerSheetProps {
   open: boolean;
-  description: string;
+  title?: string;
+  description?: string;
+  applyLabel?: string;
+  showMinuteHint?: boolean;
   value: string;
   minuteStep?: MinuteStep;
   preserveInvalidMinute?: boolean;
@@ -34,7 +37,10 @@ export interface TimePickerSheetProps {
 
 export function TimePickerSheet({
   open,
+  title = '시간 선택',
   description,
+  applyLabel = '이 시간 적용',
+  showMinuteHint = true,
   value,
   minuteStep = REMINDER_MINUTE_STEP,
   preserveInvalidMinute = false,
@@ -61,16 +67,18 @@ export function TimePickerSheet({
 
   const current = `${hour}:${minute}`;
   const minuteIsValid = minuteOptions.includes(minute);
+  const showMinuteHelp = showMinuteHint || !minuteIsValid;
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? undefined : onCancel())}>
       <DialogContent
+        {...(!description ? { 'aria-describedby': undefined } : {})}
         showCloseButton={false}
         className="top-auto bottom-0 w-full max-w-dialog translate-y-0 rounded-b-none"
       >
         <DialogHeader>
-          <DialogTitle>시간 선택</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          {description ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
 
         <div className="flex items-center gap-2">
@@ -93,7 +101,7 @@ export function TimePickerSheet({
             <SelectTrigger
               aria-label="분"
               aria-invalid={!minuteIsValid ? true : undefined}
-              aria-describedby={minuteHelpId}
+              aria-describedby={showMinuteHelp ? minuteHelpId : undefined}
             >
               <SelectValue />
             </SelectTrigger>
@@ -112,17 +120,17 @@ export function TimePickerSheet({
           </Select>
         </div>
 
-        <p id={minuteHelpId} className="text-sm text-muted-foreground">
+        {showMinuteHelp ? <p id={minuteHelpId} className="text-sm text-muted-foreground">
           {minuteIsValid
             ? minuteStep === 30
               ? '분은 00분 또는 30분 단위로 선택할 수 있어요.'
               : `분은 ${minuteStep}분 단위로 선택할 수 있어요.`
             : `현재 저장된 ${value}은 ${minuteStep}분 단위가 아니에요.`}
-        </p>
+        </p> : null}
 
         <DialogFooter>
           <Button disabled={!minuteIsValid} onClick={() => onApply(current)}>
-            이 시간 적용
+            {applyLabel}
           </Button>
           <Button variant="secondary" onClick={onCancel}>
             취소

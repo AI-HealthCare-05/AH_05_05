@@ -5,6 +5,7 @@ from uuid import NAMESPACE_URL, uuid5
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models
 
+from ai_worker.rag.errors import KnowledgeDatasetVersionMismatchError
 from ai_worker.rag.rerankers.knowledge_search_result_refiner import (
     KnowledgeSearchResultRefiner,
 )
@@ -47,6 +48,9 @@ class QdrantKnowledgeStore:
         self._distance = KnowledgeVectorDistance(distance)
         self._collection_validated = False
         self._collection_validation_lock = asyncio.Lock()
+        self._verified_dataset_versions: set[str] = set()
+        self._invalid_dataset_versions: set[str] = set()
+        self._dataset_version_validation_lock = asyncio.Lock()
 
     @property
     def collection_name(self) -> str:
@@ -103,6 +107,9 @@ class QdrantKnowledgeStore:
             points=points,
             wait=True,
         )
+        # 색인 작성자가 같은 인스턴스로 검증한 뒤 적재하는 경우에는 다시 확인한다.
+        self._verified_dataset_versions.clear()
+        self._invalid_dataset_versions.clear()
         return point_ids
 
     async def count_points(self) -> int:
@@ -151,6 +158,10 @@ class QdrantKnowledgeStore:
             with_payload=True,
             with_vectors=False,
         )
+        if not response.points:
+            await self._validate_dataset_version_after_empty_search(
+                dataset_version=search_query.dataset_version,
+            )
 
         raw_results: list[RetrievedKnowledgeChunk] = []
         for point in response.points:
@@ -237,6 +248,51 @@ class QdrantKnowledgeStore:
             # 릴리스 컬렉션은 불변으로 운영하므로 프로세스 생명주기 동안
             # 성공한 스키마 검증을 재사용해 검색별 관리 RPC를 제거한다.
             self._collection_validated = True
+
+    async def _validate_dataset_version_after_empty_search(
+        self,
+        *,
+        dataset_version: str,
+    ) -> None:
+        """빈 검색이 필터 미스인지 release/dataset 조합 오류인지 한 번만 구분한다."""
+        if dataset_version in self._verified_dataset_versions:
+            return
+        if dataset_version in self._invalid_dataset_versions:
+            self._raise_dataset_version_mismatch(dataset_version)
+        async with self._dataset_version_validation_lock:
+            if dataset_version in self._verified_dataset_versions:
+                return
+            if dataset_version in self._invalid_dataset_versions:
+                self._raise_dataset_version_mismatch(dataset_version)
+            dataset_count = await self._client.count(
+                collection_name=self._collection_name,
+                count_filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="metadata.dataset_version",
+                            match=models.MatchValue(value=dataset_version),
+                        )
+                    ]
+                ),
+                exact=True,
+            )
+            if dataset_count.count:
+                self._verified_dataset_versions.add(dataset_version)
+                return
+            collection_count = await self._client.count(
+                collection_name=self._collection_name,
+                exact=True,
+            )
+            if collection_count.count:
+                self._invalid_dataset_versions.add(dataset_version)
+                self._raise_dataset_version_mismatch(dataset_version)
+            self._verified_dataset_versions.add(dataset_version)
+
+    def _raise_dataset_version_mismatch(self, dataset_version: str) -> None:
+        raise KnowledgeDatasetVersionMismatchError(
+            "Knowledge release 컬렉션에 요청 dataset_version이 없습니다: "
+            f"collection={self._collection_name}, dataset_version={dataset_version}"
+        )
 
     def _validate_vectors(self, vectors: list[list[float]]) -> None:
         if any(len(vector) != self._vector_size for vector in vectors):

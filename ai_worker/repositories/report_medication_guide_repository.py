@@ -42,6 +42,19 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
     _STRENGTH = re.compile(
         r"(?P<amount>(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)(?P<unit>밀리그램|밀리그람|마이크로그램|마이크로그람|그램|그람|mg|mcg|μg|µg|g|ml|밀리리터)"
     )
+    # The shared chat catalog deliberately has a smaller vocabulary. Reports
+    # must parse the dosage forms present in product-guide registrations too.
+    _REPORT_DOSAGE_FORM_BOUNDARY = re.compile(
+        r"(?:카타플라스마|점안액|점이액|점비액|구강붕해정|연질캡슐|경질캡슐|현탁액|서방정|장용정|"
+        r"플라스타|스프레이|시럽|과립|캡슐|패취|패치|연고|크림|겔|젤|산|정|액)(?=\d|$)"
+    )
+    _IDENTITY_QUALIFIER = re.compile(
+        r"(?:대|중|소|대형|중형|소형|1회용|일회용|다회용|수출용|"
+        r"소아용|성인용|유아용|어린이용|대환|소환|향|[가-힣]+(?:향|맛))"
+    )
+    _ANNOTATION_STRENGTH = re.compile(
+        r"\d+(?:[.,]\d+)?\s*(?:%|밀리그램|밀리그람|마이크로그램|마이크로그람|그램|그람|mg|mcg|μg|µg|g|ml|밀리리터)"
+    )
 
     def __init__(self, *, candidate_selector: MedicationCandidateSelector | None = None) -> None:
         # Identity dominance must include products added since the last report.
@@ -57,7 +70,7 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
         if len(self._normalize_name(query)) < 2 or len(query) > 256:
             return MedicationGuideLookup()
         direct = await super().find_by_name(query)
-        if direct.guide is not None and self._matches_product_name(query, direct.guide.product_name):
+        if direct.guide is not None and query == direct.guide.product_name.strip():
             return direct
 
         # Use one fresh product snapshot for the identity ranking in this lookup.
@@ -116,7 +129,14 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
     async def _find_catalog_product(
         self, query: str, entries: list[MedicationCatalogEntry]
     ) -> MedicationGuideLookup | None:
-        names = {entry.canonical_name for entry in entries if self._matches_product_name(query, entry.canonical_name)}
+        names = {
+            entry.canonical_name
+            for entry in entries
+            if any(
+                self._matches_product_name(query, alias)
+                for alias in [entry.canonical_name, *self._product_aliases(entry.canonical_name)]
+            )
+        }
         if len(names) > 1:
             return MedicationGuideLookup(is_ambiguous=True, candidate_names=sorted(names), original_name=query)
         if names:
@@ -143,6 +163,10 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
             return None
         name = next(iter(names))
         product, _ = self._split_annotations(name)
+        _, query_annotations = self._split_annotations(query)
+        _, candidate_annotations = self._split_annotations(name)
+        if not self._annotations_compatible(query_annotations, candidate_annotations):
+            return None
         cut_inside_final_unit = any(
             strength.end() == len(product) and strength.start("unit") <= len(prefix) <= strength.end()
             for strength in self._STRENGTH.finditer(product)
@@ -243,12 +267,92 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
 
     @classmethod
     def _matches_product_name(cls, query: str, product_name: str) -> bool:
-        query_name, query_annotations = cls._split_annotations(query)
-        candidate_name, candidate_annotations = cls._split_annotations(product_name)
-        return (
-            cls._unit_spelling_key(query_name) == cls._unit_spelling_key(candidate_name)
-            and query_annotations == candidate_annotations[: len(query_annotations)]
+        normalized_query = unicodedata.normalize("NFC", query).translate(cls._FULLWIDTH_ASCII)
+        normalized_product = unicodedata.normalize("NFC", product_name).translate(cls._FULLWIDTH_ASCII)
+        # A DB row may retain several independently named alternatives in one
+        # field. Compare each complete alias, never a fragment of a compound
+        # query (which could make a changed dose look equivalent).
+        if cls._normalize_name(normalized_query) == cls._normalize_name(normalized_product):
+            return True
+        query_aliases = cls._product_aliases(normalized_query)
+        candidate_aliases = cls._product_aliases(normalized_product)
+        if len(query_aliases) > 1:
+            if len(candidate_aliases) != len(query_aliases):
+                return False
+            unmatched = list(candidate_aliases)
+            for query_alias in query_aliases:
+                match_index = next(
+                    (
+                        index
+                        for index, candidate_alias in enumerate(unmatched)
+                        if cls._matches_product_name(query_alias, candidate_alias)
+                    ),
+                    None,
+                )
+                if match_index is None:
+                    return False
+                unmatched.pop(match_index)
+            return not unmatched
+        if len(candidate_aliases) > 1:
+            return any(cls._matches_product_name(normalized_query, alias) for alias in candidate_aliases)
+        query_name, query_annotations = cls._split_annotations(normalized_query)
+        candidate_name, candidate_annotations = cls._split_annotations(normalized_product)
+        if not query_name or not candidate_name:
+            return False
+        return cls._unit_spelling_key(query_name) == cls._unit_spelling_key(
+            candidate_name
+        ) and cls._annotations_compatible(query_annotations, candidate_annotations)
+
+    @classmethod
+    def _annotations_compatible(
+        cls, query_annotations: tuple[str, ...], candidate_annotations: tuple[str, ...]
+    ) -> bool:
+        """Compare identity metadata while allowing an omitted ingredient suffix.
+
+        Ingredients are explanatory metadata and have historically been
+        optional in report lookups. Qualifiers and unclassified metadata are
+        identity-bearing: an absent or different qualifier must not bind a
+        singleton product by a partial DB query or fuzzy fallback.
+        """
+
+        query_identity = tuple(
+            (cls._annotation_kind(annotation), cls._normalize_name(annotation))
+            for annotation in query_annotations
+            if cls._annotation_kind(annotation) != "ingredient"
         )
+        candidate_identity = tuple(
+            (cls._annotation_kind(annotation), cls._normalize_name(annotation))
+            for annotation in candidate_annotations
+            if cls._annotation_kind(annotation) != "ingredient"
+        )
+        if query_identity != candidate_identity:
+            return False
+
+        candidate_ingredients = {
+            cls._normalize_name(annotation)
+            for annotation in candidate_annotations
+            if cls._annotation_kind(annotation) == "ingredient"
+        }
+        return all(
+            cls._normalize_name(annotation) in candidate_ingredients
+            for annotation in query_annotations
+            if cls._annotation_kind(annotation) == "ingredient"
+        )
+
+    @classmethod
+    def _annotation_kind(cls, annotation: str) -> str:
+        normalized = cls._normalize_name(annotation)
+        if cls._IDENTITY_QUALIFIER.fullmatch(normalized):
+            return "qualifier"
+        # Labels, nested alternatives, and strength-bearing metadata are not
+        # safe to treat as optional ingredients.
+        if (
+            any(delimiter in annotation for delimiter in (":", "|", "/"))
+            or cls._STRENGTH.search(annotation)
+            or cls._ANNOTATION_STRENGTH.search(annotation)
+        ):
+            return "identity"
+        return "ingredient"
 
     @classmethod
     def _unit_spelling_key(cls, value: str) -> str:
@@ -264,8 +368,8 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
 
     @classmethod
     def _safe_product_correction(cls, original: str, corrected: str) -> bool:
-        original_key, _ = cls._split_annotations(original)
-        corrected_key, _ = cls._split_annotations(corrected)
+        original_key, original_annotations = cls._split_annotations(original)
+        corrected_key, corrected_annotations = cls._split_annotations(corrected)
         if cls._matches_product_name(original, corrected):
             return True
         original_parts = cls._product_parts(original, allow_unknown_form=True)
@@ -286,7 +390,7 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
                     == 1
                 )
             )
-            and original_parts[2] == corrected_parts[2][: len(original_parts[2])]
+            and cls._annotations_compatible(original_annotations, corrected_annotations)
             # Do not add/drop a whole product variant suffix such as Q/ER.
             and not original_parts[0].startswith(corrected_parts[0])
             and not corrected_parts[0].startswith(original_parts[0])
@@ -304,6 +408,9 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
         """제품 구조가 충분한 입력에서는 후보에도 같은 안전 경계를 적용한다."""
 
         unique_candidates = list(dict.fromkeys(name for name in candidates if name.strip()))
+        _, query_annotations = cls._split_annotations(query)
+        if any(cls._annotation_kind(annotation) != "ingredient" for annotation in query_annotations):
+            return [candidate for candidate in unique_candidates if cls._safe_product_correction(query, candidate)]
         query_parts = cls._product_parts(query, allow_unknown_form=True)
         if query_parts is None or not cls._has_explicit_product_structure(query_parts[1]):
             return unique_candidates
@@ -337,7 +444,7 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
         return tuple(
             normalized
             for annotation in annotations
-            if not any(delimiter in annotation for delimiter in (":", "|", "/"))
+            if cls._annotation_kind(annotation) == "ingredient"
             for normalized in [cls._normalize_ingredient_name(annotation)]
             if len(normalized) >= 3
         )
@@ -353,7 +460,7 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
     @classmethod
     def _product_parts(cls, name: str, *, allow_unknown_form: bool = False) -> tuple[str, str, tuple[str, ...]] | None:
         product, annotations = cls._split_annotations(name)
-        form = DbMedicationExpressionCatalog.PRODUCT_DOSAGE_FORM_BOUNDARY.search(product)
+        form = cls._REPORT_DOSAGE_FORM_BOUNDARY.search(product)
         form_start = form.start() if form is not None else None
         if form_start is None and allow_unknown_form:
             strength = cls._STRENGTH.search(product)
@@ -371,20 +478,90 @@ class ReportMedicationGuideRepository(DbMedicationProductGuideRepository):
     def _split_annotations(cls, name: str) -> tuple[str, tuple[str, ...]]:
         product = cls._normalize_name(unicodedata.normalize("NFC", name).translate(cls._FULLWIDTH_ASCII))
         annotations: list[str] = []
-        while product.endswith(")"):
-            depth = 0
-            for index in range(len(product) - 1, -1, -1):
-                if product[index] == ")":
-                    depth += 1
-                elif product[index] == "(":
-                    depth -= 1
-                    if depth == 0:
-                        annotations.insert(0, product[index + 1 : -1])
-                        product = product[:index]
-                        break
-            else:
+        while product:
+            export_start = cls._trailing_balanced_block_start(product)
+            if export_start is not None and product[-1] in "}]":
+                export_metadata = product[export_start + 1 : -1]
+                if export_metadata.startswith("수출명:"):
+                    product = product[:export_start]
+                    continue
+
+            if not product.endswith(")"):
+                break
+            annotation_start = cls._trailing_balanced_block_start(product)
+            if annotation_start is None:
                 break  # Malformed metadata is not silently discarded.
+            annotation = product[annotation_start + 1 : -1]
+            if annotation.startswith("수출명:"):
+                product = product[:annotation_start]
+                continue
+            annotations.insert(0, annotation)
+            product = product[:annotation_start]
         return product, tuple(annotations)
+
+    @classmethod
+    def _product_aliases(cls, name: str) -> list[str]:
+        """Return independently named, top-level pipe alternatives.
+
+        Product ingredients, export names, and flavor text may contain pipes
+        inside balanced blocks. Number prefixes are stripped only for a
+        complete sequential list (``1. ... | 2. ...``); malformed lists stay
+        literal so they cannot accidentally become an identity alias.
+        """
+
+        parts = cls._split_top_level_pipe(name)
+        if len(parts) <= 1:
+            return [name.strip()]
+        numbered = [re.fullmatch(r"(\d+)\.\s*(.+)", part.strip()) for part in parts]
+        if any(numbered):
+            if not all(numbered) or [int(match.group(1)) for match in numbered if match] != list(
+                range(1, len(parts) + 1)
+            ):
+                return [name.strip()]
+            parts = [match.group(2).strip() for match in numbered if match]
+        if any(not part for part in parts):
+            return [name.strip()]
+        return list(dict.fromkeys(parts))
+
+    @staticmethod
+    def _split_top_level_pipe(value: str) -> list[str]:
+        pairs = {")": "(", "]": "[", "}": "{"}
+        openers = set(pairs.values())
+        stack: list[str] = []
+        parts: list[str] = []
+        start = 0
+        for index, char in enumerate(value):
+            if char in openers:
+                stack.append(char)
+            elif char in pairs:
+                if not stack or stack.pop() != pairs[char]:
+                    return [value.strip()]
+            elif char == "|" and not stack:
+                parts.append(value[start:index].strip())
+                start = index + 1
+        if stack:
+            return [value.strip()]
+        parts.append(value[start:].strip())
+        return parts
+
+    @staticmethod
+    def _trailing_balanced_block_start(value: str) -> int | None:
+        if not value or value[-1] not in ")]}":
+            return None
+        pairs = {")": "(", "]": "[", "}": "{"}
+        openers = set(pairs.values())
+        stack: list[str] = []
+        for index in range(len(value) - 1, -1, -1):
+            char = value[index]
+            if char in pairs:
+                stack.append(char)
+            elif char in openers:
+                if not stack or pairs[stack[-1]] != char:
+                    return None
+                stack.pop()
+                if not stack:
+                    return index
+        return None
 
     @classmethod
     def _suggestion_key(cls, value: str) -> str:

@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from ai_worker.chains.conditional_question_interpretation_chain import (
@@ -57,6 +59,7 @@ def test_output_contains_only_structured_fields_not_chain_of_thought() -> None:
         "route": None,
         "candidate_entity_keys": ["candidate_0"],
         "requested_section_types": [KnowledgeSectionType.CAUTION],
+        "supplement_function_goal": None,
         "interaction_pair_keys": [],
         "stimuli": [],
         "confidence": "MEDIUM",
@@ -87,6 +90,53 @@ def test_output_accepts_candidate_keys_and_route() -> None:
 
     assert payload.candidate_entity_keys == ["candidate_0", "candidate_1"]
     assert payload.route == "INTERACTION"
+
+
+def test_entity_free_input_requires_explicit_guide_approval() -> None:
+    with pytest.raises(ValueError):
+        ConditionalQuestionInterpretationInput(
+            question="잠 잘자려면 어떤 영양제가 좋아?",
+            candidate_entities={},
+            trigger_reasons=["ENTITY_FREE_GUIDE_SEARCH"],
+        )
+    approved = ConditionalQuestionInterpretationInput(
+        question="잠 잘자려면 어떤 영양제가 좋아?",
+        candidate_entities={},
+        allow_entity_free_guide_search=True,
+        trigger_reasons=["ENTITY_FREE_GUIDE_SEARCH"],
+    )
+    assert approved.candidate_entities == {}
+
+
+@pytest.mark.parametrize("domain", ["SUPPLEMENT", "MEDICATION", None])
+@pytest.mark.parametrize("with_plan", [False, True])
+async def test_chain_renders_gate_domain_even_without_current_plan(domain, with_plan) -> None:
+    from ai_worker.schemas.medication_search import MedicationKnowledgeQueryPlan
+
+    observed = []
+
+    class Client:
+        async def ainvoke(self, messages):
+            observed.extend(messages)
+            return {"normalized_question": "잠 잘자려면 어떤 영양제가 좋아?", "confidence": "HIGH"}
+
+    question = "잠 잘자려면 어떤 영양제가 좋아?"
+    chain = build_conditional_question_interpretation_chain(model="test-model", client=Client())
+    await chain.ainvoke(
+        ConditionalQuestionInterpretationInput(
+            question=question,
+            allow_entity_free_guide_search=True,
+            guide_domain=domain,
+            trigger_reasons=["ENTITY_FREE_GUIDE_SEARCH"],
+            current_query_plan=(
+                MedicationKnowledgeQueryPlan(original_query=question, expanded_query=question) if with_plan else None
+            ),
+        )
+    )
+    rendered = observed[-1].content.split("현재 규칙 기반 분류 JSON: ", 1)[1].split("\n", 1)[0]
+    classification = json.loads(rendered)
+    assert classification["guide_domain"] == domain
+    assert classification["allow_entity_free_guide_search"] is True
 
 
 def test_output_rejects_free_form_entity_names() -> None:

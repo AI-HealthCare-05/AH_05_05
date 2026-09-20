@@ -61,7 +61,15 @@ def build_medication_chat_messages(
         "show_active_medication_section": show_active_medication_section,
         "active_supplement_names": [item.name for item in context.supplements],
         "draft_answer": _draft_answer_for_rewrite(result),
-        "official_warning_texts": result.official_warning_texts,
+        "official_warning_texts": (
+            result.official_warning_texts
+            if result.evidence_coverage is None
+            or any(
+                section in result.evidence_coverage.covered_section_types
+                for section in (KnowledgeSectionType.CAUTION, KnowledgeSectionType.ADVERSE_EVENT)
+            )
+            else []
+        ),
         "source_titles": [source.title for source in result.sources],
         "route": result.route.value,
         "general_supplement_guidance_allowed": (

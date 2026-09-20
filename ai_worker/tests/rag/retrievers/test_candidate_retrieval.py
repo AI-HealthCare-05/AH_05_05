@@ -15,6 +15,52 @@ from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_search import MedicationSearchExecutionPlan
 
 
+@pytest.mark.parametrize("goal", ["잠 잘자려면", None])
+async def test_literal_goal_adds_one_descriptor_query_without_replacing_existing_queries(goal) -> None:
+    original = "잠 잘자려면 어떤 영양제가 좋아?"
+    expanded = f"{original} 잠 잘자려면"
+    alternate = "잠 잘자려면 기능성"
+    plan = build_execution_plan()
+    plan = plan.model_copy(
+        update={
+            "query_plan": plan.query_plan.model_copy(
+                update={
+                    "original_query": original,
+                    "expanded_query": expanded,
+                    "supplement_function_goal": goal,
+                    "entity_names": [],
+                    "entities": [],
+                    "alternate_queries": [alternate],
+                    "section_types": [KnowledgeSectionType.FUNCTION],
+                }
+            )
+        }
+    )
+    embedding = FakeEmbeddingProvider()
+    store = FakeKnowledgeStore()
+    retriever = MedicationKnowledgeCandidateRetriever(
+        embedding_provider=embedding,
+        vector_store=store,
+        dataset_version="knowledge-full-v17",
+        eligibility_evaluator=lambda *_: "ELIGIBLE",
+        section_coverage_evaluator=lambda *_: True,
+    )
+
+    await retriever.retrieve(execution_plan=plan)
+
+    expected_queries = [expanded, alternate]
+    expected_embeddings = [
+        f"[질문] {expanded if goal else original}\n[요청 섹션] FUNCTION",
+        "[질문] 잠 잘자려면 기능성\n[요청 섹션] FUNCTION",
+    ]
+    if goal:
+        expected_queries.append("건강기능식품 기능성 원료 잠 잘자려면 도움")
+        expected_embeddings.append("[질문] 건강기능식품 기능성 원료 잠 잘자려면 도움\n[요청 섹션] FUNCTION")
+    assert [query.query for query in store.queries] == expected_queries
+    assert embedding.queries == expected_embeddings
+    assert all("미강" not in query and "수면의 질 개선" not in query for query in embedding.queries)
+
+
 def test_overview_does_not_limit_search_to_existing_drug_rule_pairs() -> None:
     plan = build_execution_plan()
     query = plan.query_plan.model_copy(
@@ -96,6 +142,21 @@ def build_execution_plan() -> MedicationSearchExecutionPlan:
         approved_rules_hash="b" * 64,
         limit=5,
     )
+
+
+def test_structured_goal_keeps_expanded_goal_query_for_embedding() -> None:
+    plan = build_execution_plan().query_plan.model_copy(
+        update={
+            "original_query": "잠 잘자려면 어떤 영양제가 좋아?",
+            "expanded_query": "잠 잘자려면 어떤 영양제가 좋아? 수면의 질 개선",
+            "supplement_function_goal": "수면의 질 개선",
+            "entity_names": [],
+            "entities": [],
+            "section_types": [KnowledgeSectionType.FUNCTION],
+        }
+    )
+    embedded = MedicationKnowledgeCandidateRetriever._embedding_query_text(query=plan.expanded_query, plan=plan)
+    assert "수면의 질 개선" in embedded
 
 
 def test_overview_does_not_stop_at_previously_known_drug_pairs() -> None:

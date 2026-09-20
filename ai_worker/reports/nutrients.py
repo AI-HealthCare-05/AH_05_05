@@ -65,6 +65,8 @@ class _MissingCatalogProduct:
     vitamin_d_ug: Decimal | None = None
 
 
+# 리포트의 총량·상한 비교와 챗봇의 성분 표시가 모두 이 표를 쓴다(`nutrient_display_specs`).
+# 항목을 더하거나 이름·단위를 바꾸면 두 화면이 함께 바뀐다.
 _NUTRIENT_SPECS = (
     _NutrientSpec("fiber_g", "식이섬유", "g", "fiber_g", None),
     _NutrientSpec("calcium_mg", "칼슘", "mg", "calcium_mg", "calcium_mg_ul"),
@@ -143,6 +145,22 @@ def _measurement(value: object) -> tuple[Decimal, str] | None:
         "ml": "1",
     }
     return amount * Decimal(factors[unit]), "volume" if unit in {"l", "ml"} else "mass"
+
+
+def nutrient_display_specs() -> tuple[tuple[str, str, str], ...]:
+    """표시할 영양소의 (컬럼, 이름, 단위).
+
+    리포트와 챗봇이 같은 영양소를 다른 이름·단위로 부르지 않도록 한 곳에서만 정의한다.
+    """
+    return tuple((spec.field, spec.name, spec.unit) for spec in _NUTRIENT_SPECS)
+
+
+def registered_intake_factor(product: _ProductLike, registration: ActiveSupplement) -> tuple[Decimal, str] | None:
+    """등록한 복용 계획으로 환산하는 계수와 그 기준 설명.
+
+    리포트와 챗봇이 같은 제품에 다른 함량을 말하지 않도록 두 곳이 이 함수를 공유한다.
+    """
+    return _registered_schedule(product, registration)
 
 
 def _registered_schedule(product: _ProductLike, registration: ActiveSupplement) -> tuple[Decimal, str] | None:

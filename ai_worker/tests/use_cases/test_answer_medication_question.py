@@ -25,6 +25,7 @@ from ai_worker.domain.medication_question_resolver import (
 )
 from ai_worker.rag.errors import (
     GuidelineRetrievalError,
+    KnowledgeDatasetVersionMismatchError,
     RetrievalFailureStage,
 )
 from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
@@ -91,7 +92,9 @@ from ai_worker.schemas.medication_search import (
     MedicationQueryEntity,
     MedicationQueryEntitySource,
     MedicationQueryEntityType,
+    MedicationQuestionInterpretation,
     MedicationQuestionResolution,
+    MedicationSearchExecutionPlan,
     SupplementInteractionPair,
 )
 from ai_worker.schemas.patient import FollowUpSchedule
@@ -1317,6 +1320,39 @@ async def test_registered_interaction_request_reaches_search_despite_gate_note_m
     assert result.route is not MedicationChatRoute.MEDICATION_NOTE_SUMMARY
     assert summary.received_scope is None
     assert retriever.execution_plans[0].query_plan.interaction_overview is True
+
+
+async def test_active_interaction_overview_ignores_unrelated_ambiguous_product_guide() -> None:
+    guide_repository = RecordingGuideRepository(
+        MedicationGuideLookup(is_ambiguous=True, candidate_names=["이부프로펜정100mg", "이부프로펜정200mg"])
+    )
+    rule = InteractionRuleFact(
+        interaction_rule_id=1,
+        pair_key="a" * 64,
+        pair_type="DRUG_SUPPLEMENT",
+        left_name="와파린",
+        right_name="비타민 K",
+        risk_level="HIGH",
+        effect_texts=["항응고 효과에 영향을 줄 수 있습니다."],
+    )
+    retriever = RecordingQueryPlanRetriever()
+    result = await build_use_case(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(medication_id=index, care_episode_id=1, name=name)
+                for index, name in enumerate(["와파린", "이부프로펜", "파모티딘", "아스피린"], start=1)
+            ],
+        ),
+        retriever=retriever,
+        guide_repository=guide_repository,
+        rules=[rule],
+        question_resolver=RuleBasedMedicationQuestionResolver(catalog=StaticExpressionCatalog([])),
+    ).execute(build_request("내가 먹는 약과 같이 먹으면 안되는 것 알려줘"))
+
+    assert retriever.received_kwargs["execution_plan"].query_plan.interaction_overview is True
+    assert result.route is not MedicationChatRoute.CLARIFICATION
+    assert guide_repository.requested_names == []
 
 
 @pytest.mark.parametrize("particle", ["과", "이랑"])
@@ -3699,6 +3735,103 @@ async def test_explicit_interaction_question_displays_the_question_pair(
     ] == [(left_name, right_name)]
 
 
+@pytest.mark.parametrize(
+    ("question", "left_name", "right_name"),
+    [
+        ("와파린과 비타민 K를 같이 먹어도 돼?", "와파린", "비타민 K"),
+        ("타이레놀과 술을 같이 먹어도 돼?", "아세트아미노펜", "알코올"),
+        ("비타민 D와 칼슘을 같이 먹어도 돼?", "비타민 D", "칼슘"),
+    ],
+)
+async def test_explicit_interaction_pair_is_preserved_when_history_exists(
+    question: str,
+    left_name: str,
+    right_name: str,
+) -> None:
+    """명시 조합은 이력이 있어도 등록약 전체 조합으로 바꾸지 않는다."""
+    retriever = RecordingQueryPlanRetriever()
+    request = build_request(question).model_copy(
+        update={
+            "history": [
+                ChatHistoryMessage(role=ChatRole.USER, content="안녕"),
+                ChatHistoryMessage(role=ChatRole.ASSISTANT, content="안녕하세요."),
+            ]
+        }
+    )
+    result = await build_use_case(
+        retriever=retriever,
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=1,
+                    name="이부프로펜정400mg",
+                    interaction_names=["이부프로펜"],
+                )
+            ],
+        ),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticTypedExpressionCatalog(
+                [
+                    MedicationCatalogEntry(
+                        canonical_name="와파린",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.DRUG,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    ),
+                    MedicationCatalogEntry(
+                        canonical_name="비타민 K",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.SUPPLEMENT,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    ),
+                    MedicationCatalogEntry(
+                        canonical_name="아세트아미노펜",
+                        aliases=["타이레놀"],
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.DRUG,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    ),
+                    MedicationCatalogEntry(
+                        canonical_name="알코올",
+                        aliases=["술"],
+                        entity_type=MedicationQueryEntityType.FOOD_CATEGORY,
+                        kind=InteractionEntityKind.FOOD,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    ),
+                    MedicationCatalogEntry(
+                        canonical_name="비타민 D",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.SUPPLEMENT,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    ),
+                    MedicationCatalogEntry(
+                        canonical_name="칼슘",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.SUPPLEMENT,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    ),
+                ]
+            )
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="SYMPTOM_INTERACTION_FOLLOW_UP",
+                safety_signal="NONE",
+                confidence="HIGH",
+            )
+        ),
+    ).execute(request)
+
+    assert result.route is MedicationChatRoute.INTERACTION
+    assert retriever.received_kwargs is not None
+    assert [
+        (pair.left_name, pair.right_name)
+        for pair in retriever.received_kwargs["execution_plan"].query_plan.interaction_pairs
+    ] == [(left_name, right_name)]
+
+
 async def test_active_intake_interaction_pairs_registered_medications_with_explicit_target() -> None:
     retriever = RecordingQueryPlanRetriever()
     await build_use_case(
@@ -4273,8 +4406,9 @@ async def test_execute_records_retrieval_failure_stage_without_error_message() -
         stage=RetrievalFailureStage.VECTOR_STORE,
         message="약·영양제 Knowledge 벡터 검색에 실패했습니다.",
     )
-    retrieval_error.__cause__ = RuntimeError(
-        "private upstream error detail",
+    retrieval_error.__cause__ = KnowledgeDatasetVersionMismatchError(
+        "Knowledge release 컬렉션에 요청 dataset_version이 없습니다: "
+        "collection=knowledge_release, dataset_version=knowledge-full-v1",
     )
 
     result = await build_use_case(
@@ -4288,8 +4422,8 @@ async def test_execute_records_retrieval_failure_stage_without_error_message() -
     assert rag_outputs["rag_unavailable"] is True
     assert rag_outputs["rag_error_stage"] == "VECTOR_STORE"
     assert rag_outputs["rag_error_type"] == "GuidelineRetrievalError"
-    assert rag_outputs["rag_error_cause_type"] == "RuntimeError"
-    assert "private upstream error detail" not in repr(rag_outputs)
+    assert rag_outputs["rag_error_cause_type"] == "KnowledgeDatasetVersionMismatchError"
+    assert "dataset_version=knowledge-full-v1" not in repr(rag_outputs)
     assert "RAG_UNAVAILABLE" in result.safety_reason_codes
 
 
@@ -4407,6 +4541,466 @@ async def test_execute_skips_conditional_llm_for_high_confidence_single_entity()
     await use_case.execute(build_request("타이레놀의 효능을 알려줘"))
 
     assert chain.inputs == []
+
+
+@pytest.mark.parametrize(
+    "sections",
+    [[KnowledgeSectionType.FUNCTION], [KnowledgeSectionType.FUNCTION, KnowledgeSectionType.CAUTION]],
+)
+@pytest.mark.parametrize("capture_content", [False, True])
+async def test_gate_approved_entity_free_goal_uses_structured_function_search(sections, capture_content) -> None:
+    question = "잠 잘자려면 어떤 영양제가 좋아?"
+    if KnowledgeSectionType.CAUTION in sections:
+        question += " 주의사항도 알려줘"
+    chain = RecordingConditionalInterpretationChain(
+        ConditionalQuestionInterpretationOutput(
+            normalized_question=question,
+            route="SUPPLEMENT_GUIDE",
+            requested_section_types=sections,
+            supplement_function_goal="잠 잘자려면",
+            confidence="HIGH",
+            reason_codes=[],
+        )
+    )
+    retriever = RecordingQueryPlanRetriever()
+    tracer = RecordingChatTracer(capture_content=capture_content)
+    await build_use_case(
+        tracer=tracer,
+        retriever=retriever,
+        question_resolver=RuleBasedMedicationQuestionResolver(catalog=StaticExpressionCatalog([])),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="MEDICATION_GUIDE", safety_signal="NONE", confidence="HIGH", guide_domain="SUPPLEMENT"
+            )
+        ),
+        conditional_interpretation_chain=chain,
+    ).execute(build_request(question))
+
+    assert len(chain.inputs) == 1
+    assert chain.inputs[0].candidate_entities == {}
+    assert chain.inputs[0].allow_entity_free_guide_search is True
+    plan = retriever.received_kwargs["execution_plan"].query_plan
+    assert plan.original_query == question
+    assert plan.supplement_function_goal == "잠 잘자려면"
+    assert "잠 잘자려면" in plan.expanded_query
+    assert plan.entities == []
+    assert plan.document_types == [
+        KnowledgeDocumentType.SUPPLEMENT_CODE,
+        KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+    ]
+    assert plan.section_types == sections
+    gate_trace = next(span.outputs for span in tracer.spans if span.name == "conversation.classify")
+    conditional_trace = next(span.outputs for span in tracer.spans if span.name == "query.plan.conditional")
+    assert gate_trace["guide_domain"] == "SUPPLEMENT"
+    assert conditional_trace["guide_domain"] == "SUPPLEMENT"
+    assert conditional_trace["supplement_function_goal_accepted"] is True
+    if capture_content:
+        assert conditional_trace["proposed_supplement_function_goal"] == "잠 잘자려면"
+        assert conditional_trace["accepted_supplement_function_goal"] == "잠 잘자려면"
+    else:
+        assert "proposed_supplement_function_goal" not in conditional_trace
+        assert "accepted_supplement_function_goal" not in conditional_trace
+
+
+@pytest.mark.parametrize(
+    ("candidate_keys", "pair_keys"),
+    [(["invented_product"], []), ([], ["invented_pair"])],
+)
+async def test_entity_free_goal_rejects_invented_keys(candidate_keys, pair_keys) -> None:
+    question = "잠 잘자려면 어떤 영양제가 좋아?"
+    chain = RecordingConditionalInterpretationChain(
+        ConditionalQuestionInterpretationOutput(
+            normalized_question=question,
+            route="SUPPLEMENT_GUIDE",
+            candidate_entity_keys=candidate_keys,
+            interaction_pair_keys=pair_keys,
+            requested_section_types=[KnowledgeSectionType.FUNCTION],
+            supplement_function_goal="잠 잘자려면",
+            confidence="HIGH",
+            reason_codes=[],
+        )
+    )
+    retriever = RecordingQueryPlanRetriever()
+    await build_use_case(
+        retriever=retriever,
+        question_resolver=RuleBasedMedicationQuestionResolver(catalog=StaticExpressionCatalog([])),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="MEDICATION_GUIDE", safety_signal="NONE", confidence="HIGH", guide_domain="SUPPLEMENT"
+            )
+        ),
+        conditional_interpretation_chain=chain,
+    ).execute(build_request(question))
+
+    assert len(chain.inputs) == 1
+    assert retriever.received_kwargs["execution_plan"].query_plan.supplement_function_goal is None
+
+
+@pytest.mark.parametrize(
+    ("domain", "question", "goal"),
+    [
+        ("MEDICATION", "일반적인 약의 효능을 알려줘", "일반적인"),
+        ("MEDICATION", "일반적인 약의 효능을 알려줘", "수면의 질 개선"),
+        (None, "잠 잘자려면 어떤 영양제가 좋아?", "잠 잘자려면"),
+        ("SUPPLEMENT", "잠 잘자려면 어떤 영양제가 좋아?", "혈당 조절"),
+        ("SUPPLEMENT", "잠 잘자려면 어떤 영양제가 좋아?", "수면의 질 개선"),
+        ("SUPPLEMENT", "잠 잘자려면 어떤 영양제가 좋아?", "잠 영양제"),
+    ],
+)
+async def test_entity_free_goal_requires_gate_domain_and_contiguous_question_support(domain, question, goal) -> None:
+    chain = RecordingConditionalInterpretationChain(
+        ConditionalQuestionInterpretationOutput(
+            normalized_question=f"{goal} 영양제 기능을 알려줘",
+            route="SUPPLEMENT_GUIDE",
+            requested_section_types=[KnowledgeSectionType.FUNCTION],
+            supplement_function_goal=goal,
+            confidence="HIGH",
+        )
+    )
+    retriever = RecordingQueryPlanRetriever()
+    tracer = RecordingChatTracer(capture_content=True)
+    result = await build_use_case(
+        tracer=tracer,
+        retriever=retriever,
+        question_resolver=RuleBasedMedicationQuestionResolver(catalog=StaticExpressionCatalog([])),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="MEDICATION_GUIDE", safety_signal="NONE", confidence="HIGH", guide_domain=domain
+            )
+        ),
+        conditional_interpretation_chain=chain,
+    ).execute(build_request(question))
+
+    assert len(chain.inputs) == 1
+    plan = retriever.received_kwargs["execution_plan"].query_plan
+    assert plan.supplement_function_goal is None
+    assert KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE not in plan.document_types
+    assert plan.expanded_query.count(goal) == plan.original_query.count(goal)
+    if goal not in question:
+        assert goal not in result.answer
+    conditional_trace = next(span.outputs for span in tracer.spans if span.name == "query.plan.conditional")
+    assert conditional_trace["guide_domain"] == domain
+    assert conditional_trace["supplement_function_goal_accepted"] is False
+    assert conditional_trace["proposed_supplement_function_goal"] == goal
+    assert conditional_trace["accepted_supplement_function_goal"] is None
+
+
+@pytest.mark.parametrize(
+    ("section", "requested", "source_text"),
+    [
+        (KnowledgeSectionType.FUNCTION, "효능", "통증과 발열을 완화합니다."),
+        (KnowledgeSectionType.CAUTION, "주의사항", "성분을 확인합니다."),
+    ],
+)
+async def test_mixed_interaction_overview_keeps_exact_guide_with_empty_vectors(section, requested, source_text) -> None:
+    product = "타이레놀정500밀리그람"
+    question = f"{product} {requested}과 상호작용 알려줘"
+    guide_repository = RecordingGuideRepository(MedicationGuideLookup(guide=build_guide()))
+    retriever = SequencedKnowledgeRetriever([[], []])
+    chain = RecordingConditionalInterpretationChain(
+        ConditionalQuestionInterpretationOutput(
+            normalized_question=question,
+            route="INTERACTION",
+            candidate_entity_keys=["candidate_0"],
+            requested_section_types=[section, KnowledgeSectionType.INTERACTION],
+            confidence="HIGH",
+        )
+    )
+    result = await build_use_case(
+        retriever=retriever,
+        guide_repository=guide_repository,
+        question_resolver=RuleBasedMedicationQuestionResolver(catalog=StaticExpressionCatalog([product])),
+        conditional_interpretation_chain=chain,
+    ).execute(
+        build_request(question).model_copy(
+            update={
+                "session_reference": MedicationChatSessionReference(
+                    entities=[
+                        MedicationChatSessionReferenceEntity(
+                            name=product,
+                            kind=InteractionEntityKind.DRUG,
+                            entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                        )
+                    ]
+                )
+            }
+        )
+    )
+
+    assert retriever.execution_plans[0].query_plan.interaction_overview is True
+    assert guide_repository.requested_names == [product]
+    assert source_text in result.answer
+    assert result.evidence_coverage is not None
+    assert section in result.evidence_coverage.covered_section_types
+
+
+async def test_off_topic_gate_does_not_invoke_entity_free_conditional_chain() -> None:
+    chain = RecordingConditionalInterpretationChain(
+        ConditionalQuestionInterpretationOutput(
+            normalized_question="잠 잘자려면 어떤 영양제가 좋아?",
+            route="SUPPLEMENT_GUIDE",
+            supplement_function_goal="수면의 질 개선",
+            confidence="HIGH",
+            reason_codes=[],
+        )
+    )
+    await build_use_case(
+        question_resolver=RuleBasedMedicationQuestionResolver(catalog=StaticExpressionCatalog([])),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(intent="OFF_TOPIC", safety_signal="NONE", confidence="HIGH")
+        ),
+        conditional_interpretation_chain=chain,
+    ).execute(build_request("주말 날씨 어때?"))
+
+    assert chain.inputs == []
+
+
+def test_structured_goal_filters_to_named_source_backed_function_evidence() -> None:
+    base = build_chunk()
+    named_function = base.model_copy(
+        update={
+            "metadata": base.metadata.model_copy(
+                update={
+                    "document_type": KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                    "ingredient_names": ["마그네슘"],
+                }
+            )
+        }
+    )
+    unnamed_function = named_function.model_copy(
+        update={"metadata": named_function.metadata.model_copy(update={"ingredient_names": []})}
+    )
+    selected = AnswerMedicationQuestionUseCase._functional_supplement_answer_chunks(
+        question="잠 잘자려면 어떤 영양제가 좋아?",
+        chunks=[base, unnamed_function, named_function],
+        function_goal=True,
+    )
+
+    assert selected == [named_function]
+    assert AnswerMedicationQuestionUseCase._has_supplement_evidence(
+        "잠 잘자려면 어떤 영양제가 좋아?", chunks=selected, function_goal=True
+    )
+
+
+async def test_structured_goal_reapplies_named_function_filter_after_coverage_retry() -> None:
+    question = "잠 잘자려면 어떤 영양제가 좋아?"
+    chain = RecordingConditionalInterpretationChain(
+        ConditionalQuestionInterpretationOutput(
+            normalized_question=question,
+            route="SUPPLEMENT_GUIDE",
+            requested_section_types=[KnowledgeSectionType.FUNCTION],
+            supplement_function_goal="수면의 질 개선",
+            confidence="HIGH",
+            reason_codes=[],
+        )
+    )
+    base = build_chunk()
+    named_function = base.model_copy(
+        update={
+            "point_id": "named-point",
+            "chunk_id": "c" * 64,
+            "content": "마그네슘의 기능성 근거입니다.",
+            "metadata": base.metadata.model_copy(
+                update={
+                    "document_id": "named-function",
+                    "title": "성분 기능성 근거",
+                    "document_type": KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                    "ingredient_names": ["마그네슘"],
+                }
+            ),
+        }
+    )
+    background = base.model_copy(
+        update={
+            "point_id": "background-point",
+            "chunk_id": "d" * 64,
+            "metadata": base.metadata.model_copy(
+                update={
+                    "document_id": "background",
+                    "title": "일반 배경",
+                    "document_type": KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                    "ingredient_names": [],
+                    "content_hash": "e" * 64,
+                    "chunk_index": 1,
+                }
+            ),
+        }
+    )
+    retriever = SequencedKnowledgeRetriever([[named_function, background]])
+    plan = MedicationKnowledgeQueryPlan(
+        original_query=question,
+        expanded_query=f"{question} 수면의 질 개선",
+        entity_names=["마그네슘"],
+        document_types=[KnowledgeDocumentType.SUPPLEMENT_CODE, KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE],
+        section_types=[KnowledgeSectionType.FUNCTION],
+        supplement_function_goal=chain.payload.supplement_function_goal,
+    )
+    execution_plan = MedicationSearchExecutionPlan(
+        query_plan=plan,
+        context_hash="a" * 64,
+        approved_rules_hash="b" * 64,
+    )
+    empty_retrieval = KnowledgeRetrievalResult(chunks=[], diagnostics=FakeKnowledgeRetriever().diagnostics)
+    retried = await build_use_case(retriever=retriever)._retry_for_missing_coverage(
+        retrieval=empty_retrieval,
+        query_plan=plan,
+        execution_plan=execution_plan,
+        guide_lookup=MedicationGuideLookup(),
+        rules=[],
+        chunks=[],
+        answer_chunks=[],
+        prefer_supplement=True,
+        rag_unavailable=False,
+        approved_therapeutic_class_names=[],
+        crosscheck_chunks=[],
+    )
+
+    assert len(retriever.execution_plans) == 1
+    assert retried.answer_chunks == [named_function]
+
+
+async def test_pregnancy_single_entity_uses_conditional_caution_instead_of_guessed_intake() -> None:
+    chain = RecordingConditionalInterpretationChain(
+        ConditionalQuestionInterpretationOutput(
+            normalized_question="임신 중 마그네슘 섭취 주의사항",
+            route="SUPPLEMENT_GUIDE",
+            candidate_entity_keys=["candidate_0"],
+            requested_section_types=[KnowledgeSectionType.CAUTION],
+            confidence="HIGH",
+            reason_codes=[],
+        )
+    )
+    retriever = RecordingQueryPlanRetriever()
+    await build_use_case(
+        retriever=retriever,
+        supplement_ingredient_catalog=StaticSupplementIngredientCatalog(["마그네슘"]),
+        conditional_interpretation_chain=chain,
+    ).execute(build_request("임신 중 마그네슘 하루 얼마나 먹어도 돼?"))
+
+    assert len(chain.inputs) == 1
+    assert chain.inputs[0].requested_section_types == [KnowledgeSectionType.DAILY_INTAKE]
+    plan = retriever.received_kwargs["execution_plan"].query_plan
+    assert plan.section_types == [KnowledgeSectionType.CAUTION]
+
+
+@pytest.mark.parametrize(
+    ("sections", "expected_trigger"),
+    [([], True), ([KnowledgeSectionType.DAILY_INTAKE], True), ([KnowledgeSectionType.FUNCTION], False)],
+)
+def test_high_confidence_single_entity_only_triggers_for_ambiguous_sections(sections, expected_trigger) -> None:
+    entity = MedicationQueryEntity(
+        surface="마그네슘",
+        canonical_name="마그네슘",
+        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+        kind=InteractionEntityKind.SUPPLEMENT,
+        source=MedicationQueryEntitySource.CATALOG,
+    )
+    query_plan = MedicationKnowledgeQueryPlan(
+        original_query="임신 중 마그네슘 영양제를 먹어도 돼?",
+        expanded_query="임신 중 마그네슘 영양제를 먹어도 돼?",
+        entities=[entity],
+        section_types=sections,
+    )
+    interpretation = MedicationQuestionInterpretation(
+        original_question=query_plan.original_query,
+        resolved_question=query_plan.original_query,
+        scope="IN_SCOPE",
+        resolution_status="UNCHANGED",
+        intent="SUPPLEMENT_GUIDE",
+        confidence="HIGH",
+        query_plan_hash=query_plan.query_plan_hash,
+    )
+    reasons = AnswerMedicationQuestionUseCase._conditional_interpretation_reasons(
+        request=build_request(query_plan.original_query),
+        planning=MedicationQuestionPlanResult(query_plan=query_plan, interpretation=interpretation),
+    )
+    assert ("SECTION_AMBIGUITY" in reasons) is expected_trigger
+
+
+def test_confident_conditional_plan_preserves_explicit_function_and_caution_sections() -> None:
+    entity = MedicationQueryEntity(
+        surface="마그네슘",
+        canonical_name="마그네슘",
+        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+        kind=InteractionEntityKind.SUPPLEMENT,
+        source=MedicationQueryEntitySource.CATALOG,
+    )
+    query_plan = MedicationKnowledgeQueryPlan(
+        original_query="마그네슘 효능과 주의사항 알려줘",
+        expanded_query="마그네슘 효능과 주의사항 알려줘",
+        entity_names=["마그네슘"],
+        entities=[entity],
+        section_types=[KnowledgeSectionType.FUNCTION, KnowledgeSectionType.CAUTION],
+    )
+    interpretation = MedicationQuestionInterpretation(
+        original_question=query_plan.original_query,
+        resolved_question=query_plan.original_query,
+        scope="IN_SCOPE",
+        resolution_status="UNCHANGED",
+        intent="SUPPLEMENT_GUIDE",
+        confidence="HIGH",
+        query_plan_hash=query_plan.query_plan_hash,
+    )
+    output = ConditionalQuestionInterpretationOutput(
+        normalized_question=query_plan.original_query,
+        candidate_entity_keys=["candidate_0"],
+        requested_section_types=[KnowledgeSectionType.CAUTION],
+        confidence="HIGH",
+        reason_codes=[],
+    )
+    validated = AnswerMedicationQuestionUseCase._validated_conditional_plan(
+        planning=MedicationQuestionPlanResult(query_plan=query_plan, interpretation=interpretation),
+        output=output,
+        candidate_entities={"candidate_0": entity},
+        candidate_pair_keys=[],
+        allowed_search_terms=[],
+    )
+    assert validated.query_plan.section_types == [KnowledgeSectionType.FUNCTION, KnowledgeSectionType.CAUTION]
+
+
+def test_empty_conditional_section_does_not_fall_through_to_unscoped_intake_evidence() -> None:
+    entity = MedicationQueryEntity(
+        surface="마그네슘",
+        canonical_name="마그네슘",
+        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+        kind=InteractionEntityKind.SUPPLEMENT,
+        source=MedicationQueryEntitySource.CATALOG,
+    )
+    query_plan = MedicationKnowledgeQueryPlan(
+        original_query="임신 중 마그네슘 영양제를 먹어도 돼?",
+        expanded_query="임신 중 마그네슘 영양제를 먹어도 돼?",
+        entity_names=["마그네슘"],
+        entities=[entity],
+        section_types=[],
+    )
+    interpretation = MedicationQuestionInterpretation(
+        original_question=query_plan.original_query,
+        resolved_question=query_plan.original_query,
+        scope="IN_SCOPE",
+        resolution_status="UNCHANGED",
+        intent="SUPPLEMENT_GUIDE",
+        confidence="HIGH",
+        query_plan_hash=query_plan.query_plan_hash,
+    )
+    validated = AnswerMedicationQuestionUseCase._validated_conditional_plan(
+        planning=MedicationQuestionPlanResult(query_plan=query_plan, interpretation=interpretation),
+        output=ConditionalQuestionInterpretationOutput(
+            normalized_question=query_plan.original_query,
+            route="SUPPLEMENT_GUIDE",
+            candidate_entity_keys=["candidate_0"],
+            requested_section_types=[],
+            confidence="HIGH",
+            reason_codes=[],
+        ),
+        candidate_entities={"candidate_0": entity},
+        candidate_pair_keys=[],
+        allowed_search_terms=[],
+    )
+    assert validated.interpretation.needs_clarification is True
+    assert validated.interpretation.clarification_question
 
 
 async def test_execute_adds_catalog_backed_interaction_pairs_from_semantic_route() -> None:
@@ -4747,16 +5341,22 @@ async def test_execute_discards_unknown_conditional_llm_entity_before_search() -
     ]
 
 
-async def test_execute_preserves_all_explicit_interaction_pairs_when_conditional_llm_selects_one() -> None:
+@pytest.mark.parametrize(
+    ("selected_sections", "confidence"),
+    [([KnowledgeSectionType.INTERACTION], "MEDIUM"), ([KnowledgeSectionType.FUNCTION], "HIGH")],
+)
+async def test_execute_preserves_all_explicit_interaction_pairs_when_conditional_llm_selects_one(
+    selected_sections, confidence
+) -> None:
     class SelectFirstPairChain:
         async def ainvoke(self, input, config=None, **kwargs):
             return ConditionalQuestionInterpretationOutput(
                 normalized_question=input.question,
                 route="INTERACTION",
                 candidate_entity_keys=list(input.candidate_entities),
-                requested_section_types=[KnowledgeSectionType.INTERACTION],
+                requested_section_types=selected_sections,
                 interaction_pair_keys=input.candidate_pair_keys[:1],
-                confidence="MEDIUM",
+                confidence=confidence,
                 reason_codes=["MULTI_ENTITY"],
             )
 
@@ -4800,13 +5400,15 @@ async def test_execute_preserves_all_explicit_interaction_pairs_when_conditional
     assert retriever.received_kwargs is not None
     query_plan = retriever.received_kwargs["execution_plan"].query_plan
     assert len(query_plan.interaction_pair_keys) == 3
+    assert KnowledgeSectionType.INTERACTION in query_plan.section_types
     assert len(query_plan.interaction_pairs) == 3
     assert query_plan.interaction_types == [InteractionPairType.SUPPLEMENT_SUPPLEMENT]
-    assert set(query_plan.alternate_queries) >= {
-        "마그네슘 아연 상호작용",
-        "마그네슘 칼슘 상호작용",
-        "아연 칼슘 상호작용",
-    }
+    if confidence == "MEDIUM":
+        assert set(query_plan.alternate_queries) >= {
+            "마그네슘 아연 상호작용",
+            "마그네슘 칼슘 상호작용",
+            "아연 칼슘 상호작용",
+        }
     assert set(retriever.received_kwargs["execution_plan"].approved_rule_pair_keys) == set(
         query_plan.interaction_pair_keys
     )

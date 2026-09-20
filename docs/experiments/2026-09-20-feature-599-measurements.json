@@ -1,0 +1,2896 @@
+{
+  "schema_version": "feature599-measurements-v1",
+  "scope": "No source content; first-repeat quality metrics with all three measured latencies. Raw reports remain local ignored files.",
+  "arms": {
+    "cl100k": {
+      "raw_sha256": "58ef7405a81338c48093ff18d19ebe96c6cf4b375d435937610cf566fa8f83ca",
+      "rows": [
+        {
+          "query_id": "magnesium-function",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            171.888,
+            122.158,
+            127.265
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "magnesium-function",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            361.132,
+            382.1,
+            439.964
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "magnesium-function",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.3333333333333333,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            73.298,
+            137.457,
+            61.312
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "magnesium-function",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.3333333333333333,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            591.182,
+            490.515,
+            479.624
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "magnesium-spacing-variation",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            325.164,
+            345.633,
+            318.663
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "magnesium-spacing-variation",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            130.845,
+            136.467,
+            131.743
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "magnesium-spacing-variation",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            614.086,
+            528.123,
+            538.343
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "magnesium-spacing-variation",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            131.895,
+            91.394,
+            74.907
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-b6-function",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.5,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            142.841,
+            203.638,
+            173.582
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-b6-function",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.5,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            416.483,
+            640.446,
+            436.785
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-b6-function",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.5,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            77.604,
+            57.169,
+            50.78
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-b6-function",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.5,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            561.166,
+            506.904,
+            531.264
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-b6-daily-intake",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            334.976,
+            309.444,
+            339.392
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-b6-daily-intake",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            113.752,
+            145.189,
+            126.396
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-b6-daily-intake",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": true,
+          "search_ms": [
+            461.292,
+            463.93,
+            514.585
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-b6-daily-intake",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": true,
+          "search_ms": [
+            45.853,
+            41.097,
+            53.687
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-a-daily-intake",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            118.48,
+            130.004,
+            118.425
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-a-daily-intake",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            455.132,
+            341.76,
+            353.514
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-a-daily-intake",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": true,
+          "search_ms": [
+            68.448,
+            53.232,
+            39.923
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-a-daily-intake",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": true,
+          "search_ms": [
+            428.298,
+            469.743,
+            550.646
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "hepatitis-a-vaccine-purpose",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            343.399,
+            366.664,
+            376.018
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "hepatitis-a-vaccine-purpose",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            326.635,
+            143.068,
+            152.066
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "hepatitis-a-vaccine-purpose",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            501.824,
+            467.086,
+            525.276
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "hepatitis-a-vaccine-purpose",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            56.456,
+            50.761,
+            57.493
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "doxazosin-dizziness-case",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            150.213,
+            128.548,
+            117.155
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "doxazosin-dizziness-case",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            341.853,
+            348.815,
+            368.795
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "doxazosin-dizziness-case",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.5,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            77.711,
+            89.511,
+            84.294
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "doxazosin-dizziness-case",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.3333333333333333,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            555.071,
+            664.138,
+            564.981
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "irritable-bowel-syndrome-management",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            398.175,
+            396.491,
+            376.228
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "irritable-bowel-syndrome-management",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            91.659,
+            83.001,
+            112.051
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "irritable-bowel-syndrome-management",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            607.87,
+            556.821,
+            522.083
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "irritable-bowel-syndrome-management",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            109.064,
+            85.007,
+            99.136
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "sleep-supplement-function",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            126.574,
+            158.508,
+            116.314
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "sleep-supplement-function",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            318.38,
+            308.752,
+            320.577
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "sleep-supplement-function",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            48.483,
+            86.517,
+            67.507
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "sleep-supplement-function",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.3333333333333333,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            460.197,
+            602.466,
+            760.233
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "acetaminophen-caution",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            433.356,
+            355.639,
+            385.95
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "acetaminophen-caution",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            146.366,
+            129.253,
+            136.282
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "acetaminophen-caution",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.2,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            502.989,
+            528.541,
+            528.528
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "acetaminophen-caution",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.3333333333333333,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            63.74,
+            57.323,
+            87.693
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "losartan-function-caution-hard-negative",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            121.05,
+            134.371,
+            118.755
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "losartan-function-caution-hard-negative",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            352.147,
+            362.322,
+            369.742
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "losartan-function-caution-hard-negative",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.3333333333333333,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            75.854,
+            100.438,
+            80.011
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "losartan-function-caution-hard-negative",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": false,
+          "strict_metadata_reciprocal_rank": 0,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            538.746,
+            527.78,
+            555.128
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "fexofenadine-fruit-juice",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            301.362,
+            325.995,
+            318.815
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "fexofenadine-fruit-juice",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            122.048,
+            132.31,
+            115.257
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "fexofenadine-fruit-juice",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": false,
+          "strict_metadata_reciprocal_rank": 0,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            496.866,
+            492.164,
+            512.949
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "fexofenadine-fruit-juice",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": false,
+          "strict_metadata_reciprocal_rank": 0,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            64.797,
+            105.972,
+            78.593
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "acetaminophen-alcohol",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            136.359,
+            144.346,
+            177.806
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "acetaminophen-alcohol",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            398.192,
+            418.155,
+            375.06
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "acetaminophen-alcohol",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": false,
+          "strict_metadata_reciprocal_rank": 0,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            84.588,
+            87.152,
+            66.851
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "acetaminophen-alcohol",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": false,
+          "strict_metadata_reciprocal_rank": 0,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            597.666,
+            496.418,
+            520.585
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "warfarin-vitamin-k",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            381.921,
+            387.582,
+            429.534
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "warfarin-vitamin-k",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            195.443,
+            162.504,
+            133.231
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "warfarin-vitamin-k",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            482.22,
+            478.477,
+            499.419
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "warfarin-vitamin-k",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            72.83,
+            55.427,
+            49.503
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "warfarin-metronidazole",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            148.577,
+            196.749,
+            159.555
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "warfarin-metronidazole",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            557.781,
+            440.745,
+            423.735
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "warfarin-metronidazole",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": false,
+          "strict_metadata_reciprocal_rank": 0,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            69.435,
+            63.129,
+            68.516
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "warfarin-metronidazole",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": false,
+          "strict_metadata_reciprocal_rank": 0,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            476.649,
+            509.539,
+            475.269
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-d-calcium",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            348.059,
+            329.254,
+            355.122
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-d-calcium",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            115.403,
+            125.582,
+            117.576
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-d-calcium",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": true,
+          "search_ms": [
+            473.6,
+            483.888,
+            479.325
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-d-calcium",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": true,
+          "search_ms": [
+            74.844,
+            52.349,
+            67.005
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "calcium-iron-absorption",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            127.937,
+            147.459,
+            153.971
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "calcium-iron-absorption",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            298.313,
+            293.399,
+            298.698
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "calcium-iron-absorption",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            57.108,
+            117.973,
+            55.126
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "calcium-iron-absorption",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": true,
+          "search_ms": [
+            575.021,
+            491.595,
+            477.427
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "iron-zinc-absorption",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            353.942,
+            363.852,
+            317.378
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "iron-zinc-absorption",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            126.889,
+            119.325,
+            118.819
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "iron-zinc-absorption",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": true,
+          "search_ms": [
+            502.197,
+            560.679,
+            496.041
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "iron-zinc-absorption",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            77.01,
+            106.509,
+            88.962
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "zinc-copper-status",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            226.29,
+            121.45,
+            142.033
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "zinc-copper-status",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            364.612,
+            453.764,
+            346.229
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "zinc-copper-status",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            71.497,
+            72.893,
+            58.593
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "zinc-copper-status",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            538.434,
+            544.134,
+            506.795
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-c-iron-absorption",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            365.301,
+            332.647,
+            292.818
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-c-iron-absorption",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            124.329,
+            113.124,
+            152.264
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-c-iron-absorption",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            498.829,
+            503.414,
+            608.245
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-c-iron-absorption",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            58.283,
+            48.017,
+            76.675
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        }
+      ]
+    },
+    "o200k": {
+      "raw_sha256": "13c2ca3ef292a4dfa9bb713c97c272c13317e1bf59e590ffb37551d36d1a9e4b",
+      "rows": [
+        {
+          "query_id": "magnesium-function",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            124.156,
+            109.668,
+            121.295
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "magnesium-function",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            312.235,
+            307.796,
+            319.789
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "magnesium-function",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.3333333333333333,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            55.779,
+            57.813,
+            56.751
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "magnesium-function",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.3333333333333333,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            452.405,
+            480.29,
+            468.972
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "magnesium-spacing-variation",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            298.912,
+            292.539,
+            288.213
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "magnesium-spacing-variation",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            109.528,
+            112.233,
+            117.73
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "magnesium-spacing-variation",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            558.906,
+            501.618,
+            540.377
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "magnesium-spacing-variation",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            78.3,
+            53.461,
+            176.897
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-b6-function",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.5,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            121.346,
+            110.962,
+            112.773
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-b6-function",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.5,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            313.534,
+            315.863,
+            299.486
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-b6-function",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.5,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            73.867,
+            63.578,
+            56.681
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-b6-function",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.5,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            453.351,
+            444.488,
+            504.398
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-b6-daily-intake",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            314.924,
+            304.623,
+            276.971
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-b6-daily-intake",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            129.158,
+            131.157,
+            115.671
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-b6-daily-intake",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": true,
+          "search_ms": [
+            451.63,
+            510.69,
+            604.358
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-b6-daily-intake",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": true,
+          "search_ms": [
+            43.038,
+            45.228,
+            159.729
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-a-daily-intake",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            151.621,
+            122.653,
+            140.399
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-a-daily-intake",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            328.687,
+            336.331,
+            292.43
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-a-daily-intake",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": true,
+          "search_ms": [
+            54.687,
+            51.325,
+            47.644
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-a-daily-intake",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": true,
+          "search_ms": [
+            442.085,
+            425.221,
+            435.11
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "hepatitis-a-vaccine-purpose",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            336.181,
+            341.536,
+            323.156
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "hepatitis-a-vaccine-purpose",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            134.964,
+            117.604,
+            118.932
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "hepatitis-a-vaccine-purpose",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            427.459,
+            445.541,
+            452.822
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "hepatitis-a-vaccine-purpose",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            53.362,
+            47.637,
+            56.456
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "doxazosin-dizziness-case",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            151.996,
+            147.194,
+            118.669
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "doxazosin-dizziness-case",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            301.27,
+            325.717,
+            325.101
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "doxazosin-dizziness-case",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.5,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            68.28,
+            75.654,
+            66.036
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "doxazosin-dizziness-case",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.3333333333333333,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            480.402,
+            465.021,
+            477.943
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "irritable-bowel-syndrome-management",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            409.807,
+            397.059,
+            386.637
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "irritable-bowel-syndrome-management",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            64.752,
+            72.656,
+            65.262
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "irritable-bowel-syndrome-management",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            547.183,
+            500.912,
+            485.229
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "irritable-bowel-syndrome-management",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            121.234,
+            101.235,
+            68.55
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "sleep-supplement-function",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            112.007,
+            126.076,
+            106.069
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "sleep-supplement-function",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            342.041,
+            303.923,
+            465.193
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "sleep-supplement-function",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            47.802,
+            53.362,
+            52.525
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "sleep-supplement-function",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.3333333333333333,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            468.612,
+            440.987,
+            464.494
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "acetaminophen-caution",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            336.535,
+            378.922,
+            367.979
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "acetaminophen-caution",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            128.313,
+            119.519,
+            127.989
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "acetaminophen-caution",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.2,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            481.349,
+            474.444,
+            461.61
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "acetaminophen-caution",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.3333333333333333,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            65.244,
+            56.444,
+            63.895
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "losartan-function-caution-hard-negative",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            140.211,
+            119.71,
+            136.96
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "losartan-function-caution-hard-negative",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            319.687,
+            346.1,
+            381.675
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "losartan-function-caution-hard-negative",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 0.3333333333333333,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            62.998,
+            71.853,
+            57.948
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "losartan-function-caution-hard-negative",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": false,
+          "strict_metadata_reciprocal_rank": 0,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            454.723,
+            442.226,
+            472.388
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "fexofenadine-fruit-juice",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            321.658,
+            308.062,
+            321.006
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "fexofenadine-fruit-juice",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            109.744,
+            113.411,
+            134.618
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "fexofenadine-fruit-juice",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": false,
+          "strict_metadata_reciprocal_rank": 0,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            510.137,
+            737.354,
+            557.565
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "fexofenadine-fruit-juice",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": false,
+          "strict_metadata_reciprocal_rank": 0,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            81.42,
+            60.471,
+            99.558
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "acetaminophen-alcohol",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            140.564,
+            143.505,
+            154.607
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "acetaminophen-alcohol",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            356.152,
+            366.468,
+            363.754
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "acetaminophen-alcohol",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": false,
+          "strict_metadata_reciprocal_rank": 0,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            73.309,
+            71.933,
+            73.659
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "acetaminophen-alcohol",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": false,
+          "strict_metadata_reciprocal_rank": 0,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            486.415,
+            491.761,
+            548.865
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "warfarin-vitamin-k",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            373.292,
+            342.383,
+            376.562
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "warfarin-vitamin-k",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            140.237,
+            163.531,
+            138.971
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "warfarin-vitamin-k",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            459.944,
+            506.008,
+            489.307
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "warfarin-vitamin-k",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            73.825,
+            61.41,
+            91.108
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "warfarin-metronidazole",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            153.751,
+            152.821,
+            226.462
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "warfarin-metronidazole",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            404.69,
+            365.569,
+            416.984
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "warfarin-metronidazole",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": false,
+          "strict_metadata_reciprocal_rank": 0,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            69.02,
+            66.137,
+            64.291
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "warfarin-metronidazole",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": false,
+          "strict_metadata_reciprocal_rank": 0,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            477.389,
+            480.902,
+            461.021
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-d-calcium",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            304.312,
+            287.226,
+            298.794
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-d-calcium",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            117.506,
+            110.009,
+            117.291
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-d-calcium",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": true,
+          "search_ms": [
+            437.078,
+            430.319,
+            427.118
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-d-calcium",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": true,
+          "search_ms": [
+            51.204,
+            67.718,
+            49.722
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "calcium-iron-absorption",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            122.303,
+            109.726,
+            105.43
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "calcium-iron-absorption",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            310.05,
+            293.045,
+            284.509
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "calcium-iron-absorption",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            59.311,
+            64.519,
+            58.723
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "calcium-iron-absorption",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": true,
+          "search_ms": [
+            457.265,
+            542.087,
+            478.605
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "iron-zinc-absorption",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            277.246,
+            305.871,
+            292.285
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "iron-zinc-absorption",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            112.497,
+            114.969,
+            105.891
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "iron-zinc-absorption",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": true,
+          "search_ms": [
+            433.021,
+            430.214,
+            437.187
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "iron-zinc-absorption",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            59.194,
+            47.392,
+            54.634
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "zinc-copper-status",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            118.183,
+            118.884,
+            115.805
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "zinc-copper-status",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            290.414,
+            306.256,
+            267.28
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "zinc-copper-status",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            61.48,
+            62.746,
+            56.848
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "zinc-copper-status",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            465.684,
+            483.394,
+            494.208
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-c-iron-absorption",
+          "track": "gold_filters",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            423.851,
+            395.449,
+            309.281
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-c-iron-absorption",
+          "track": "gold_filters",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            131.134,
+            110.95,
+            106.065
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-c-iron-absorption",
+          "track": "semantic_unfiltered",
+          "mode": "hybrid",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            484.189,
+            443.702,
+            450.503
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "query_id": "vitamin-c-iron-absorption",
+          "track": "semantic_unfiltered",
+          "mode": "dense",
+          "evaluator_hit_at_5": true,
+          "strict_metadata_reciprocal_rank": 1,
+          "forbidden_entity_or_document_hit_at_5": false,
+          "search_ms": [
+            51.069,
+            44.105,
+            56.293
+          ],
+          "errors": [
+            null,
+            null,
+            null
+          ]
+        }
+      ]
+    }
+  }
+}

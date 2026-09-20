@@ -88,6 +88,55 @@ async def test_product_guide_repository_returns_exact_match(
 
 
 @pytest.mark.asyncio
+async def test_product_guide_repository_matches_unit_spelling_with_ingredient_suffix(initialized_db: None) -> None:
+    guide = await _create_guide("100", "타이레놀정500밀리그람(아세트아미노펜)")
+
+    result = await DbMedicationProductGuideRepository().find_by_name("타이레놀정500밀리그램")
+
+    assert result.guide is not None
+    assert result.guide.medication_guide_id == guide.id
+    assert result.is_ambiguous is False
+
+
+@pytest.mark.asyncio
+async def test_product_guide_repository_unit_variant_prefix_match_is_not_crowded_out_by_substrings(
+    initialized_db: None,
+) -> None:
+    for index in range(7):
+        await _create_guide(str(index), f"000무관제품{index}가나다정10밀리그람")
+    guide = await _create_guide("100", "가나다정10밀리그람(성분)")
+
+    result = await DbMedicationProductGuideRepository().find_by_name("가나다정10밀리그램")
+
+    assert result.guide is not None
+    assert result.guide.medication_guide_id == guide.id
+    assert result.is_ambiguous is False
+
+
+@pytest.mark.asyncio
+async def test_product_guide_repository_does_not_choose_between_unit_spellings(initialized_db: None) -> None:
+    names = ["가나다정10밀리그램(성분)", "가나다정10밀리그람(성분)"]
+    for index, name in enumerate(names):
+        await _create_guide(str(index), name)
+
+    result = await DbMedicationProductGuideRepository().find_by_name("가나다정10밀리그램")
+
+    assert result.guide is None
+    assert result.is_ambiguous is True
+    assert set(result.candidate_names) == set(names)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", ["가나다정100밀리그램", "가나다서방정10밀리그램"])
+async def test_product_guide_repository_keeps_strength_and_form_distinct(initialized_db: None, query: str) -> None:
+    await _create_guide("100", "가나다정10밀리그람(성분)")
+
+    result = await DbMedicationProductGuideRepository().find_by_name(query)
+
+    assert result.guide is None
+
+
+@pytest.mark.asyncio
 async def test_product_guide_repository_groups_cautions_for_requested_magnesium_forms(
     initialized_db: None,
 ) -> None:
@@ -710,6 +759,208 @@ async def test_report_handles_balanced_product_annotations_without_changing_iden
     assert corrected.guide is not None
     assert corrected.guide.medication_guide_id == guide.id
     assert corrected.is_inferred
+
+
+@pytest.mark.parametrize(
+    "query,registered_name",
+    [
+        ("오라메디연고", "오라메디연고{수출명:오라메디파스타(ORAMEDYPASTE)}"),
+        ("오라메디연고[수출명:오라메디파스타（ORAMEDYPASTE）]", "오라메디연고{수출명:오라메디파스타(ORAMEDYPASTE)}"),
+        ("오라메디연고(수출명:오라메디파스타(ORAMEDYPASTE))", "오라메디연고"),
+        ("오라메디연고{수출명:오라메디파스타(ORAMEDYPASTE)}", "오라메디연고"),
+    ],
+)
+async def test_report_export_annotations_are_optional_identity_metadata(initialized_db, query, registered_name):
+    guide = await _create_guide("100", registered_name)
+
+    result = await _report_repository().find_by_name(query)
+
+    assert result.guide is not None
+    assert result.guide.medication_guide_id == guide.id
+    assert result.is_ambiguous is False
+
+
+async def test_report_export_annotation_does_not_drop_known_ingredient(initialized_db):
+    guide = await _create_guide(
+        "100",
+        "리나치올캡슐375밀리그램(카르보시스테인){수출명:HyundiolCapsule375Mg}",
+    )
+
+    result = await _report_repository().find_by_name("리나치올캡슐375밀리그램(카르보시스테인)")
+
+    assert result.guide is not None
+    assert result.guide.medication_guide_id == guide.id
+
+
+async def test_report_export_only_input_cannot_match_an_empty_base(initialized_db):
+    await _create_guide("100", "오라메디연고")
+
+    result = await _report_repository().find_by_name("{수출명:오라메디파스타(ORAMEDYPASTE)}")
+
+    assert result.guide is None
+
+
+async def test_report_same_base_products_with_different_export_annotations_are_ambiguous(initialized_db):
+    await _create_guide("100", "오라메디연고{수출명:오라메디파스타(ORAMEDYPASTE)}")
+    await _create_guide("200", "오라메디연고[수출명:ORAMEDYPASTE2]")
+
+    result = await _report_repository().find_by_name("오라메디연고")
+
+    assert result.guide is None
+    assert result.is_ambiguous is True
+    assert len(result.candidate_names) == 2
+
+
+async def test_report_duplicate_ids_remain_ambiguous_after_export_normalization(initialized_db):
+    name = "오라메디연고{수출명:오라메디파스타(ORAMEDYPASTE)}"
+    await _create_guide("100", name)
+    await _create_guide("101", name)
+
+    result = await _report_repository().find_by_name("오라메디연고")
+
+    assert result.guide is None
+    assert result.is_ambiguous is True
+
+
+async def test_report_export_normalization_never_ignores_dose_or_form(initialized_db):
+    await _create_guide("100", "오라메디정500밀리그램{수출명:오라메디파스타}")
+
+    result = await _report_repository().find_by_name("오라메디연고250밀리그램")
+
+    assert result.guide is None
+
+
+@pytest.mark.parametrize(
+    "registered_name",
+    [
+        "오라메디연고{기타:오라메디파스타(ORAMEDYPASTE)}",
+        "오라메디연고{수출명:오라메디파스타(ORAMEDYPASTE)",
+        "오라메디연고{수출명:오라메디파스타(ORAMEDYPASTE]",
+    ],
+)
+async def test_report_unknown_or_malformed_braces_are_not_silently_removed(initialized_db, registered_name):
+    await _create_guide("100", registered_name)
+
+    result = await _report_repository().find_by_name("오라메디연고")
+
+    assert result.guide is None
+
+
+@pytest.mark.parametrize(
+    "qualifier", ["대", "중", "소", "1회용", "일회용", "다회용", "수출용", "레몬향", "소아용", "성인용"]
+)
+async def test_report_identity_qualifiers_are_required_when_registered(initialized_db, qualifier):
+    guide = await _create_guide("100", f"건아이점안액(폴리소르베이트80)({qualifier})")
+
+    with_qualifier = await _report_repository().find_by_name(f"건아이점안액({qualifier})")
+    without_qualifier = await _report_repository().find_by_name("건아이점안액")
+
+    assert with_qualifier.guide is not None
+    assert with_qualifier.guide.medication_guide_id == guide.id
+    assert without_qualifier.guide is None
+
+
+async def test_report_identity_qualifier_mismatch_does_not_bind_singleton(initialized_db):
+    await _create_guide("100", "건아이점안액(폴리소르베이트80)(다회용)")
+
+    result = await _report_repository().find_by_name("건아이점안액(1회용)")
+
+    assert result.guide is None
+
+
+async def test_report_truncated_lookup_does_not_drop_registered_qualifier(initialized_db):
+    await _create_guide("100", "건아이점안액100밀리그램(1회용)")
+
+    result = await _report_repository().find_by_name("건아이점안액100밀리...")
+
+    assert result.guide is None
+
+
+@pytest.mark.parametrize(
+    "annotation",
+    ["(기타:메타데이터)", "(성분|다른성분)", "(500mg)"],
+)
+async def test_report_unknown_trailing_annotations_are_not_implicitly_optional(initialized_db, annotation):
+    await _create_guide("100", f"오라메디연고{annotation}")
+
+    result = await _report_repository().find_by_name("오라메디연고")
+
+    assert result.guide is None
+
+
+async def test_report_pipe_alias_binds_canonical_row(initialized_db):
+    canonical_name = "나조린점안액|나조린점안액(염산나파졸린)"
+    guide = await _create_guide("100", canonical_name)
+
+    result = await _report_repository().find_by_name("나조린점안액(염산나파졸린)")
+
+    assert result.guide is not None
+    assert result.guide.medication_guide_id == guide.id
+    assert result.guide.product_name == canonical_name
+
+
+async def test_report_checks_all_catalog_rows_before_binding_ingredient_optional_match(initialized_db):
+    first = await _create_guide("100", "검증정(성분)")
+    second = await _create_guide("200", "검 증정(성분)")
+
+    result = await _report_repository().find_by_name("검증정")
+
+    assert result.guide is None
+    assert result.is_ambiguous is True
+    assert set(result.candidate_names) == {first.product_name, second.product_name}
+
+
+async def test_report_shared_pipe_alias_is_ambiguous_across_rows(initialized_db):
+    first = await _create_guide("100", "가나다점안액|공통별칭")
+    second = await _create_guide("200", "라마바점안액|공통별칭")
+
+    result = await _report_repository().find_by_name("공통별칭")
+
+    assert result.guide is None
+    assert result.is_ambiguous is True
+    assert set(result.candidate_names) == {first.product_name, second.product_name}
+
+
+@pytest.mark.parametrize(
+    "name, expected",
+    [
+        ("가나다정(성분|맛)|라마정", ["가나다정(성분|맛)", "라마정"]),
+        ("1. 가나다정 | 2. 라마정", ["가나다정", "라마정"]),
+        ("1. 가나다정 | 3. 라마정", ["1. 가나다정 | 3. 라마정"]),
+        ("가나다정(성분|맛", ["가나다정(성분|맛"]),
+    ],
+)
+def test_report_pipe_alias_parser_only_splits_balanced_top_level_lists(name, expected):
+    from ai_worker.repositories.report_medication_guide_repository import ReportMedicationGuideRepository
+
+    assert ReportMedicationGuideRepository._product_aliases(name) == expected
+
+
+@pytest.mark.parametrize(
+    "form",
+    [
+        "연고",
+        "크림",
+        "겔",
+        "젤",
+        "플라스타",
+        "카타플라스마",
+        "패취",
+        "패치",
+        "점안액",
+        "점이액",
+        "점비액",
+        "스프레이",
+        "산",
+    ],
+)
+def test_report_product_parts_recognizes_report_local_dosage_forms(form):
+    from ai_worker.repositories.report_medication_guide_repository import ReportMedicationGuideRepository
+
+    parts = ReportMedicationGuideRepository._product_parts(f"제품{form}100밀리그램")
+
+    assert parts is not None
+    assert parts[0] == "제품"
 
 
 @pytest.mark.parametrize(

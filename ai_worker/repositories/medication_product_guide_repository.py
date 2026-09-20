@@ -1,6 +1,8 @@
 import re
 from collections import defaultdict
 
+from tortoise.expressions import Q
+
 from ai_worker.schemas.medication_chat import (
     MedicationGuideFact,
     MedicationGuideLookup,
@@ -46,6 +48,31 @@ class DbMedicationProductGuideRepository:
             )
         if len(exact_matches) > 1:
             return self._ambiguous(normalized_name, exact_matches)
+
+        if "밀리그램" in normalized_name or "밀리그람" in normalized_name:
+            spelling_variants = {
+                normalized_name.replace("밀리그램", "밀리그람"),
+                normalized_name.replace("밀리그람", "밀리그램"),
+            }
+            prefix_query = Q()
+            for spelling in spelling_variants:
+                prefix_query |= Q(product_name__istartswith=spelling)
+            equivalent_matches = await (
+                MedicationProductGuide.filter(prefix_query).order_by("product_name", "id").limit(6)
+            )
+            normalized_query = self._normalize_unit_spelling(normalized_name)
+            equivalent = sorted(
+                (
+                    match
+                    for match in equivalent_matches
+                    if self._normalize_unit_spelling(match.product_name).startswith(normalized_query)
+                ),
+                key=lambda match: (match.product_name, match.id),
+            )
+            if len(equivalent) == 1:
+                return MedicationGuideLookup(guide=self._to_fact(equivalent[0]))
+            if len(equivalent) > 1:
+                return self._ambiguous(normalized_name, equivalent)
 
         partial_matches = (
             await MedicationProductGuide.filter(
@@ -178,6 +205,10 @@ class DbMedicationProductGuideRepository:
     @staticmethod
     def _normalize_name(value: str) -> str:
         return "".join(value.casefold().split())
+
+    @classmethod
+    def _normalize_unit_spelling(cls, value: str) -> str:
+        return cls._normalize_name(value).replace("밀리그람", "밀리그램")
 
     @staticmethod
     def _to_fact(
