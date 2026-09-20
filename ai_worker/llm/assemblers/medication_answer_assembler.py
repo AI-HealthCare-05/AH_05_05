@@ -865,12 +865,12 @@ class MedicationAnswerAssembler:
         if medication_lines:
             sections.append("💊 **복약정보**\n" + "\n".join(medication_lines))
 
-        # 머리말에는 성분을 붙이지 않는다. 상호작용·복약 질문에도 따라붙어 답변이 길어진다.
-        supplement_lines = MedicationAnswerAssembler.supplement_intake_lines(
-            context.supplements,
-            with_dose=True,
-            with_nutrients=False,
-        )
+        # 머리말은 확정 사실 그대로 넘긴다. 같은 이름이라도 등록이 다르면 용량이 다르므로
+        # 합치지 않고, 성분도 붙이지 않는다(상호작용·복약 질문까지 답변이 길어진다).
+        supplement_lines = [
+            f"- {supplement.name} · {supplement.dose_amount}{supplement.dose_unit}"
+            for supplement in context.supplements
+        ]
         if supplement_lines:
             sections.append("💪🏻 **영양제 정보**\n" + "\n".join(supplement_lines))
         return sections
@@ -894,13 +894,8 @@ class MedicationAnswerAssembler:
         return visible
 
     @staticmethod
-    def supplement_intake_lines(
-        supplements: list[ActiveSupplement],
-        *,
-        with_dose: bool,
-        with_nutrients: bool = True,
-    ) -> list[str]:
-        """등록 영양제 줄. 목록 답변과 복약정보 머리말이 같은 형식을 쓰게 한다.
+    def supplement_intake_lines(supplements: list[ActiveSupplement]) -> list[str]:
+        """등록 영양제 목록 답변의 줄.
 
         성분 함량은 등록한 복용 계획으로 환산한 값이다(리포트와 같은 계수를 쓴다).
         기준을 밝히지 않으면 숫자가 무엇의 양인지 알 수 없어 오해를 만든다.
@@ -910,9 +905,7 @@ class MedicationAnswerAssembler:
         has_omega_label = False
         for supplement, name in MedicationAnswerAssembler.visible_intake_items(supplements):
             line = f"- {name}"
-            if with_dose:
-                line = f"{line} · {supplement.dose_amount}{supplement.dose_unit}"
-            if with_nutrients and supplement.nutrients:
+            if supplement.nutrients:
                 has_amounts = True
                 has_omega_label = has_omega_label or any(n.name == OMEGA_NUTRIENT_NAME for n in supplement.nutrients)
                 amounts = ", ".join(

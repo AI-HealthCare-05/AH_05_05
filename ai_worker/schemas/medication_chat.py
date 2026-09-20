@@ -290,7 +290,6 @@ class ActiveSupplement(BaseModel):
     name: str = Field(min_length=1)
     # 공공 영양성분 DB에 값이 있는 성분만 담는다. 제품 표시사항 전체가 아니다.
     nutrients: list[SupplementNutrientAmount] = Field(default_factory=list)
-    # 위 함량이 무엇을 기준으로 한 양인지. 기준을 밝히지 않으면 숫자가 오해를 만든다.
     dose_amount: str
     dose_unit: str = Field(min_length=1)
     start_date: date

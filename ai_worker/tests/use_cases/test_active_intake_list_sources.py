@@ -75,6 +75,25 @@ def test_the_list_answer_carries_the_sources_it_built() -> None:
     ]
 
 
+def test_the_combined_answer_cites_only_what_it_shows() -> None:
+    """`약이랑 영양제` 한 번에 묻는 빠른 경로도 답변과 출처가 어긋나면 안 된다."""
+    result, _, _ = AnswerMedicationQuestionUseCase._active_intake_list_response(
+        request=MedicationChatRequest(request_id=uuid4(), user_id=1, question="내가 먹는 약과 영양제 알려줘"),
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[ActiveMedication(medication_id=3, care_episode_id=1, name="와파린정(30정)")],
+            supplements=[supplement("비타 D 2000(120캡슐)", 1), supplement("비타 D 2000(60캡슐)", 2)],
+        ),
+    )
+
+    assert "- 와파린정\n" in result.answer
+    assert result.answer.count("- 비타 D 2000") == 1
+    assert [item.title for item in result.sources] == [
+        "사용자 확정 복약정보 · 와파린정",
+        "사용자 복용 영양제 · 비타 D 2000",
+    ]
+
+
 def test_nothing_is_cited_when_no_item_is_listed() -> None:
     """`등록된 게 없습니다`라고 답하면서 근거를 제시하면 안 된다."""
     sources = AnswerMedicationQuestionUseCase._active_intake_sources(

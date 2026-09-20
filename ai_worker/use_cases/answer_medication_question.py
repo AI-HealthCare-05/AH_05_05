@@ -372,16 +372,12 @@ class AnswerMedicationQuestionUseCase:
         sources: list[MedicationChatSource] = []
         if medication_requested:
             if context.medications:
-                medication_names = cls._clean_active_intake_names(item.name for item in context.medications)
+                medication_names = [
+                    name for _, name in MedicationAnswerAssembler.visible_intake_items(context.medications)
+                ]
                 sections.append("💊 **복약정보**\n" + "\n".join(f"- {name}" for name in medication_names))
                 sources.extend(
-                    MedicationChatSource(
-                        kind=MedicationChatSourceKind.PATIENT_MEDICATION,
-                        title=f"사용자 확정 복약정보 · {item.name}",
-                        medication_id=item.medication_id,
-                        care_episode_id=item.care_episode_id,
-                    )
-                    for item in context.medications
+                    cls._active_intake_sources(context=context, intent=ConversationIntent.ACTIVE_MEDICATION_LIST)
                 )
             else:
                 missing_categories.append("복약정보")
@@ -389,20 +385,10 @@ class AnswerMedicationQuestionUseCase:
             if context.supplements:
                 sections.append(
                     "💪🏻 **영양제 정보**\n"
-                    + "\n".join(
-                        MedicationAnswerAssembler.supplement_intake_lines(
-                            context.supplements,
-                            with_dose=False,
-                        )
-                    )
+                    + "\n".join(MedicationAnswerAssembler.supplement_intake_lines(context.supplements))
                 )
                 sources.extend(
-                    MedicationChatSource(
-                        kind=MedicationChatSourceKind.PATIENT_SUPPLEMENT,
-                        title=f"사용자 복용 영양제 · {item.name}",
-                        user_supplement_id=item.registration_id,
-                    )
-                    for item in context.supplements
+                    cls._active_intake_sources(context=context, intent=ConversationIntent.ACTIVE_SUPPLEMENT_LIST)
                 )
             else:
                 missing_categories.append("영양제 정보")
@@ -2799,17 +2785,14 @@ class AnswerMedicationQuestionUseCase:
         intent: ConversationIntent,
     ) -> MedicationChatResult:
         if intent is ConversationIntent.ACTIVE_MEDICATION_LIST:
-            names = cls._clean_active_intake_names(item.name for item in context.medications)
+            names = [name for _, name in MedicationAnswerAssembler.visible_intake_items(context.medications)]
             answer = (
                 "💊 **복약정보**\n" + "\n".join(f"- {name}" for name in names)
                 if names
                 else "현재 등록된 복약정보가 없습니다."
             )
         else:
-            lines = MedicationAnswerAssembler.supplement_intake_lines(
-                context.supplements,
-                with_dose=False,
-            )
+            lines = MedicationAnswerAssembler.supplement_intake_lines(context.supplements)
             answer = "💪🏻 **영양제 정보**\n" + "\n".join(lines) if lines else "현재 등록된 영양제 정보가 없습니다."
         return cls._conversation_result(
             request=request,
@@ -2848,18 +2831,6 @@ class AnswerMedicationQuestionUseCase:
             )
             for item, name in MedicationAnswerAssembler.visible_intake_items(context.supplements)
         ]
-
-    @classmethod
-    def _clean_active_intake_names(cls, values) -> list[str]:
-        names: list[str] = []
-        seen: set[str] = set()
-        for value in values:
-            name = " ".join(cls._PARENTHETICAL_DESCRIPTION_PATTERN.sub("", value).split())
-            key = name.casefold()
-            if name and key not in seen:
-                names.append(name)
-                seen.add(key)
-        return names
 
     async def _follow_up_schedule_result(
         self,
