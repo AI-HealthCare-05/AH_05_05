@@ -1,0 +1,52 @@
+{
+  "schema_version": "feature599-experiment-summary-v1",
+  "status": "partial_tokenizer_quality_review_required",
+  "baseline_commit": "9ff9857d",
+  "embedding_model": "text-embedding-3-large",
+  "dimensions": 3072,
+  "distance": "DOT",
+  "active_collection_changed": false,
+  "rdb_changed": false,
+  "l2_action": "Retain unit-norm validation; it does not modify vectors.",
+  "dense_collection": "medication_knowledge_full_v17_function_ingredients_3072_dot",
+  "hybrid_collection": "medication_knowledge_exp599_v17_cl100k_hybrid_20260920",
+  "matching_point_count": 13604,
+  "evaluation_file": "data/knowledge/evaluation/knowledge_full_v16_te3large_fixed_20.yaml",
+  "raw_report": "data/knowledge/reports/feature599-cl100k-dense-hybrid-20260920.json",
+  "independent_question_count": 20,
+  "repeats": 3,
+  "measured_search_count": 240,
+  "search_errors": 0,
+  "results": [
+    {"track": "gold_filters", "mode": "dense", "metadata_any_hit_at_5": 1.0, "evaluator_section_coverage_hit_at_5": 1.0, "metadata_mrr": 0.975, "forbidden_hit_rate": 0.0, "search_p50_ms": 150.953, "search_p95_ms": 198.636},
+    {"track": "gold_filters", "mode": "hybrid", "metadata_any_hit_at_5": 1.0, "evaluator_section_coverage_hit_at_5": 1.0, "metadata_mrr": 0.975, "forbidden_hit_rate": 0.0, "search_p50_ms": 395.105, "search_p95_ms": 577.029},
+    {"track": "semantic_unfiltered", "mode": "dense", "metadata_any_hit_at_5": 0.85, "evaluator_section_coverage_hit_at_5": 0.85, "metadata_mrr": 0.700, "forbidden_hit_rate": 0.15, "search_p50_ms": 82.862, "search_p95_ms": 181.176},
+    {"track": "semantic_unfiltered", "mode": "hybrid", "metadata_any_hit_at_5": 0.80, "evaluator_section_coverage_hit_at_5": 0.80, "metadata_mrr": 0.635, "forbidden_hit_rate": 0.25, "search_p50_ms": 570.491, "search_p95_ms": 807.867}
+  ],
+  "search_decision": "Retain Dense; this experiment does not justify Hybrid as default.",
+  "tokenizer_candidate": {
+    "manifest": "data/knowledge/processed/feature599-tokenizer-experiment-20260920-v2/experiment-manifest.json",
+    "document_count": 1212,
+    "baseline_chunk_count": 13604,
+    "candidate_chunk_count": 13190,
+    "frozen_document_count": 631,
+    "selected_changed_document_count": 111,
+    "new_chunk_ids": 1183,
+    "removed_chunk_ids": 1597,
+    "new_distinct_embedding_texts": 930,
+    "candidate_tree_sha256": "4556ffce74757298a04ae46a6ed8f1461068ab73b0753be918e1858a59728fe4",
+    "review": "Independent review found no section-content, schema, content-hash, embedding-text-builder or metadata-set mismatches. Fresh boundary/evidence-ID approval remains required.",
+    "maximum_content_tokens": 500,
+    "reembedded": false,
+    "quality_gate": "Existing approved preprocessing report has 13604 chunks, not candidate 13190. No approval hashes or bulk approval were transferred.",
+    "decision": "Pending fresh candidate quality review; no tokenizer adoption claim."
+  },
+  "limitations": [
+    "Metadata and document-ID relevance are not clinical correctness.",
+    "Gold filters are supplied labels, not predictions by the live query planner.",
+    "Search latency excludes embedding, routing and answer generation; P95 uses inclusive linear interpolation.",
+    "Three repeated searches provide timing observations, not 60 independent relevance cases.",
+    "Frontend 30-question checklist has not been executed.",
+    "Metadata enrichment hypotheses were audited but not mixed into this controlled comparison."
+  ]
+}
