@@ -1207,7 +1207,7 @@ def test_supplement_lines_state_the_scope_of_the_public_nutrient_data() -> None:
 
     lines = MedicationAnswerAssembler.supplement_intake_lines([supplement])
 
-    assert lines[0] == "- 코랄칼슘 · 칼슘 400mg"
+    assert lines[0] == "- 코랄칼슘\n  - 칼슘 400mg"
     # 기준을 밝히지 않으면 400mg이 라벨 함량인지 하루 섭취량인지 알 수 없다.
     assert "등록한 1회 복용량과 하루 복용 횟수로 환산한 값" in lines[-1]
     assert "제품 표시사항을 확인하세요" in lines[-1]
@@ -1274,8 +1274,8 @@ def test_same_named_products_keep_their_own_amounts() -> None:
         ]
     )
 
-    assert lines[0] == "- 비타 D 2000 · 비타민 D 50μg"
-    assert lines[1] == "- 비타 D 2000 · 비타민 D 25μg"
+    assert lines[0] == "- 비타 D 2000\n  - 비타민 D 50μg"
+    assert lines[1] == "- 비타 D 2000\n  - 비타민 D 25μg"
 
 
 def test_identical_lines_are_merged() -> None:

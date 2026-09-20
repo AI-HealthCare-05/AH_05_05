@@ -897,10 +897,13 @@ class MedicationAnswerAssembler:
     def supplement_intake_rows(
         supplements: list[ActiveSupplement],
     ) -> list[tuple[ActiveSupplement, str, str]]:
-        """답변에 보이는 (등록, 이름, 줄).
+        """답변에 보이는 (등록, 이름, 블록).
+
+        성분은 제품 아래 하위 불렛으로 편다. 한 줄에 몰면 성분이 많은 제품에서
+        쉼표로 이어진 긴 줄이 되어 무엇을 얼마나 먹는지 읽히지 않는다.
 
         이름이 같아도 함량이 다르면 다른 등록이므로 남긴다. 이름만 보고 합치면
-        한 등록의 복용량이 답변에서 통째로 사라진다. 줄까지 똑같을 때만 합친다.
+        한 등록의 복용량이 답변에서 통째로 사라진다. 블록까지 똑같을 때만 합친다.
         답변과 출처가 이 한 집합에서 나오게 한다.
         """
         rows: list[tuple[ActiveSupplement, str, str]] = []
@@ -909,16 +912,16 @@ class MedicationAnswerAssembler:
             name = " ".join(MedicationAnswerAssembler._PARENTHETICAL_DESCRIPTION.sub("", supplement.name).split())
             if not name:
                 continue
-            line = f"- {name}"
-            if supplement.nutrients:
-                amounts = ", ".join(
-                    f"{nutrient.name} {nutrient.amount}{nutrient.unit}" for nutrient in supplement.nutrients
-                )
-                line = f"{line} · {amounts}"
-            if line in seen:
+            block = "\n".join(
+                [
+                    f"- {name}",
+                    *(f"  - {nutrient.name} {nutrient.amount}{nutrient.unit}" for nutrient in supplement.nutrients),
+                ]
+            )
+            if block in seen:
                 continue
-            seen.add(line)
-            rows.append((supplement, name, line))
+            seen.add(block)
+            rows.append((supplement, name, block))
         return rows
 
     @staticmethod
@@ -929,10 +932,10 @@ class MedicationAnswerAssembler:
         기준을 밝히지 않으면 숫자가 무엇의 양인지 알 수 없어 오해를 만든다.
         """
         rows = MedicationAnswerAssembler.supplement_intake_rows(supplements)
-        lines = [line for _, _, line in rows]
+        blocks = [block for _, _, block in rows]
         shown = [supplement for supplement, _, _ in rows if supplement.nutrients]
         if not shown:
-            return lines
+            return blocks
         notes = [
             # 값이 없어 빠진 것과 환산하지 못해 빠진 것을 구분하지 않으면, 환산 실패가
             # `자료에 값이 없음`으로 읽힌다. 리포트도 같은 사실을 밝힌다.
@@ -944,4 +947,4 @@ class MedicationAnswerAssembler:
             notes.append("오메가-3는 총지방으로 기록된 값이라 EPA·DHA 함량과 다를 수 있습니다.")
         notes.append("전체 성분은 제품 표시사항을 확인하세요.")
         # 빈 줄이 없으면 마크다운이 이 고지를 마지막 항목의 일부로 붙여 한 제품 설명처럼 읽힌다.
-        return [*lines, "", " ".join(notes)]
+        return [*blocks, "", " ".join(notes)]
