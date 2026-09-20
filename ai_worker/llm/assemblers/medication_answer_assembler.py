@@ -894,33 +894,54 @@ class MedicationAnswerAssembler:
         return visible
 
     @staticmethod
+    def supplement_intake_rows(
+        supplements: list[ActiveSupplement],
+    ) -> list[tuple[ActiveSupplement, str, str]]:
+        """답변에 보이는 (등록, 이름, 줄).
+
+        이름이 같아도 함량이 다르면 다른 등록이므로 남긴다. 이름만 보고 합치면
+        한 등록의 복용량이 답변에서 통째로 사라진다. 줄까지 똑같을 때만 합친다.
+        답변과 출처가 이 한 집합에서 나오게 한다.
+        """
+        rows: list[tuple[ActiveSupplement, str, str]] = []
+        seen: set[str] = set()
+        for supplement in supplements:
+            name = " ".join(MedicationAnswerAssembler._PARENTHETICAL_DESCRIPTION.sub("", supplement.name).split())
+            if not name:
+                continue
+            line = f"- {name}"
+            if supplement.nutrients:
+                amounts = ", ".join(
+                    f"{nutrient.name} {nutrient.amount}{nutrient.unit}" for nutrient in supplement.nutrients
+                )
+                line = f"{line} · {amounts}"
+            if line in seen:
+                continue
+            seen.add(line)
+            rows.append((supplement, name, line))
+        return rows
+
+    @staticmethod
     def supplement_intake_lines(supplements: list[ActiveSupplement]) -> list[str]:
         """등록 영양제 목록 답변의 줄.
 
         성분 함량은 등록한 복용 계획으로 환산한 값이다(리포트와 같은 계수를 쓴다).
         기준을 밝히지 않으면 숫자가 무엇의 양인지 알 수 없어 오해를 만든다.
         """
-        lines: list[str] = []
-        has_amounts = False
-        has_omega_label = False
-        for supplement, name in MedicationAnswerAssembler.visible_intake_items(supplements):
-            line = f"- {name}"
-            if supplement.nutrients:
-                has_amounts = True
-                has_omega_label = has_omega_label or any(n.name == OMEGA_NUTRIENT_NAME for n in supplement.nutrients)
-                amounts = ", ".join(
-                    f"{nutrient.name} {nutrient.amount}{nutrient.unit}" for nutrient in supplement.nutrients
-                )
-                line = f"{line} · {amounts}"
-            lines.append(line)
-        if lines and has_amounts:
-            notes = [
-                "등록한 1회 복용량과 하루 복용 횟수로 환산한 값이며, "
-                "공공 영양성분 자료에 값이 있는 성분만 표시했습니다."
-            ]
-            if has_omega_label:
-                # 이 자료는 EPA·DHA를 따로 담지 않는다. 총지방을 그 이름으로 부르는 것이므로 밝힌다.
-                notes.append("오메가-3는 총지방으로 기록된 값이라 EPA·DHA 함량과 다를 수 있습니다.")
-            notes.append("전체 성분은 제품 표시사항을 확인하세요.")
-            lines.append(" ".join(notes))
-        return lines
+        rows = MedicationAnswerAssembler.supplement_intake_rows(supplements)
+        lines = [line for _, _, line in rows]
+        shown = [supplement for supplement, _, _ in rows if supplement.nutrients]
+        if not shown:
+            return lines
+        notes = [
+            # 값이 없어 빠진 것과 환산하지 못해 빠진 것을 구분하지 않으면, 환산 실패가
+            # `자료에 값이 없음`으로 읽힌다. 리포트도 같은 사실을 밝힌다.
+            "등록한 1회 복용량과 하루 복용 횟수로 환산한 값이며, 공공 영양성분 자료에 값이 있고 "
+            "복용량·단위를 환산할 수 있는 성분만 표시했습니다."
+        ]
+        if any(n.name == OMEGA_NUTRIENT_NAME for supplement in shown for n in supplement.nutrients):
+            # 이 자료는 EPA·DHA를 따로 담지 않는다. 총지방을 그 이름으로 부르는 것이므로 밝힌다.
+            notes.append("오메가-3는 총지방으로 기록된 값이라 EPA·DHA 함량과 다를 수 있습니다.")
+        notes.append("전체 성분은 제품 표시사항을 확인하세요.")
+        # 빈 줄이 없으면 마크다운이 이 고지를 마지막 항목의 일부로 붙여 한 제품 설명처럼 읽힌다.
+        return [*lines, "", " ".join(notes)]

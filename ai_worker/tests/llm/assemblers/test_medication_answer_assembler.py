@@ -1259,8 +1259,8 @@ def test_intake_header_never_carries_nutrient_amounts() -> None:
     assert "제품 표시사항을 확인하세요" not in answer
 
 
-def test_same_named_products_are_listed_once_without_shifting_amounts() -> None:
-    """괄호만 다른 동명 제품이 있으면, 한 제품의 함량이 다른 이름 옆에 붙을 수 있다."""
+def test_same_named_products_keep_their_own_amounts() -> None:
+    """이름만 보고 합치면 둘째 등록의 함량이 사라져 하루 75μg을 50μg으로 답하게 된다."""
     lines = MedicationAnswerAssembler.supplement_intake_lines(
         [
             build_supplement(
@@ -1275,7 +1275,16 @@ def test_same_named_products_are_listed_once_without_shifting_amounts() -> None:
     )
 
     assert lines[0] == "- 비타 D 2000 · 비타민 D 50μg"
-    assert len([line for line in lines if line.startswith("- 비타 D 2000")]) == 1
+    assert lines[1] == "- 비타 D 2000 · 비타민 D 25μg"
+
+
+def test_identical_lines_are_merged() -> None:
+    """줄까지 똑같으면 같은 말을 두 번 하는 것이라 합친다."""
+    lines = MedicationAnswerAssembler.supplement_intake_lines(
+        [build_supplement("비타 D(120캡슐)"), build_supplement("비타 D(60캡슐)")]
+    )
+
+    assert lines == ["- 비타 D"]
 
 
 def test_omega_amounts_state_that_they_come_from_total_fat() -> None:

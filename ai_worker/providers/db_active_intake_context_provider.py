@@ -1,7 +1,7 @@
 import re
 from collections.abc import Callable
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from tortoise.timezone import now
 
@@ -210,7 +210,8 @@ class DbActiveIntakeContextProvider:
     # 이 자료에는 EPA·DHA 컬럼이 없고 오메가3 제품의 기능성 성분은 총지방으로만 기록된다.
     # 제품명이 오메가3를 가리킬 때는 `지방`보다 `오메가-3`가 사용자에게 맞는 이름이다.
     # 다만 총지방이 곧 EPA+DHA 함량은 아니므로 답변에 그 사실을 함께 밝힌다.
-    _OMEGA_PRODUCT_NAME = re.compile(r"오메가\s*-?\s*3|EPA|DHA", re.IGNORECASE)
+    # `EPA`·`DHA`는 영문에 둘러싸이면 다른 낱말이다(`HEPA`). 숫자 뒤(`오메가3EPA`)는 남긴다.
+    _OMEGA_PRODUCT_NAME = re.compile(r"오메가\s*-?\s*3|(?<![A-Za-z])(?:EPA|DHA)(?![A-Za-z])", re.IGNORECASE)
     _OMEGA_FAT_LABEL = OMEGA_NUTRIENT_NAME
 
     @classmethod
@@ -234,7 +235,12 @@ class DbActiveIntakeContextProvider:
                 continue
             if column == "fat_g" and is_omega_product:
                 label = cls._OMEGA_FAT_LABEL
-            scaled = (value * factor).quantize(Decimal("0.001")).normalize()
+            # 리포트와 같은 자릿수·반올림이어야 두 화면이 같은 숫자를 말한다.
+            scaled = (value * factor).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            if scaled <= 0:
+                # 환산하면 0이 되는 미량이다. `칼슘 0mg`은 들어 있지 않다는 뜻으로 읽힌다.
+                continue
+            scaled = scaled.normalize()
             amounts.append(
                 SupplementNutrientAmount(
                     name=label,

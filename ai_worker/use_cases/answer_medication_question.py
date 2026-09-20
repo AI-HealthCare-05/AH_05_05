@@ -2829,7 +2829,7 @@ class AnswerMedicationQuestionUseCase:
                 title=f"사용자 복용 영양제 · {name}",
                 user_supplement_id=item.registration_id,
             )
-            for item, name in MedicationAnswerAssembler.visible_intake_items(context.supplements)
+            for item, name, _ in MedicationAnswerAssembler.supplement_intake_rows(context.supplements)
         ]
 
     async def _follow_up_schedule_result(
