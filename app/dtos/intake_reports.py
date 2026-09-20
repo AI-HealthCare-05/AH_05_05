@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, EmailStr, Field
 
 from ai_worker.schemas.intake_report import (
     IntakeReportChartData,
@@ -26,10 +26,11 @@ class GenerateIntakeReportRequest(CamelModel):
 
 
 class SendIntakeReportEmailRequest(CamelModel):
-    """A server-issued encrypted report snapshot; no recipient or HTML is accepted."""
+    """Server-issued report snapshot; recipient override is authorized for demo accounts only."""
 
     model_config = ConfigDict(extra="forbid")
     email_token: str = Field(min_length=1, max_length=900_000)
+    recipient_email: EmailStr | None = Field(default=None, max_length=254)
 
 
 class IntakeReportEmailJobResponse(CamelModel):

@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from ai_worker.schemas.chat import ChatHistoryMessage
+from ai_worker.schemas.conversation_gate import ConversationGuideDomain
 from ai_worker.schemas.knowledge import KnowledgeRetrievalResult, RetrievedKnowledgeChunk
 from ai_worker.schemas.medication_chat import (
     InteractionRuleFact,
@@ -27,6 +28,7 @@ class PreparedMedicationQuestion:
     symptom_context: str | None = None
     answer_context_history: tuple[ChatHistoryMessage, ...] = ()
     medication_guide_search: bool = False
+    guide_domain: ConversationGuideDomain | None = None
 
     @property
     def question_for_planning(self) -> str:

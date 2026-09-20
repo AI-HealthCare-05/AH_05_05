@@ -11,6 +11,7 @@ from ai_worker.llm.prompts.prompt_assets import (
     MedicationPromptStage,
     load_prompt_chain_stage,
 )
+from ai_worker.schemas.conversation_gate import ConversationGuideDomain
 from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_chat import MedicationChatRoute
 from ai_worker.schemas.medication_search import (
@@ -26,6 +27,8 @@ class ConditionalInterpretationReasonCode(StrEnum):
     LOW_CONFIDENCE = "LOW_CONFIDENCE"
     MULTI_ENTITY = "MULTI_ENTITY"
     SESSION_REFERENCE = "SESSION_REFERENCE"
+    ENTITY_FREE_GUIDE_SEARCH = "ENTITY_FREE_GUIDE_SEARCH"
+    SECTION_AMBIGUITY = "SECTION_AMBIGUITY"
 
 
 class DirectionalSearchTarget(StrEnum):
@@ -57,13 +60,21 @@ class ConditionalQuestionInterpretationInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     question: str = Field(min_length=1)
-    candidate_entities: dict[str, MedicationQueryEntity] = Field(min_length=1, max_length=12)
+    candidate_entities: dict[str, MedicationQueryEntity] = Field(default_factory=dict, max_length=12)
+    allow_entity_free_guide_search: bool = False
+    guide_domain: ConversationGuideDomain | None = None
     requested_section_types: list[KnowledgeSectionType] = Field(default_factory=list)
     trigger_reasons: list[ConditionalInterpretationReasonCode] = Field(min_length=1)
     candidate_pair_keys: list[str] = Field(default_factory=list)
     allowed_search_terms: list[str] = Field(default_factory=list)
     session_reference_entities: dict[str, str] = Field(default_factory=dict)
     current_query_plan: MedicationKnowledgeQueryPlan | None = None
+
+    @model_validator(mode="after")
+    def require_candidates_or_approved_search(self) -> "ConditionalQuestionInterpretationInput":
+        if not self.candidate_entities and not self.allow_entity_free_guide_search:
+            raise ValueError("후보가 없으면 Gate 승인된 가이드 검색이 필요합니다.")
+        return self
 
     @field_validator("question")
     @classmethod
@@ -106,6 +117,7 @@ class ConditionalQuestionInterpretationOutput(BaseModel):
     route: MedicationChatRoute | None = None
     candidate_entity_keys: list[str] = Field(default_factory=list, max_length=12)
     requested_section_types: list[KnowledgeSectionType] = Field(default_factory=list, max_length=4)
+    supplement_function_goal: str | None = Field(default=None, max_length=80)
     interaction_pair_keys: list[str] = Field(default_factory=list, max_length=16)
     stimuli: list[DirectionalSearchStimulus] = Field(default_factory=list, max_length=3)
     confidence: MedicationQuestionConfidence
@@ -122,6 +134,11 @@ class ConditionalQuestionInterpretationOutput(BaseModel):
     @classmethod
     def strip_normalized_question(cls, value: str) -> str:
         return value.strip()
+
+    @field_validator("supplement_function_goal")
+    @classmethod
+    def strip_function_goal(cls, value: str | None) -> str | None:
+        return value.strip() or None if value is not None else None
 
     @field_validator("interaction_pair_keys")
     @classmethod
@@ -236,6 +253,10 @@ def build_conditional_question_interpretation_chain(
                 "section_types": [section.value for section in value.requested_section_types],
                 "interaction_pair_count": len(value.candidate_pair_keys),
             }
+        )
+        current_classification.update(
+            allow_entity_free_guide_search=value.allow_entity_free_guide_search,
+            guide_domain=value.guide_domain,
         )
         return prompt.format_messages(
             question=value.question,

@@ -1,3 +1,5 @@
+from datetime import date
+
 from ai_worker.llm.assemblers.medication_answer_assembler import (
     MedicationAnswerAssembler,
 )
@@ -10,12 +12,14 @@ from ai_worker.schemas.knowledge import (
     RetrievedKnowledgeChunk,
 )
 from ai_worker.schemas.medication_chat import (
+    OMEGA_NUTRIENT_NAME,
     ActiveIntakeContext,
     ActiveMedication,
     ActiveSupplement,
     InteractionRuleFact,
     MedicationEvidenceCoverage,
     MedicationGuideFact,
+    SupplementNutrientAmount,
 )
 from ai_worker.schemas.medication_search import (
     MedicationInteractionQueryPair,
@@ -807,6 +811,35 @@ def test_assemble_separates_medication_and_supplement_information_with_a_blank_l
     assert "7일" not in answer
 
 
+def test_context_header_keeps_every_registration_even_when_names_collide() -> None:
+    """머리말은 확정 사실이다. 이름이 같다고 합치면 등록 하나의 복용량이 통째로 사라진다."""
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(
+            user_id=1,
+            supplements=[
+                ActiveSupplement(
+                    registration_id=index,
+                    supplement_nutrient_id=index,
+                    name=name,
+                    dose_amount=dose,
+                    dose_unit="정",
+                    start_date="2026-09-09",
+                )
+                for index, (name, dose) in enumerate(
+                    [("비타 D 2000(120캡슐)", "1"), ("비타 D 2000(60캡슐)", "2")], start=1
+                )
+            ],
+        ),
+        guide=None,
+        rules=[],
+        chunks=[],
+        interaction_question=False,
+    )
+
+    assert "- 비타 D 2000(120캡슐) · 1정" in answer
+    assert "- 비타 D 2000(60캡슐) · 2정" in answer
+
+
 def test_assemble_formats_active_intake_as_markdown_sections() -> None:
     answer = MedicationAnswerAssembler().assemble(
         context=ActiveIntakeContext(
@@ -1158,3 +1191,124 @@ def test_unverified_crosscheck_pair_is_not_mentioned_at_all() -> None:
 
     assert "복약정보와 상호작용" not in answer
     assert "와파린" not in answer
+
+
+def test_supplement_lines_state_the_scope_of_the_public_nutrient_data() -> None:
+    """자료가 담는 성분은 제품 표시사항의 일부다. 밝히지 않으면 표시된 것이 전부로 읽힌다."""
+    supplement = ActiveSupplement(
+        registration_id=1,
+        supplement_nutrient_id=1,
+        name="코랄칼슘",
+        dose_amount="1",
+        dose_unit="정",
+        start_date=date(2026, 9, 1),
+        nutrients=[SupplementNutrientAmount(name="칼슘", amount="400", unit="mg")],
+    )
+
+    lines = MedicationAnswerAssembler.supplement_intake_lines([supplement])
+
+    assert lines[0] == "- 코랄칼슘\n  - 칼슘 400mg"
+    # 기준을 밝히지 않으면 400mg이 라벨 함량인지 하루 섭취량인지 알 수 없다.
+    assert "등록한 1회 복용량과 하루 복용 횟수로 환산한 값" in lines[-1]
+    assert "제품 표시사항을 확인하세요" in lines[-1]
+
+
+def test_supplement_lines_stay_unchanged_without_recorded_amounts() -> None:
+    supplement = ActiveSupplement(
+        registration_id=1,
+        supplement_nutrient_id=1,
+        name="루테인",
+        dose_amount="1",
+        dose_unit="정",
+        start_date=date(2026, 9, 1),
+    )
+
+    lines = MedicationAnswerAssembler.supplement_intake_lines([supplement])
+
+    assert lines == ["- 루테인"]
+
+
+def build_supplement(name: str, *, nutrients: list[SupplementNutrientAmount] | None = None) -> ActiveSupplement:
+    return ActiveSupplement(
+        registration_id=1,
+        supplement_nutrient_id=1,
+        name=name,
+        dose_amount="1",
+        dose_unit="정",
+        start_date=date(2026, 9, 1),
+        nutrients=nutrients or [],
+    )
+
+
+def test_intake_header_never_carries_nutrient_amounts() -> None:
+    """머리말은 상호작용·복약 질문에도 붙는다. 성분을 넣으면 묻지 않은 정보가 따라간다."""
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(
+            user_id=1,
+            supplements=[
+                build_supplement("코랄칼슘", nutrients=[SupplementNutrientAmount(name="칼슘", amount="400", unit="mg")])
+            ],
+        ),
+        guide=None,
+        rules=[],
+        chunks=[],
+        interaction_question=False,
+    )
+
+    assert "칼슘 400mg" not in answer
+    assert "제품 표시사항을 확인하세요" not in answer
+
+
+def test_same_named_products_keep_their_own_amounts() -> None:
+    """이름만 보고 합치면 둘째 등록의 함량이 사라져 하루 75μg을 50μg으로 답하게 된다."""
+    lines = MedicationAnswerAssembler.supplement_intake_lines(
+        [
+            build_supplement(
+                "비타 D 2000(120캡슐)",
+                nutrients=[SupplementNutrientAmount(name="비타민 D", amount="50", unit="μg")],
+            ),
+            build_supplement(
+                "비타 D 2000(60캡슐)",
+                nutrients=[SupplementNutrientAmount(name="비타민 D", amount="25", unit="μg")],
+            ),
+        ]
+    )
+
+    assert lines[0] == "- 비타 D 2000\n  - 비타민 D 50μg"
+    assert lines[1] == "- 비타 D 2000\n  - 비타민 D 25μg"
+
+
+def test_identical_lines_are_merged() -> None:
+    """줄까지 똑같으면 같은 말을 두 번 하는 것이라 합친다."""
+    lines = MedicationAnswerAssembler.supplement_intake_lines(
+        [build_supplement("비타 D(120캡슐)"), build_supplement("비타 D(60캡슐)")]
+    )
+
+    assert lines == ["- 비타 D"]
+
+
+def test_omega_amounts_state_that_they_come_from_total_fat() -> None:
+    lines = MedicationAnswerAssembler.supplement_intake_lines(
+        [
+            build_supplement(
+                "프리미엄 오메가-3",
+                nutrients=[SupplementNutrientAmount(name="오메가-3", amount="1", unit="g")],
+            )
+        ]
+    )
+
+    assert "총지방으로 기록된 값이라 실제 EPA·DHA 함량은 이보다 적습니다" in lines[-1]
+
+
+def test_omega_notice_is_bound_to_the_shared_nutrient_name() -> None:
+    """이름이 어긋나면 `총지방으로 기록된 값` 안내가 조용히 사라진다."""
+    lines = MedicationAnswerAssembler.supplement_intake_lines(
+        [
+            build_supplement(
+                "프리미엄 오메가-3",
+                nutrients=[SupplementNutrientAmount(name=OMEGA_NUTRIENT_NAME, amount="1", unit="g")],
+            )
+        ]
+    )
+
+    assert "총지방으로 기록된 값이라 실제 EPA·DHA 함량은 이보다 적습니다" in lines[-1]

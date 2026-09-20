@@ -28,6 +28,7 @@ def test_prepared_question_keeps_the_resolved_request_as_an_immutable_stage_outp
     )
 
     assert prepared.question_for_planning == "타이레놀은 어떤 약인가요?"
+    assert prepared.guide_domain is None
     with pytest.raises(FrozenInstanceError):
         prepared.request = cast(MedicationChatRequest, object())  # type: ignore[misc]
 

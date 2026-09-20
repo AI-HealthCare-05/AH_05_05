@@ -53,14 +53,14 @@ class RuleBasedGroundedClaimValidator:
     ) -> GroundedClaimValidationDiagnostic:
         del context
         normalized_answer = self._normalize_spacing(result.answer)
-        if match := self._MEDICATION_CHANGE_PATTERN.search(normalized_answer):
+        official_warning_allowed = False
+        for match in self._MEDICATION_CHANGE_PATTERN.finditer(normalized_answer):
             if self._matches_official_warning(
                 match_text=match.group(),
                 official_warning_texts=result.official_warning_texts,
             ):
-                return GroundedClaimValidationDiagnostic(
-                    official_warning_allowed=True,
-                )
+                official_warning_allowed = True
+                continue
             return self._match_diagnostic(
                 rule_code="MEDICATION_CHANGE_INSTRUCTION",
                 match_text=match.group(),
@@ -76,6 +76,10 @@ class RuleBasedGroundedClaimValidator:
             return self._match_diagnostic(
                 rule_code="TREATMENT_DECISION",
                 match_text=match.group(),
+            )
+        if official_warning_allowed:
+            return GroundedClaimValidationDiagnostic(
+                official_warning_allowed=True,
             )
         return GroundedClaimValidationDiagnostic()
 

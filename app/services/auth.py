@@ -109,6 +109,10 @@ class AuthService:
         return self.jwt_service.issue_jwt_pair(user)
 
     async def request_password_reset(self, email: str, *, scheduler: EmailTaskScheduler) -> None:
+        from app.services.demo_access import is_demo_account
+
+        if is_demo_account(email):
+            return
         user = await self.user_repo.get_user_by_email(email)
         if user is None or user.status != AccountStatus.ACTIVE:
             return

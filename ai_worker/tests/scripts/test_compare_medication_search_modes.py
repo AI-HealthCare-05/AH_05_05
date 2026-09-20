@@ -1,8 +1,10 @@
 import asyncio
 from pathlib import Path
 
+import pytest
+
 from ai_worker.core.config import Config
-from ai_worker.schemas.knowledge import KnowledgeSearchMode
+from ai_worker.schemas.knowledge import KnowledgeSearchMode, KnowledgeVectorDistance
 from ai_worker.schemas.medication_search_evaluation import (
     MedicationSearchBaselineReport,
     MedicationSearchModeComparisonReport,
@@ -37,6 +39,19 @@ def test_parse_args_accepts_distinct_dataset_versions_for_release_ab_test() -> N
     assert args.hybrid_dataset_version == "knowledge-full-v6-o200k-source-backed"
 
 
+@pytest.mark.parametrize("distance", [KnowledgeVectorDistance.COSINE, KnowledgeVectorDistance.DOT])
+def test_vector_store_preserves_distance_for_all_search_modes(distance: KnowledgeVectorDistance) -> None:
+    for mode in KnowledgeSearchMode:
+        store = module._vector_store(
+            mode=mode,
+            client=object(),
+            collection_name="knowledge-dot",
+            vector_size=1536,
+            distance=distance,
+        )
+        assert store._distance == distance
+
+
 def test_mode_evaluation_builds_its_resolver_catalog_from_the_candidate_release(
     monkeypatch,
 ) -> None:
@@ -58,6 +73,9 @@ def test_mode_evaluation_builds_its_resolver_catalog_from_the_candidate_release(
     class FakeEvaluator:
         def __init__(self, **kwargs) -> None:
             captured["resolver_catalog"] = kwargs["question_resolver"]._catalog
+            captured["vector_distance"] = kwargs["knowledge_retriever"]._vector_store._distance
+            captured["report_vector_distance"] = kwargs.get("vector_distance", "COSINE")
+            captured["report_vectors_normalized"] = kwargs.get("embedding_vectors_normalized", False)
 
         async def evaluate(self, manifest, **kwargs):
             captured["manifest"] = manifest
@@ -81,6 +99,7 @@ def test_mode_evaluation_builds_its_resolver_catalog_from_the_candidate_release(
                 OPENAI_API_KEY="test-key",
                 KNOWLEDGE_QDRANT_COLLECTION="medication_knowledge_full_v5",
                 KNOWLEDGE_DATASET_VERSION="knowledge-full-v5-o200k",
+                KNOWLEDGE_VECTOR_DISTANCE=KnowledgeVectorDistance.DOT,
             ),
             client=object(),
             evaluation_hash="a" * 64,
@@ -97,6 +116,9 @@ def test_mode_evaluation_builds_its_resolver_catalog_from_the_candidate_release(
     assert catalog_kwargs["dataset_version"] == "knowledge-full-v6-o200k-source-backed"
     assert captured["manifest"].collection_name == "medication_knowledge_full_v6"
     assert captured["manifest"].dataset_version == "knowledge-full-v6-o200k-source-backed"
+    assert captured["vector_distance"] == KnowledgeVectorDistance.DOT
+    assert captured["report_vector_distance"] == "DOT"
+    assert captured["report_vectors_normalized"] is True
 
 
 def build_report(mode: KnowledgeSearchMode) -> MedicationSearchBaselineReport:
