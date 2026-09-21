@@ -27,6 +27,7 @@ from app.models.enums import CareEpisodeStatus, SupplementStatus
 from app.models.interactions import InteractionEntity, MedicationInteractionEntity
 from app.models.medications import Medication
 from app.models.supplement_nutrients import UserSupplementNutrient
+from app.services.medication_period import medication_end_date
 
 
 def _service_today() -> date:
@@ -83,6 +84,21 @@ class DbActiveIntakeContextProvider:
         ).prefetch_related("supplement_nutrient", "slots")
 
         today = self._today_provider()
+        if self._include_all_episode_medications:
+            medications_by_episode: dict[int, list[Medication]] = {}
+            for row in medication_rows:
+                medications_by_episode.setdefault(row.care_episode_id, []).append(row)
+            # Reports retain every drug in an ongoing episode, including shorter courses.
+            # ACTIVE is a storage status; use the medication screen's date calculation.
+            current_episode_ids = {
+                episode.id
+                for episode in episodes
+                if episode.medication_start_date is not None
+                and episode.medication_start_date
+                <= today
+                <= medication_end_date(episode, medications_by_episode.get(episode.id, []))
+            }
+            medication_rows = [row for row in medication_rows if row.care_episode_id in current_episode_ids]
         medications = [
             self._to_active_medication(row)
             for row in medication_rows

@@ -394,6 +394,46 @@ async def test_report_provider_includes_all_medications_from_active_confirmed_ep
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("today", "expected_ids"),
+    [
+        (date(2026, 9, 18), [10, 20, 30]),
+        (date(2026, 9, 21), [10, 20, 30]),
+        (date(2026, 9, 22), [10, 20, 30]),
+        (date(2026, 9, 23), []),
+    ],
+)
+async def test_report_keeps_shorter_medications_until_the_episode_ends(
+    initialized_db: None, today: date, expected_ids: list[int]
+) -> None:
+    user = await _create_user(1, "episode-period@example.com")
+    episode = await _create_confirmed_episode(
+        episode_id=100, user=user, medication_start_date=date(2026, 9, 18), medication_days=5
+    )
+    for medication_id, days in [(10, 5), (20, 5), (30, 3)]:
+        await Medication.create(
+            id=medication_id, care_episode=episode, name=f"약 {medication_id}", days=days, times_per_day=3
+        )
+
+    # The UI marks this episode finished by its dates even while its DB status is ACTIVE.
+    expired = await _create_confirmed_episode(
+        episode_id=200, user=user, medication_start_date=date(2026, 9, 10), medication_days=5
+    )
+    future = await _create_confirmed_episode(
+        episode_id=300, user=user, medication_start_date=date(2026, 9, 30), medication_days=5
+    )
+    unscheduled = await _create_confirmed_episode(episode_id=400, user=user)
+    for medication_id, other_episode in [(40, expired), (50, future), (60, unscheduled)]:
+        await Medication.create(id=medication_id, care_episode=other_episode, name=f"제외 약 {medication_id}", days=5)
+
+    context = await DbActiveIntakeContextProvider(
+        today_provider=lambda: today, include_all_episode_medications=True
+    ).get_active_context(user_id=user.id, care_episode_id=None)
+
+    assert [item.medication_id for item in context.medications] == expected_ids
+
+
+@pytest.mark.asyncio
 async def test_ai_context_excludes_manual_registrations(
     initialized_db: None,
 ) -> None:
